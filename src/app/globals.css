@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Raleway";
+  src: url("/fonts/RALEWAY-REGULAR.TTF") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Raleway";
+  src: url("/fonts/RALEWAY-MEDIUM.TTF") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Raleway";
+  src: url("/fonts/RALEWAY-SEMIBOLD.TTF") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Raleway";
+  src: url("/fonts/RALEWAY-BOLD.TTF") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Raleway";
+  src: url("/fonts/RALEWAY-EXTRABOLD.TTF") format("truetype");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Raleway";
+  src: url("/fonts/RALEWAY-BLACK.TTF") format("truetype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-sans: "Raleway", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Raleway", ui-sans-serif, system-ui, sans-serif;
+  --bg: #f6f3ee;
+  --fg: #182f38;
+  --pros-red: #c85b58;
+  --pros-blue: #4f7688;
+  --pros-navy: #25206f;
+  --pros-green: #718271;
+  --pros-yellow: #ffd66b;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-sans) !important;
+}
+
+body {
+  background-image:
+    radial-gradient(900px 520px at -12% -18%, rgba(200, 91, 88, 0.10), transparent 62%),
+    radial-gradient(850px 520px at 110% 8%, rgba(79, 118, 136, 0.10), transparent 62%),
+    radial-gradient(620px 420px at 50% 115%, rgba(231, 201, 88, 0.10), transparent 64%);
+  background-attachment: fixed;
+}
+
+.font-display,
+.font-raleway {
+  font-family: var(--font-sans) !important;
+}
+
+.card {
+  @apply rounded-2xl bg-white shadow-card border border-black/[0.04];
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold
+         transition active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+}
+.btn-primary { @apply btn bg-ink-900 text-white hover:bg-ink-800; }
+.btn-brand   { @apply btn bg-brand-500 text-white hover:bg-brand-600 shadow-sm; }
+.btn-ghost   { @apply btn bg-white text-ink-900 border border-black/10 hover:bg-black/5; }
+.btn-danger  { @apply btn bg-red-600 text-white hover:bg-red-700; }
+
+.input {
+  @apply w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm font-medium
+         placeholder:text-black/35 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent;
+}
