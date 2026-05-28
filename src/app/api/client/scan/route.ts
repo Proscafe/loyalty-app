@@ -8,6 +8,7 @@ function extractClientCode(rawCode: string) {
 
   try {
     const url = new URL(trimmed);
+
     const fromQuery =
       url.searchParams.get("client_code") ||
       url.searchParams.get("code") ||
@@ -20,7 +21,7 @@ function extractClientCode(rawCode: string) {
 
     if (lastPart) return lastPart.trim().replace(/^#/, "");
   } catch {
-    // Not a URL, continue below.
+    // Not a URL.
   }
 
   return trimmed.replace(/^#/, "");
@@ -40,13 +41,6 @@ export async function GET(request: NextRequest) {
 
     const clientCode = extractClientCode(rawCode);
 
-    if (!clientCode) {
-      return NextResponse.json(
-        { error: "Invalid client code." },
-        { status: 400 }
-      );
-    }
-
     const supabase = createServiceClient();
 
     const { data: client, error } = await supabase
@@ -57,10 +51,7 @@ export async function GET(request: NextRequest) {
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     if (!client) {
@@ -78,9 +69,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "Unexpected scan error.",
+          error instanceof Error ? error.message : "Unexpected scan error.",
       },
       { status: 500 }
     );
