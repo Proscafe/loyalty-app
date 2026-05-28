@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +14,16 @@ function extractClientCode(rawCode: string) {
       url.searchParams.get("code") ||
       url.searchParams.get("client");
 
-    if (fromQuery) return fromQuery.trim().replace(/^#/, "");
+    if (fromQuery) {
+      return fromQuery.trim().replace(/^#/, "");
+    }
 
     const pathParts = url.pathname.split("/").filter(Boolean);
     const lastPart = pathParts[pathParts.length - 1];
 
-    if (lastPart) return lastPart.trim().replace(/^#/, "");
+    if (lastPart) {
+      return lastPart.trim().replace(/^#/, "");
+    }
   } catch {
     // Not a URL.
   }
@@ -29,6 +33,16 @@ function extractClientCode(rawCode: string) {
 
 export async function GET(request: NextRequest) {
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return NextResponse.json(
+        { error: "Missing Supabase environment variables." },
+        { status: 500 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const rawCode = searchParams.get("code");
 
@@ -41,7 +55,19 @@ export async function GET(request: NextRequest) {
 
     const clientCode = extractClientCode(rawCode);
 
-    const supabase = createServiceClient();
+    if (!clientCode) {
+      return NextResponse.json(
+        { error: "Invalid client code." },
+        { status: 400 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
     const { data: client, error } = await supabase
       .from("profiles")
