@@ -1,483 +1,405 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
-import { QRCodeSVG } from "qrcode.react";
-import { createClient } from "@/lib/supabase/client";
+import QRCode from "react-qr-code";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { RewardCelebration } from "@/components/RewardCelebration";
-import { Toast } from "@/components/Toast";
-import type { ClientStamp, LoyaltyCategory, Profile, Reward } from "@/types";
+import type { ClientStamp, LoyaltyCategory, Profile } from "@/types";
 
-interface Props {
-  profile: Profile;
-  categories: LoyaltyCategory[];
-  initialStamps: ClientStamp[];
-  initialRewards: Reward[];
-}
+type AnyRecord = Record<string, any>;
 
-const REDEEMED_REWARD_VISIBLE_MS = 2 * 60 * 60 * 1000;
-
-const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
-  Sandwiches: "Sandwiches",
-  "Main Course": "Main Courses",
-  Desserts: "Desserts",
-  Coffee: "Coffees",
-  "Desserts 2": "Hookas",
+type DashboardReward = {
+  id: string;
+  status: "available" | "claimed" | "redeemed" | string;
+  created_at?: string | null;
+  earned_at?: string | null;
+  redeemed_at?: string | null;
+  reward_type?: string | null;
+  category_id?: string | null;
+  category_name?: string | null;
+  category?: { name?: string | null } | null;
+  loyalty_categories?: { name?: string | null } | null;
+  categories?: { name?: string | null } | null;
+  loyalty_category?: { name?: string | null } | null;
 };
 
-function isRedeemedRewardStillVisible(reward: Reward) {
+
+type ClientDashboardProps = {
+  profile: Profile;
+  categories?: LoyaltyCategory[];
+  initialStamps?: ClientStamp[];
+  initialRewards?: DashboardReward[];
+  stamps?: ClientStamp[];
+  rewards?: DashboardReward[];
+};
+
+const PAGE_BG = "rgba(121, 134, 115, 0.24)";
+const MAIN_CARD_COLOR = "#92534C";
+const TITLE_COLOR = "#92534C";
+const CARD_RADIUS = 10;
+
+const DEFAULT_CATEGORY_ORDER = [
+  "Sandwiches",
+  "Main Courses",
+  "Desserts",
+  "Coffee",
+  "Hooka",
+];
+
+function cleanText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function pluralizeUpper(count: number, singular: string, plural?: string) {
+  return `${count} ${count === 1 ? singular : plural ?? `${singular}S`}`;
+}
+
+function normalizeCategoryName(name?: string | null) {
+  const safeName = cleanText(name);
+  const lower = safeName.toLowerCase();
+
+  if (lower === "sandwich" || lower === "sandwiches") return "Sandwiches";
+  if (lower === "main course" || lower === "main courses" || lower === "maincourse") return "Main Courses";
+  if (lower === "dessert" || lower === "desserts") return "Desserts";
+  if (lower === "coffee" || lower === "coffees") return "Coffee";
+  if (lower === "desserts 2" || lower === "hooka" || lower === "hookah" || lower === "hookas" || lower === "hookahs") return "Hooka";
+
+  return safeName || "Reward";
+}
+
+function makeCategoryMap(categories?: LoyaltyCategory[]) {
+  const map = new Map<string, string>();
+
+  for (const category of categories ?? []) {
+    const record = category as AnyRecord;
+    const id = cleanText(record.id);
+    const name = normalizeCategoryName(record.name);
+    if (id && name) map.set(id, name);
+  }
+
+  return map;
+}
+
+function extractCategoryName(item: unknown, categoryMap: Map<string, string>, fallbackIndex = 0) {
+  const record = (item ?? {}) as AnyRecord;
+
+  const categoryId = cleanText(record.category_id);
+  if (categoryId && categoryMap.has(categoryId)) {
+    return categoryMap.get(categoryId) || DEFAULT_CATEGORY_ORDER[fallbackIndex] || "Reward";
+  }
+
+  const directName =
+    cleanText(record.category_name) ||
+    cleanText(record.name) ||
+    cleanText(record.category?.name) ||
+    cleanText(record.loyalty_categories?.name) ||
+    cleanText(record.categories?.name) ||
+    cleanText(record.loyalty_category?.name);
+
+  if (directName) return normalizeCategoryName(directName);
+
+  const rewardType = cleanText(record.reward_type);
+  if (rewardType) {
+    return normalizeCategoryName(
+      rewardType
+        .replace(/^1\s+Free\s+/i, "")
+        .replace(/^Free\s+/i, "")
+        .replace(/\s+Item$/i, "")
+        .trim()
+    );
+  }
+
+  return DEFAULT_CATEGORY_ORDER[fallbackIndex] || "Reward";
+}
+
+function getSingularCategory(name: string) {
+  const normalized = normalizeCategoryName(name);
+  const map: Record<string, string> = {
+    Sandwiches: "Sandwich",
+    "Main Courses": "Main Course",
+    Desserts: "Dessert",
+    Coffee: "Coffee",
+    Hooka: "Hooka",
+  };
+  return map[normalized] ?? normalized;
+}
+
+function getStampIcon(categoryName: string) {
+  const lower = normalizeCategoryName(categoryName).toLowerCase();
+
+  if (lower.includes("sandwich")) return "/sandwich.png";
+  if (lower.includes("main course")) return "/main course.png";
+  if (lower.includes("coffee")) return "/coffee.png";
+  if (lower.includes("hooka") || lower.includes("hookah")) return "/hooka.png";
+  if (lower.includes("dessert")) return "/gift.png";
+
+  return "/gift.png";
+}
+
+function getRewardState(reward: DashboardReward) {
+  if (reward.status === "available") return { label: "YOUR GIFT IS ON ITS WAY.", action: "CLAIM" };
+  if (reward.status === "claimed") return { label: "YOUR GIFT IS ON ITS WAY.", action: "PENDING" };
+  return { label: "CONFIRMED", action: "CONFIRMED" };
+}
+
+function isRedeemedRewardStillVisible(reward: DashboardReward) {
   if (reward.status !== "redeemed") return true;
   if (!reward.redeemed_at) return false;
 
   const redeemedAt = new Date(reward.redeemed_at).getTime();
-  if (!Number.isFinite(redeemedAt)) return false;
-
-  return Date.now() - redeemedAt < REDEEMED_REWARD_VISIBLE_MS;
+  if (Number.isNaN(redeemedAt)) return false;
+  return Date.now() - redeemedAt < 2 * 60 * 60 * 1000;
 }
 
-function getRewardStatusLabel(status: Reward["status"]) {
-  if (status === "available") return "Ready to claim";
-  if (status === "claimed") return "Waiting for staff";
-  if (status === "redeemed") return "Confirmed";
-  return "Expired";
+function rewardPalette(index: number) {
+  const palettes = [
+    { bg: "#798673", text: "#ffffff", subText: "#eef3ec", pillBg: "#f0cf61", pillText: "#1c2530" },
+    { bg: "#c7867d", text: "#1c2530", subText: "#fff7f1", pillBg: "#f0cf61", pillText: "#1c2530" },
+    { bg: "#5f879c", text: "#ffffff", subText: "#eef7fb", pillBg: "#f0cf61", pillText: "#1c2530" },
+  ];
+
+  return palettes[index % palettes.length];
 }
 
-function getFirstName(name: string) {
-  return name.trim().split(/\s+/)[0] || name;
-}
+function RewardCard({
+  reward,
+  index,
+  categoryMap,
+  onClaim,
+}: {
+  reward: DashboardReward;
+  index: number;
+  categoryMap: Map<string, string>;
+  onClaim: (rewardId: string) => void;
+}) {
+  const palette = rewardPalette(index);
+  const categoryName = extractCategoryName(reward, categoryMap, index);
+  const state = getRewardState(reward);
 
-function getCategoryDisplayName(name: string) {
-  return CATEGORY_DISPLAY_NAMES[name] ?? name;
-}
-
-function getRewardSingularName(name: string) {
-  const displayName = getCategoryDisplayName(name);
-
-  const singularMap: Record<string, string> = {
-    Sandwiches: "Sandwich",
-    "Main Courses": "Main Course",
-    Desserts: "Dessert",
-    Coffees: "Coffee",
-    Hookas: "Hooka",
-  };
-
-  return singularMap[displayName] ?? displayName.replace(/s$/i, "");
-}
-
-function SandwichStampIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5 text-[#c85b58]">
-      <path
-        d="M5 9.6c1.25-3.2 4-5.1 7-5.1s5.75 1.9 7 5.1H5Z"
-        fill="currentColor"
-        opacity="0.95"
+    <div
+      className="relative overflow-hidden"
+      style={{ borderRadius: CARD_RADIUS, background: palette.bg, minHeight: 100 }}
+    >
+      <div
+        className="absolute left-0 top-1/2 h-[128px] w-[128px] -translate-x-[62%] -translate-y-1/2 rounded-full bg-white"
+        aria-hidden="true"
       />
-      <path d="M4.5 11h15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path
-        d="M6.2 13.2h11.6l-1.15 5.1H7.35L6.2 13.2Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <path d="M9 15.4h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.8" />
-    </svg>
+
+      <div className="relative flex min-h-[100px] items-center justify-between gap-4 py-4 pl-[92px] pr-4">
+        <div className="absolute left-5 top-1/2 -translate-y-1/2">
+          <Image src="/gift.png" alt="Gift" width={64} height={64} className="h-[64px] w-[64px] object-contain" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-[18px] font-semibold uppercase" style={{ color: palette.text }}>
+            {`1 FREE ${getSingularCategory(categoryName).toUpperCase()}`}
+          </h3>
+          <p className="mt-1 text-[12px] font-bold uppercase tracking-[0.04em]" style={{ color: palette.subText }}>
+            {state.label}
+          </p>
+        </div>
+
+        <div className="shrink-0">
+          {reward.status === "available" ? (
+            <button
+              type="button"
+              onClick={() => onClaim(reward.id)}
+              className="inline-flex min-w-[112px] items-center justify-center rounded-[10px] px-4 py-3 text-[14px] font-bold uppercase"
+              style={{ background: palette.pillBg, color: palette.pillText }}
+            >
+              {state.action}
+            </button>
+          ) : (
+            <div
+              className="inline-flex min-w-[112px] items-center justify-center rounded-[10px] px-4 py-3 text-[14px] font-bold uppercase"
+              style={{ background: palette.pillBg, color: palette.pillText }}
+            >
+              {state.action}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
-function getRewardTitle(reward: Reward, categoryName?: string) {
-  const fallback = reward.reward_type
-    .replace(/^Free\s+/i, "")
-    .replace(/\s+Item$/i, "")
-    .trim();
+function StampRow({ item, index, categoryMap }: { item: ClientStamp; index: number; categoryMap: Map<string, string> }) {
+  const count = Math.max(0, Math.min(5, Number((item as AnyRecord).stamp_count ?? 0)));
+  const categoryName = extractCategoryName(item, categoryMap, index);
+  const iconSrc = getStampIcon(categoryName);
+  const lastActiveIndex = count > 0 ? count - 1 : -1;
 
-  return `1 Free ${getRewardSingularName(categoryName ?? fallback)}`;
+  return (
+    <div>
+      <h3 className="text-[18px] font-semibold uppercase text-[#0f2b3a]">{categoryName}</h3>
+
+      <div className="mt-4 flex gap-3">
+        {Array.from({ length: 5 }).map((_, stampIndex) => {
+          const filled = stampIndex < count;
+          const isLastActive = stampIndex === lastActiveIndex && count > 0;
+
+          return (
+            <div
+              key={stampIndex}
+              className={`flex h-[60px] w-[60px] items-center justify-center rounded-full border ${
+                filled
+                  ? isLastActive
+                    ? "border-[#d1645f] bg-[#fff6e6]"
+                    : "border-transparent bg-[#fff6e6]"
+                  : "border-[#d9d9d9] border-dashed bg-white"
+              }`}
+            >
+              {filled ? (
+                <Image src={iconSrc} alt={categoryName} width={34} height={34} className="h-[34px] w-[34px] object-contain" />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
-export function ClientDashboard({ profile, categories, initialStamps, initialRewards }: Props) {
-  const [stamps, setStamps] = useState<ClientStamp[]>(initialStamps);
-  const [rewards, setRewards] = useState<Reward[]>(initialRewards);
-  const [highlightCatId, setHighlightCatId] = useState<string | null>(null);
-  const [celebrate, setCelebrate] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const [claimingRewardId, setClaimingRewardId] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+export function ClientDashboard({
+  profile,
+  categories = [],
+  initialStamps,
+  initialRewards,
+  stamps,
+  rewards,
+}: ClientDashboardProps) {
+  const [localRewards, setLocalRewards] = useState<DashboardReward[]>((rewards ?? initialRewards ?? []) as DashboardReward[]);
 
-  const knownRewardIdsRef = useRef(new Set(initialRewards.map((reward) => reward.id)));
-  const supabase = useMemo(() => createClient(), []);
+  useEffect(() => {
+    setLocalRewards((rewards ?? initialRewards ?? []) as DashboardReward[]);
+  }, [rewards, initialRewards]);
 
-  const stampByCat = useMemo(() => {
-    const map = new Map<string, number>();
-    stamps.forEach((stamp) => map.set(stamp.category_id, stamp.stamp_count));
-    return map;
-  }, [stamps]);
+  const categoryMap = useMemo(() => makeCategoryMap(categories), [categories]);
+  const stampRows = (stamps ?? initialStamps ?? []) as ClientStamp[];
 
-  const catNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    categories.forEach((category) => map.set(category.id, category.name));
-    return map;
-  }, [categories]);
+  const totalStamps = useMemo(() => {
+    return stampRows.reduce((sum, item) => sum + Math.max(0, Number((item as AnyRecord).stamp_count ?? 0)), 0);
+  }, [stampRows]);
 
-  const visibleRewards = useMemo(
-    () =>
-      rewards
-        .filter((reward) => ["available", "claimed", "redeemed"].includes(reward.status))
-        .filter(isRedeemedRewardStillVisible)
-        .sort((a, b) => new Date(b.earned_at).getTime() - new Date(a.earned_at).getTime()),
-    // now intentionally refreshes redeemed reward visibility every minute.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rewards, now],
-  );
-
-  const totalStamps = useMemo(
-    () => categories.reduce((sum, category) => sum + (stampByCat.get(category.id) ?? 0), 0),
-    [categories, stampByCat],
-  );
-
-  const handleNewAvailableReward = useCallback(
-    (reward: Reward) => {
-      if (knownRewardIdsRef.current.has(reward.id)) return;
-
-      knownRewardIdsRef.current.add(reward.id);
-      setCelebrate(getRewardTitle(reward, catNameById.get(reward.category_id)));
-    },
-    [catNameById],
-  );
-
-  const mergeRewards = useCallback(
-    (nextRewards: Reward[], shouldCelebrateNewRewards: boolean) => {
-      const sortedRewards = [...nextRewards].sort(
-        (a, b) => new Date(b.earned_at).getTime() - new Date(a.earned_at).getTime(),
-      );
-
-      if (shouldCelebrateNewRewards) {
-        sortedRewards
-          .filter((reward) => reward.status === "available")
-          .forEach((reward) => handleNewAvailableReward(reward));
-      } else {
-        sortedRewards.forEach((reward) => knownRewardIdsRef.current.add(reward.id));
-      }
-
-      setRewards(sortedRewards);
-    },
-    [handleNewAvailableReward],
-  );
-
-  const refreshClientState = useCallback(
-    async (shouldCelebrateNewRewards = true) => {
-      const [{ data: nextStamps }, { data: nextRewards }] = await Promise.all([
-        supabase.from("client_stamps").select("*").eq("client_id", profile.id),
-        supabase
-          .from("rewards")
-          .select("*")
-          .eq("client_id", profile.id)
-          .in("status", ["available", "claimed", "redeemed"])
-          .order("earned_at", { ascending: false }),
-      ]);
-
-      if (nextStamps) setStamps(nextStamps as ClientStamp[]);
-      if (nextRewards) mergeRewards(nextRewards as Reward[], shouldCelebrateNewRewards);
-    },
-    [mergeRewards, profile.id, supabase],
-  );
-
-  async function claimReward(rewardId: string) {
-    setClaimingRewardId(rewardId);
-
-    const res = await fetch("/api/reward/claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reward_id: rewardId }),
-    });
-
-    const json = await res.json();
-    setClaimingRewardId(null);
-
-    if (!res.ok) {
-      setToast(json.error ?? "Could not claim reward.");
-      setTimeout(() => setToast(null), 2200);
-      return;
-    }
-
-    setRewards((prev) =>
-      prev.map((reward) => (reward.id === rewardId ? { ...reward, status: "claimed" } : reward)),
+  const visibleRewards = useMemo(() => {
+    return localRewards.filter(
+      (reward) => ["available", "claimed", "redeemed"].includes(reward.status) && isRedeemedRewardStillVisible(reward)
     );
-    setToast("Reward sent to staff for confirmation.");
-    setTimeout(() => setToast(null), 2200);
+  }, [localRewards]);
+
+  async function handleClaim(rewardId: string) {
+    setLocalRewards((current) => current.map((reward) => (reward.id === rewardId ? { ...reward, status: "claimed" } : reward)));
+
+    try {
+      const response = await fetch("/api/reward/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rewardId }),
+      });
+
+      if (!response.ok) throw new Error("Failed to claim reward");
+    } catch {
+      setLocalRewards((current) => current.map((reward) => (reward.id === rewardId ? { ...reward, status: "available" } : reward)));
+    }
   }
 
-  useEffect(() => {
-    const stampChan = supabase
-      .channel(`stamps:${profile.id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "client_stamps", filter: `client_id=eq.${profile.id}` },
-        (payload) => {
-          const newRow = payload.new as ClientStamp;
-          const oldRow = payload.old as ClientStamp;
-          setStamps((prev) => prev.map((stamp) => (stamp.id === newRow.id ? newRow : stamp)));
-
-          if (newRow.stamp_count > (oldRow?.stamp_count ?? 0)) {
-            setHighlightCatId(newRow.category_id);
-            setToast("New stamp added!");
-            setTimeout(() => setToast(null), 1800);
-            setTimeout(() => setHighlightCatId(null), 1200);
-          }
-        },
-      )
-      .subscribe();
-
-    const rewardChan = supabase
-      .channel(`rewards:${profile.id}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "rewards", filter: `client_id=eq.${profile.id}` },
-        (payload) => {
-          const reward = payload.new as Reward;
-          if (reward.status !== "available") return;
-
-          setRewards((prev) => {
-            if (prev.some((item) => item.id === reward.id)) return prev;
-            return [reward, ...prev];
-          });
-          handleNewAvailableReward(reward);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "rewards", filter: `client_id=eq.${profile.id}` },
-        (payload) => {
-          const reward = payload.new as Reward;
-
-          if (["available", "claimed", "redeemed"].includes(reward.status)) {
-            setRewards((prev) => {
-              const exists = prev.some((item) => item.id === reward.id);
-              if (exists) return prev.map((item) => (item.id === reward.id ? reward : item));
-              return [reward, ...prev];
-            });
-          } else {
-            setRewards((prev) => prev.filter((item) => item.id !== reward.id));
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(stampChan);
-      supabase.removeChannel(rewardChan);
-    };
-  }, [handleNewAvailableReward, profile.id, supabase]);
-
-  useEffect(() => {
-    void refreshClientState(false);
-
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void refreshClientState(true);
-      }
-    }, 2500);
-
-    const handleFocus = () => void refreshClientState(true);
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleFocus);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
-    };
-  }, [refreshClientState]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 60 * 1000);
-    return () => window.clearInterval(interval);
-  }, []);
+  const displayName = (profile.full_name || "CLIENT").toUpperCase();
 
   return (
-    <AppShell title="Loyalty Program" role="client">
-      <Toast message={toast} />
-      <RewardCelebration open={!!celebrate} rewardLabel={celebrate} onClose={() => setCelebrate(null)} />
+    <AppShell
+      title="Loyalty Program"
+      roleLabel=""
+      headerBackground={PAGE_BG}
+      pageBackground={PAGE_BG}
+      logoSrc="/pros-logo-basic.png"
+      logoAlt="PRO's Logo"
+    >
+      <div className="mx-auto w-full max-w-md px-4 pb-12 pt-4">
+        <section
+          className="relative overflow-hidden px-5 py-5"
+          style={{ borderRadius: CARD_RADIUS, backgroundColor: MAIN_CARD_COLOR, minHeight: 230 }}
+        >
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage: "url('/client-main-card.png'), url('/client main card.png')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              transform: "scale(1.08)",
+              transformOrigin: "center",
+            }}
+            aria-hidden="true"
+          />
 
-      <section className="-mx-5 -mt-5 min-h-[calc(100vh-4.25rem)] bg-[#c7867d] px-5 pb-7 pt-5 text-[#182f38]">
-        <section className="mb-6 overflow-hidden rounded-[2rem] bg-white p-4 text-[#182f38] shadow-[0_14px_34px_rgba(39,24,22,0.12)]">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#efe8e4]">
-                <div className="absolute top-3 size-7 rounded-full bg-[#91534c]" />
-                <div className="absolute -bottom-4 size-14 rounded-t-full bg-[#91534c]" />
+          <div className="relative z-10">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 pt-0.5">
+                <p className="text-[18px] font-light uppercase tracking-[0.03em] text-white">HELLO</p>
+                <h1 className="mt-1 truncate text-[22px] font-black uppercase text-[#f0cf61]">{displayName},</h1>
               </div>
 
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl font-black uppercase leading-tight tracking-[0.03em] text-[#182f38]">
-                  Hello<br />
-                  <span className="text-[#ffd66b]">{getFirstName(profile.full_name)},</span>
-                </h1>
+              <div className="shrink-0 bg-white p-2" style={{ borderRadius: 8 }}>
+                <QRCode value={profile.client_code || profile.id} size={82} bgColor="transparent" fgColor="#243744" />
               </div>
             </div>
 
-            <div className="shrink-0 bg-white p-1">
-              <QRCodeSVG value={profile.client_code ?? profile.id} size={68} bgColor="#ffffff" fgColor="#182f38" level="M" />
-            </div>
-          </div>
+            <div className="flex min-h-[98px] flex-col justify-center gap-3">
+              <div className="flex items-center gap-2 text-[16px] font-medium uppercase text-white">
+                <Image src="/medal.png" alt="Rewards" width={18} height={18} className="h-[18px] w-[18px] object-contain" />
+                <span>{pluralizeUpper(visibleRewards.length, "REWARD")}</span>
+              </div>
 
-          <div className="mt-3 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#91534c]">Rewards {visibleRewards.length} - Stamps {totalStamps}</p>
+              <div className="flex items-center gap-2 text-[16px] font-medium uppercase text-white">
+                <Image src="/approved.png" alt="Stamps" width={18} height={18} className="h-[18px] w-[18px] object-contain" />
+                <span>{pluralizeUpper(totalStamps, "STAMP")}</span>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#91534c]">#{profile.client_code ?? "001"}</p>
-            </div>
-          </div>
 
-          <a
-            href="mailto:reviews@prosclub.com?subject=PRO%27s%20Club%20Review"
-            className="mt-5 inline-flex min-w-36 items-center justify-center rounded-xl bg-[#ffd66b] px-5 py-3 text-sm font-black uppercase tracking-[0.08em] text-[#182f38] transition active:scale-[0.98]"
-          >
-            Message
-          </a>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-[10px] bg-[#f0cf61] px-5 py-3 text-[15px] font-bold uppercase text-[#1c2530]"
+            >
+              MESSAGE US
+            </button>
+          </div>
         </section>
 
         {visibleRewards.length > 0 && (
-          <section className="mb-7">
-            <div className="mb-3 px-1">
-              <p className="text-[10px] font-black uppercase tracking-[0.26em] text-[#ffd66b]">Rewards</p>
-              <h2 className="mt-1 text-2xl font-black uppercase tracking-tight text-white">My Gifts</h2>
+          <section className="mt-10">
+            <div className="mb-5">
+              <h2 className="text-[28px] font-black uppercase leading-none" style={{ color: TITLE_COLOR }}>
+                MY GIFTS
+              </h2>
             </div>
 
-            <div className="space-y-3">
-              <AnimatePresence initial={false}>
-                {visibleRewards.map((reward) => {
-                  const isAvailable = reward.status === "available";
-                  const isClaimed = reward.status === "claimed";
-                  const isRedeemed = reward.status === "redeemed";
-                  const isClaiming = claimingRewardId === reward.id;
-                  const categoryName = catNameById.get(reward.category_id);
-
-                  return (
-                    <motion.div
-                      key={reward.id}
-                      layout
-                      initial={{ y: 10, opacity: 0, scale: 0.98 }}
-                      animate={{ y: 0, opacity: 1, scale: 1 }}
-                      exit={{ x: 42, opacity: 0, scale: 0.98 }}
-                      className="relative overflow-hidden rounded-3xl border border-white/40 bg-white/95 p-4 text-[#182f38] shadow-card"
-                    >
-                      <div className="absolute -right-10 -top-10 size-28 rounded-full bg-[#ffd66b]/30 blur-2xl" />
-                      <div className="relative flex items-center gap-3">
-                        <div className="flex size-14 shrink-0 items-center justify-center">
-                          <Image
-                            src="/gift.png"
-                            alt="Gift reward"
-                            width={48}
-                            height={48}
-                            className="size-12 object-contain"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-black leading-tight">{getRewardTitle(reward, categoryName)}</p>
-                          <p className="mt-1 truncate text-xs font-semibold text-black/45">
-                            {getCategoryDisplayName(categoryName ?? "Reward")} · {new Date(reward.earned_at).toLocaleDateString()}
-                          </p>
-                          <p
-                            className={`mt-1 text-[11px] font-black uppercase tracking-wider ${
-                              isRedeemed ? "text-emerald-600" : isClaimed ? "text-[#4f7688]" : "text-[#c85b58]"
-                            }`}
-                          >
-                            {getRewardStatusLabel(reward.status)}
-                          </p>
-                        </div>
-
-                        {isAvailable && (
-                          <button
-                            onClick={() => claimReward(reward.id)}
-                            disabled={isClaiming}
-                            className="shrink-0 rounded-2xl bg-[#182f38] px-4 py-3 text-xs font-black uppercase tracking-wide text-white transition active:scale-[0.98] disabled:opacity-50"
-                          >
-                            {isClaiming ? "Claiming" : "Claim"}
-                          </button>
-                        )}
-
-                        {isClaimed && (
-                          <div className="shrink-0 rounded-2xl bg-[#4f7688]/12 px-3 py-2 text-center text-[11px] font-black uppercase leading-tight text-[#4f7688]">
-                            Waiting
-                          </div>
-                        )}
-
-                        {isRedeemed && (
-                          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-lg font-black text-white shadow-soft">
-                            ✓
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
+            <div className="space-y-6">
+              {visibleRewards.map((reward, index) => (
+                <RewardCard key={reward.id} reward={reward} index={index} categoryMap={categoryMap} onClaim={handleClaim} />
+              ))}
             </div>
           </section>
         )}
 
-        <section className="mb-7">
-          <div className="mb-3 px-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.26em] text-[#ffd66b]">Your stamps</p>
-            <h2 className="mt-1 text-2xl font-black uppercase tracking-tight text-white">Progress</h2>
+        <section className="mt-10">
+          <div className="mb-5">
+            <h2 className="text-[28px] font-black uppercase leading-none" style={{ color: TITLE_COLOR }}>
+              MY STAMPS
+            </h2>
           </div>
 
-          <div className="overflow-hidden rounded-[5px] border border-white/40 bg-white/95 p-3 text-[#182f38] shadow-card">
-            <div className="divide-y divide-black/[0.04]">
-              {categories.map((category) => {
-                const count = stampByCat.get(category.id) ?? 0;
-                const isHighlighted = highlightCatId === category.id;
-                const displayName = getCategoryDisplayName(category.name);
-                const isSandwiches = displayName.toLowerCase().includes("sandwich");
-
-                return (
-                  <motion.div
-                    key={category.id}
-                    animate={isHighlighted ? { scale: [1, 1.018, 1] } : { scale: 1 }}
-                    transition={{ duration: 0.45, ease: "easeOut" }}
-                    className="py-2.5 first:pt-0 last:pb-0"
-                  >
-                    <div className="mb-2">
-                      <h3 className="text-base font-black leading-tight text-[#182f38]">{displayName}</h3>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {Array.from({ length: 5 }).map((_, index) => {
-                        const filled = index < count;
-                        const isLatestStamp = isHighlighted && index === count - 1;
-
-                        return (
-                          <motion.div
-                            key={index}
-                            initial={false}
-                            animate={isLatestStamp ? { scale: [1, 1.16, 1] } : { scale: 1 }}
-                            className={`flex size-10 items-center justify-center rounded-full border ${
-                              filled
-                                ? "border-[#c85b58] bg-white"
-                                : "border-dashed border-[#182f38]/12 bg-white"
-                            }`}
-                          >
-                            {filled ? (
-                              isSandwiches ? (
-                                <SandwichStampIcon />
-                              ) : (
-                                <span className="size-3 rounded-full bg-[#c85b58]" />
-                              )
-                            ) : null}
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                );
-              })}
+          <div className="bg-white px-5 py-5" style={{ borderRadius: CARD_RADIUS }}>
+            <div className="space-y-6">
+              {stampRows.map((item, index) => (
+                <StampRow key={(item as AnyRecord).category_id || (item as AnyRecord).id || index} item={item} index={index} categoryMap={categoryMap} />
+              ))}
             </div>
           </div>
         </section>
-      </section>
+      </div>
     </AppShell>
   );
 }
+
+export default ClientDashboard;
