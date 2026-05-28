@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { QrScanner } from "@/components/QrScanner";
@@ -17,8 +18,10 @@ type ClaimedReward = Reward & {
   client?: Profile;
 };
 
-// STAFF_QR_EXACT_SCAN_FIX_V1
+// STAFF_QR_SELECT_CLIENT_FIX_V2
 export function StaffConsole({ profile, categories }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Profile[]>([]);
@@ -152,24 +155,36 @@ export function StaffConsole({ profile, categories }: Props) {
     return trimmed.replace(/^#/, "");
   }
 
+  const loadClientFromScannedCode = useCallback(
+    async (rawCode: string, updateUrl = true) => {
+      const code = normalizeScannedCode(rawCode);
+
+      if (!code) {
+        flash("QR code is empty.", "error");
+        return;
+      }
+
+      const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`, { cache: "no-store" });
+      const json = await res.json();
+
+      if (!res.ok || !json.client) {
+        flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
+        return;
+      }
+
+      const foundClient = json.client as Profile;
+      await pickClient(foundClient);
+
+      if (updateUrl) {
+        router.replace(`/staff?client=${encodeURIComponent(foundClient.client_code ?? foundClient.id)}`, { scroll: false });
+      }
+    },
+    [flash, pickClient, router],
+  );
+
   async function onScanResult(text: string) {
     setScanning(false);
-    const code = normalizeScannedCode(text);
-
-    if (!code) {
-      flash("QR code is empty.", "error");
-      return;
-    }
-
-    const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`);
-    const json = await res.json();
-
-    if (!res.ok || !json.client) {
-      flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
-      return;
-    }
-
-    await pickClient(json.client as Profile);
+    await loadClientFromScannedCode(text);
   }
 
   function toggleCategory(categoryId: string) {
@@ -246,6 +261,12 @@ export function StaffConsole({ profile, categories }: Props) {
     if (client) await refreshSelectedClient(client.id);
     await loadClaimedRewards();
   }
+
+  useEffect(() => {
+    const codeFromUrl = searchParams.get("client");
+    if (!codeFromUrl || client) return;
+    void loadClientFromScannedCode(codeFromUrl, false);
+  }, [client, loadClientFromScannedCode, searchParams]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -332,7 +353,7 @@ export function StaffConsole({ profile, categories }: Props) {
               onChange={(event) => setQuery(event.target.value)}
               autoComplete="off"
             />
-            <button onClick={() => setScanning(true)} className="btn-primary !px-4 shrink-0" title="Scan QR">
+            <button type="button" onClick={() => setScanning(true)} className="btn-primary !px-4 shrink-0" title="Scan QR">
               <span aria-hidden>📷</span>
             </button>
           </div>
@@ -382,7 +403,7 @@ export function StaffConsole({ profile, categories }: Props) {
       {client && (
         <>
           <section className="mb-5">
-            <button onClick={() => setClient(null)} className="text-xs font-semibold text-[#071a20]/70 mb-3">
+            <button onClick={() => { setClient(null); router.replace("/staff", { scroll: false }); }} className="text-xs font-semibold text-[#071a20]/70 mb-3">
               ← Back to search
             </button>
             <div className="card p-5 text-[#071a20]">
