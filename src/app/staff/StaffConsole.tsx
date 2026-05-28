@@ -17,6 +17,7 @@ type ClaimedReward = Reward & {
   client?: Profile;
 };
 
+// STAFF_QR_EXACT_SCAN_FIX_V1
 export function StaffConsole({ profile, categories }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [query, setQuery] = useState("");
@@ -160,26 +161,15 @@ export function StaffConsole({ profile, categories }: Props) {
       return;
     }
 
-    const res = await fetch(`/api/client/search?q=${encodeURIComponent(code)}`);
+    const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`);
     const json = await res.json();
 
-    if (!res.ok) {
-      flash(json.error ?? "Client not found for that QR.", "error");
+    if (!res.ok || !json.client) {
+      flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
       return;
     }
 
-    const matches = (json.results ?? []) as Profile[];
-    const exactMatch =
-      matches.find((item) => item.client_code?.toLowerCase() === code.toLowerCase()) ??
-      matches.find((item) => item.id === code) ??
-      matches[0];
-
-    if (!exactMatch) {
-      flash(`Client not found for QR: ${code}`, "error");
-      return;
-    }
-
-    await pickClient(exactMatch);
+    await pickClient(json.client as Profile);
   }
 
   function toggleCategory(categoryId: string) {
