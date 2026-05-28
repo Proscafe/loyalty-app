@@ -18,7 +18,7 @@ type ClaimedReward = Reward & {
   client?: Profile;
 };
 
-// STAFF_QR_SELECT_CLIENT_FIX_V2
+// STAFF_QR_REDIRECT_HARD_FIX_V3
 export function StaffConsole({ profile, categories }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -161,29 +161,50 @@ export function StaffConsole({ profile, categories }: Props) {
 
       if (!code) {
         flash("QR code is empty.", "error");
+        setScanning(false);
         return;
       }
 
-      const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`, { cache: "no-store" });
-      const json = await res.json();
+      try {
+        const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`, { cache: "no-store" });
+        const json = await res.json();
 
-      if (!res.ok || !json.client) {
-        flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
-        return;
-      }
+        if (!res.ok || !json.client) {
+          flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
+          setScanning(false);
+          return;
+        }
 
-      const foundClient = json.client as Profile;
-      await pickClient(foundClient);
+        const foundClient = json.client as Profile;
 
-      if (updateUrl) {
-        router.replace(`/staff?client=${encodeURIComponent(foundClient.client_code ?? foundClient.id)}`, { scroll: false });
+        // Close camera first so the user immediately sees the staff profile view.
+        setScanning(false);
+        setClient(foundClient);
+        setResults([]);
+        setQuery("");
+        setSelectedCategories([]);
+        await refreshSelectedClient(foundClient.id);
+        await loadClaimedRewards();
+
+        const nextPath = `/staff?client=${encodeURIComponent(foundClient.client_code ?? foundClient.id)}`;
+
+        if (updateUrl) {
+          // Use the History API instead of router navigation so we do not lose the loaded client state.
+          window.history.replaceState(null, "", nextPath);
+        }
+
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        flash(`Opened ${foundClient.full_name}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not open scanned client.";
+        flash(message, "error");
+        setScanning(false);
       }
     },
-    [flash, pickClient, router],
+    [flash, loadClaimedRewards, refreshSelectedClient],
   );
 
   async function onScanResult(text: string) {
-    setScanning(false);
     await loadClientFromScannedCode(text);
   }
 
