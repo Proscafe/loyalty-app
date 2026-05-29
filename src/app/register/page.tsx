@@ -10,7 +10,7 @@ export default async function RegisterPage() {
   if (profile) redirect(homeForRole(profile.role));
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#c98b84] px-7 py-8 text-white sm:px-8">
+    <main className="relative min-h-screen overflow-hidden bg-[#c98b84] px-7 pt-4 pb-8 text-white sm:px-8">
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: "url('/pros-register-bg.jpg')" }}
@@ -18,7 +18,7 @@ export default async function RegisterPage() {
       />
       <div className="absolute inset-0 bg-[#c98b84]/5" aria-hidden="true" />
 
-      <section className="relative z-10 mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[390px] flex-col justify-start pt-5 font-raleway">
+      <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-[390px] flex-col justify-start pt-2 font-raleway">
         <div className="w-full">
           <div className="mb-6 text-left">
             <Image
