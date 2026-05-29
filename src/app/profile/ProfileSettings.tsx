@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -164,9 +164,6 @@ export default function ProfileSettings({
   const [passwordStatus, setPasswordStatus] = useState("");
   const [isSavingBirthday, setIsSavingBirthday] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [loadedTransactions, setLoadedTransactions] = useState<any[]>(recentTransactions ?? []);
-  const [loadedRewards, setLoadedRewards] = useState<any[]>(recentRewards ?? []);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
   const years = useMemo(() => getYears(), []);
   const days = useMemo(
@@ -179,13 +176,13 @@ export default function ProfileSettings({
   );
 
   const history = useMemo(() => {
-    const rewardItems = loadedRewards.map((item) => ({
+    const rewardItems = recentRewards.map((item) => ({
       ...item,
       _type: "reward",
       _date: item.created_at || item.earned_at || item.redeemed_at,
     }));
 
-    const transactionItems = loadedTransactions.map((item) => ({
+    const transactionItems = recentTransactions.map((item) => ({
       ...item,
       _type: "transaction",
       _date: item.created_at,
@@ -198,74 +195,7 @@ export default function ProfileSettings({
         return bDate - aDate;
       })
       .slice(0, 5);
-  }, [loadedRewards, loadedTransactions]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadHistory() {
-      if (!profile?.id) {
-        setIsHistoryLoading(false);
-        return;
-      }
-
-      setIsHistoryLoading(true);
-
-      const timeout = window.setTimeout(() => {
-        if (isMounted) setIsHistoryLoading(false);
-      }, 4500);
-
-      try {
-        const [transactionsResult, rewardsResult] = await Promise.all([
-          supabase
-            .from("stamp_transactions")
-            .select(
-              `
-              id,
-              action_type,
-              notes,
-              created_at,
-              loyalty_categories:category_id(name)
-            `,
-            )
-            .eq("client_id", profile.id)
-            .order("created_at", { ascending: false })
-            .limit(5),
-
-          supabase
-            .from("rewards")
-            .select(
-              `
-              id,
-              reward_type,
-              status,
-              created_at,
-              earned_at,
-              redeemed_at,
-              loyalty_categories:category_id(name)
-            `,
-            )
-            .eq("client_id", profile.id)
-            .order("created_at", { ascending: false })
-            .limit(5),
-        ]);
-
-        if (!isMounted) return;
-
-        setLoadedTransactions(transactionsResult.data ?? []);
-        setLoadedRewards(rewardsResult.data ?? []);
-      } finally {
-        window.clearTimeout(timeout);
-        if (isMounted) setIsHistoryLoading(false);
-      }
-    }
-
-    loadHistory();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [profile?.id, supabase]);
+  }, [recentRewards, recentTransactions]);
 
   async function saveBirthday(year: number, month: number, day: number) {
     if (!profile?.id) return;
@@ -552,11 +482,7 @@ export default function ProfileSettings({
           <h2 className="text-[22px] font-black text-white">History</h2>
 
           <div className="mt-4 overflow-hidden rounded-[16px] border border-white/12 bg-white/10 backdrop-blur-xl">
-            {isHistoryLoading ? (
-              <p className="px-4 py-4 text-[14px] font-medium text-white/70">
-                Loading history...
-              </p>
-            ) : history.length > 0 ? (
+            {history.length > 0 ? (
               history.map((item, index) => (
                 <div
                   key={`${item._type}-${item.id}`}

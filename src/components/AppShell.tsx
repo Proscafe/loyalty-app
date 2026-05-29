@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -21,9 +21,24 @@ export function AppShell({
   pageBackground = "#ffffff",
 }: AppShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
 
   function handleProfileClick() {
     router.push("/profile");
+  }
+
+  function handleLogoClick() {
+    if (pathname?.startsWith("/staff")) {
+      router.push("/staff");
+      return;
+    }
+
+    if (pathname?.startsWith("/dashboard")) {
+      router.push("/dashboard");
+      return;
+    }
+
+    router.push("/");
   }
 
   return (
@@ -42,14 +57,21 @@ export function AppShell({
               "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06))",
           }}
         >
-          <Image
-            src={logoSrc}
-            alt={logoAlt}
-            width={52}
-            height={34}
-            priority
-            className="h-auto w-[52px] shrink-0 object-contain"
-          />
+          <button
+            type="button"
+            onClick={handleLogoClick}
+            aria-label="Go back"
+            className="shrink-0"
+          >
+            <Image
+              src={logoSrc}
+              alt={logoAlt}
+              width={52}
+              height={34}
+              priority
+              className="h-auto w-[52px] object-contain"
+            />
+          </button>
 
           <button
             type="button"
