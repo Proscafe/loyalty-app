@@ -5,17 +5,45 @@ import QRCode from "react-qr-code";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import type { ClientReward, ClientStamp, LoyaltyCategory, Profile } from "@/types";
+type Profile = {
+  id: string;
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  client_code?: string | null;
+  role?: string | null;
+};
+
+type LoyaltyCategory = {
+  id?: string;
+  name?: string;
+};
+
+type ClientStamp = {
+  id?: string;
+  category_id?: string | null;
+  stamp_count?: number | null;
+};
+
+type ClientReward = {
+  id: string;
+  category_id?: string | null;
+  reward_type?: string | null;
+  status?: "available" | "claimed" | "redeemed" | string;
+  created_at?: string | null;
+  earned_at?: string | null;
+  redeemed_at?: string | null;
+};
 
 type AnyRecord = Record<string, any>;
 
 type ClientDashboardProps = {
   profile: Profile;
-  categories?: LoyaltyCategory[];
-  initialStamps?: ClientStamp[];
-  initialRewards?: ClientReward[];
-  stamps?: ClientStamp[];
-  rewards?: ClientReward[];
+  categories?: unknown[];
+  initialStamps?: unknown[];
+  initialRewards?: unknown[];
+  stamps?: unknown[];
+  rewards?: unknown[];
 };
 
 const PAGE_BG =
@@ -78,7 +106,7 @@ function normalizeCategoryName(name?: string | null) {
 function makeCategoryMap(categories?: LoyaltyCategory[]) {
   const map = new Map<string, string>();
 
-  for (const category of categories ?? []) {
+  for (const category of (categories ?? []) as LoyaltyCategory[]) {
     const record = category as AnyRecord;
     const id = cleanText(record.id);
     const name = normalizeCategoryName(record.name);
@@ -381,50 +409,50 @@ function RewardCelebrationModal({
   const giftName = getSingularCategory(categoryName);
 
   const confettiPieces = [
-    ["44%", "-150px", "-80px", "0s", "#f0cf61"],
-    ["48%", "-95px", "-120px", "0.05s", "#ffffff"],
-    ["52%", "-40px", "-145px", "0.1s", "#798673"],
-    ["56%", "35px", "-135px", "0.15s", "#f0cf61"],
-    ["50%", "105px", "-105px", "0.2s", "#ffffff"],
-    ["46%", "150px", "-70px", "0.25s", "#5f879c"],
-    ["54%", "-130px", "5px", "0.3s", "#f0cf61"],
-    ["42%", "120px", "15px", "0.35s", "#ffffff"],
-    ["58%", "-80px", "70px", "0.4s", "#798673"],
-    ["50%", "80px", "85px", "0.45s", "#f0cf61"],
-    ["47%", "-20px", "120px", "0.5s", "#ffffff"],
-    ["53%", "25px", "130px", "0.55s", "#5f879c"],
+    ["8%", "-120px", "0s", "#f0cf61"],
+    ["18%", "-80px", "0.08s", "#ffffff"],
+    ["28%", "-150px", "0.16s", "#798673"],
+    ["38%", "-60px", "0.24s", "#f0cf61"],
+    ["48%", "-130px", "0.32s", "#ffffff"],
+    ["58%", "90px", "0.4s", "#5f879c"],
+    ["68%", "130px", "0.48s", "#f0cf61"],
+    ["78%", "70px", "0.56s", "#ffffff"],
+    ["88%", "150px", "0.64s", "#798673"],
+    ["13%", "120px", "0.72s", "#f0cf61"],
+    ["33%", "40px", "0.8s", "#ffffff"],
+    ["53%", "-40px", "0.88s", "#5f879c"],
+    ["73%", "-110px", "0.96s", "#f0cf61"],
+    ["93%", "110px", "1.04s", "#ffffff"],
   ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-5">
       <style jsx>{`
-        @keyframes confettiBurstBehindGift {
+        @keyframes confettiPop {
           0% {
-            transform: translate3d(0, 0, 0) rotate(0deg) scale(0.4);
+            transform: translate3d(0, -80px, 0) rotate(0deg) scale(0.6);
             opacity: 0;
           }
           12% {
             opacity: 1;
-          }
-          55% {
-            opacity: 1;
+            transform: translate3d(0, -20px, 0) rotate(80deg) scale(1);
           }
           100% {
-            transform: translate3d(var(--x), var(--y), 0) rotate(760deg) scale(1);
+            transform: translate3d(var(--x), 105vh, 0) rotate(980deg) scale(0.85);
             opacity: 0;
           }
         }
 
-        .gift-confetti-piece {
-          position: absolute;
-          top: 96px;
+        .confetti-piece {
+          position: fixed;
+          top: -24px;
           left: var(--l);
-          z-index: 1;
-          width: 8px;
-          height: 15px;
+          z-index: 60;
+          width: 9px;
+          height: 16px;
           border-radius: 2px;
           background: var(--c);
-          animation: confettiBurstBehindGift 1.15s cubic-bezier(0.18, 0.78, 0.28, 1) infinite;
+          animation: confettiPop 1.45s cubic-bezier(0.18, 0.78, 0.28, 1) infinite;
           animation-delay: var(--d);
           will-change: transform, opacity;
         }
@@ -437,8 +465,25 @@ function RewardCelebrationModal({
         onClick={onClose}
       />
 
+      <div className="pointer-events-none fixed inset-0 z-[60] overflow-visible">
+        {confettiPieces.map(([left, x, delay, color], index) => (
+          <span
+            key={index}
+            className="confetti-piece"
+            style={
+              {
+                "--l": left,
+                "--x": x,
+                "--d": delay,
+                "--c": color,
+              } as React.CSSProperties
+            }
+          />
+        ))}
+      </div>
+
       <div
-        className="relative z-[55] w-full max-w-[330px] overflow-visible px-6 py-8 text-center backdrop-blur-2xl"
+        className="relative z-[55] w-full max-w-[330px] overflow-hidden px-6 py-8 text-center backdrop-blur-2xl"
         style={{
           borderRadius: 22,
           background:
@@ -446,9 +491,8 @@ function RewardCelebrationModal({
         }}
       >
         <div
-          className="pointer-events-none absolute inset-0 overflow-hidden opacity-45"
+          className="pointer-events-none absolute inset-0 opacity-45"
           style={{
-            borderRadius: 22,
             backgroundImage: "url('/client-main-card.png'), url('/client main card.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -458,33 +502,15 @@ function RewardCelebrationModal({
           }}
         />
 
-        <div className="pointer-events-none absolute inset-0 z-[1] overflow-visible">
-          {confettiPieces.map(([left, x, y, delay, color], index) => (
-            <span
-              key={index}
-              className="gift-confetti-piece"
-              style={
-                {
-                  "--l": left,
-                  "--x": x,
-                  "--y": y,
-                  "--d": delay,
-                  "--c": color,
-                } as React.CSSProperties
-              }
-            />
-          ))}
-        </div>
-
         <div className="relative z-10">
-          <div className="relative mx-auto flex h-[112px] w-[112px] items-center justify-center">
+          <div className="mx-auto flex h-[112px] w-[112px] items-center justify-center">
             <div className="absolute h-[104px] w-[104px] rounded-full bg-[#f0cf61]/24 blur-xl" />
             <Image
               src="/gift.png"
               alt="Gift"
               width={100}
               height={100}
-              className="relative z-20 h-[100px] w-[100px] object-contain drop-shadow-[0_20px_26px_rgba(0,0,0,0.32)]"
+              className="relative h-[100px] w-[100px] object-contain drop-shadow-[0_20px_26px_rgba(0,0,0,0.32)]"
             />
           </div>
 
@@ -518,7 +544,7 @@ export function ClientDashboard({
   const [celebrationReward, setCelebrationReward] = useState<ClientReward | null>(null);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
-    new Set((rewards ?? initialRewards ?? []).map((reward) => reward.id))
+    new Set(((rewards ?? initialRewards ?? []) as ClientReward[]).map((reward) => reward.id))
   );
 
   useEffect(() => {
@@ -533,7 +559,10 @@ export function ClientDashboard({
     return () => window.clearInterval(refreshInterval);
   }, [router]);
 
-  const categoryMap = useMemo(() => makeCategoryMap(categories), [categories]);
+  const categoryMap = useMemo(
+    () => makeCategoryMap((categories ?? []) as LoyaltyCategory[]),
+    [categories],
+  );
   const stampRows = (stamps ?? initialStamps ?? []) as ClientStamp[];
 
   const totalStamps = useMemo(() => {
@@ -542,7 +571,7 @@ export function ClientDashboard({
 
   const visibleRewards = useMemo(() => {
     return localRewards.filter(
-      (reward) => ["available", "claimed", "redeemed"].includes(reward.status) && isRedeemedRewardStillVisible(reward)
+      (reward) => ["available", "claimed", "redeemed"].includes(reward.status ?? "") && isRedeemedRewardStillVisible(reward)
     );
   }, [localRewards]);
 

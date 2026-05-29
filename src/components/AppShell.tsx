@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 type AppShellProps = {
   children: React.ReactNode;
   title?: string;
+  role?: string;
   roleLabel?: string;
   logoSrc?: string;
   logoAlt?: string;
