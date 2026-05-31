@@ -300,9 +300,14 @@ function StaffConsole({ profile, categories }: Props) {
       return;
     }
 
-    setClient({ ...client, phone: trimmedPhone || null });
+    const responseJson = json as { error?: string; ok?: boolean; phone?: string | null };
+    const nextPhone = typeof responseJson.phone === "string" ? responseJson.phone : trimmedPhone;
+
+    setClient({ ...client, phone: nextPhone || null });
+    setPhoneDraft(nextPhone);
     setShowPhoneEditor(false);
     flash("Client phone number updated.");
+    await refreshSelectedClient(client.id);
   }
 
   async function addStamps() {
@@ -410,6 +415,20 @@ function StaffConsole({ profile, categories }: Props) {
     };
   }, [loadClaimedRewards, supabase]);
 
+  function singularRewardTitle(value?: string | null) {
+    const text = String(value || "Reward")
+      .replace(/ Item$/i, "")
+      .trim();
+
+    if (/sandwiches/i.test(text)) return text.replace(/sandwiches/i, "Sandwich");
+    if (/desserts/i.test(text)) return text.replace(/desserts/i, "Dessert");
+    if (/main courses/i.test(text)) return text.replace(/main courses/i, "Main Course");
+    if (/coffees/i.test(text)) return text.replace(/coffees/i, "Coffee");
+    if (/hookas|hookahs/i.test(text)) return text.replace(/hookas|hookahs/i, "Hooka");
+
+    return text;
+  }
+
   const renderRewardCard = (reward: ClaimedReward, showClient = false) => {
     const clientInfo = showClient ? reward.client : null;
 
@@ -420,24 +439,33 @@ function StaffConsole({ profile, categories }: Props) {
       >
         <div className="flex items-center gap-3">
           <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-white/20">
-            <Image src="/gift.png" alt="" width={38} height={38} className="h-[38px] w-[38px] object-contain" />
+            <Image
+              src={
+                reward.reward_type === "20% Discount" || reward.reward_type === "Free Dessert"
+                  ? "/birthday-cake.png"
+                  : "/gift.png"
+              }
+              alt=""
+              width={38}
+              height={38}
+              className="h-[38px] w-[38px] object-contain"
+            />
           </div>
 
           <div className="min-w-0 flex-1">
             <div className="font-raleway text-[17px] font-black leading-tight text-[#ffd66b]">
-              {String(reward.reward_type || "").replace(/ Item$/i, "")}
+              {singularRewardTitle(reward.reward_type)}
             </div>
-            <div className="mt-1 text-[12px] font-semibold text-white/72">
-              {(categoryNameById.get(reward.category_id) === "Desserts 2" ? "Hooka" : categoryNameById.get(reward.category_id)) ?? "Reward"} · Claimed{" "}
-              {new Date(reward.earned_at || reward.created_at).toLocaleDateString()}
+            <div className="mt-1 text-[12px] font-semibold text-white/78">
+              Claimed {new Date(reward.earned_at || reward.created_at).toLocaleDateString()}
             </div>
             {showClient && clientInfo && (
               <div className="mt-1 truncate text-[12px] font-bold text-[#ffd66b]">
                 {clientInfo.full_name} · {clientInfo.client_code}
               </div>
             )}
-            <div className="mt-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#ffd66b]">
-              Waiting for your approval
+            <div className="mt-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#ffd66b]">
+              Pending approval
             </div>
           </div>
 
@@ -469,7 +497,7 @@ function StaffConsole({ profile, categories }: Props) {
                 width={360}
                 height={180}
                 priority
-                className="pointer-events-none absolute inset-0 h-full w-[118%] translate-x-8 object-cover object-right opacity-55"
+                className="pointer-events-none absolute inset-0 h-full w-[130%] translate-x-10 scale-[1.08] object-cover object-right opacity-60"
               />
               <div className="relative">
                 <h1 className="text-[28px] font-black leading-[1.05] tracking-[-0.04em] text-white">
@@ -578,13 +606,13 @@ function StaffConsole({ profile, categories }: Props) {
                   width={420}
                   height={210}
                   priority
-                  className="pointer-events-none absolute inset-0 h-full w-[118%] translate-x-8 object-cover object-right opacity-55"
+                  className="pointer-events-none absolute inset-0 h-full w-[130%] translate-x-10 scale-[1.08] object-cover object-right opacity-60"
                 />
                 <div className="relative">
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.34em] text-[#ffd66b]">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.34em] text-white">
                     Member
                   </p>
-                  <h1 className="text-[32px] font-black uppercase leading-[0.95] tracking-[-0.04em] text-white">
+                  <h1 className="text-[32px] font-black uppercase leading-[0.95] tracking-[-0.04em] text-[#ffd66b]">
                     {client.full_name}
                   </h1>
 

@@ -68,13 +68,29 @@ export function LoginForm() {
       }
 
       const profileResult = await Promise.race([
-        supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("role, is_active")
+          .eq("id", user.id)
+          .maybeSingle(),
         new Promise<{ data: null }>((resolve) => {
           window.setTimeout(() => resolve({ data: null }), 1800);
         }),
       ]);
 
-      const role = profileResult.data?.role ?? "client";
+      const profile = profileResult.data as
+        | { role?: string | null; is_active?: boolean | null }
+        | null;
+
+      if (profile?.is_active === false) {
+        await supabase.auth.signOut({ scope: "local" });
+        setError("This account has been deactivated. Please contact Pro's Café staff.");
+        setStatusText(null);
+        setLoading(false);
+        return;
+      }
+
+      const role = profile?.role ?? "client";
       const target =
         role === "master_admin" || role === "admin"
           ? "/admin"

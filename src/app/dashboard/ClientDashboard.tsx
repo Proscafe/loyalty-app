@@ -27,6 +27,7 @@ type ClientStamp = {
 
 type ClientReward = {
   id: string;
+  client_id?: string | null;
   category_id?: string | null;
   reward_type?: string | null;
   status?: "available" | "claimed" | "redeemed" | string;
@@ -311,6 +312,12 @@ function getBirthdayPopupStorageKey(profileId: string) {
   return `pros-birthday-popup-shown-${profileId}-${getTodayStorageDate()}`;
 }
 
+const BIRTHDAY_REWARD_TYPES = ["20% Discount", "Free Dessert"];
+
+function isBirthdayRewardType(value?: string | null) {
+  return BIRTHDAY_REWARD_TYPES.includes(String(value || ""));
+}
+
 function makeBirthdayRewards(profile: Profile): ClientReward[] {
   const today = new Date().toISOString();
 
@@ -385,10 +392,11 @@ function GiftCarouselCard({
 }) {
   const categoryName = extractCategoryName(reward, categoryMap, index);
   const state = getRewardState(reward);
-  const title = reward.is_birthday_reward
+  const isBirthdayReward = Boolean(reward.is_birthday_reward || isBirthdayRewardType(reward.reward_type));
+  const title = isBirthdayReward
     ? reward.reward_type || "Birthday Gift"
     : `Free ${getSingularCategory(categoryName)}`;
-  const giftIcon = reward.gift_icon || "/gift.png";
+  const giftIcon = isBirthdayReward ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
 
   return (
     <div
@@ -488,7 +496,7 @@ function RewardCelebrationModal({
 }) {
   const categoryName = extractCategoryName(reward, categoryMap, 0);
   const giftName = getSingularCategory(categoryName);
-  const isBirthdayReward = Boolean(reward.is_birthday_reward);
+  const isBirthdayReward = Boolean(reward.is_birthday_reward || isBirthdayRewardType(reward.reward_type));
   const birthdayGiftName = reward.reward_type || "birthday gift";
   const modalIcon = isBirthdayReward ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
 
@@ -699,12 +707,12 @@ export function ClientDashboard({
 
     const existingBirthdayRewards = new Set(
       baseRewards
-        .filter((reward) => reward.is_birthday_reward || String(reward.reward_type || "").toLowerCase().includes("birthday"))
-        .map((reward) => String(reward.reward_type || "").toLowerCase()),
+        .filter((reward) => reward.is_birthday_reward || isBirthdayRewardType(reward.reward_type))
+        .map((reward) => String(reward.reward_type || "")),
     );
 
     const birthdayRewards = makeBirthdayRewards(profile).filter(
-      (reward) => !existingBirthdayRewards.has(String(reward.reward_type || "").toLowerCase()),
+      (reward) => !existingBirthdayRewards.has(String(reward.reward_type || "")),
     );
 
     return [...birthdayRewards, ...baseRewards];
@@ -756,16 +764,43 @@ export function ClientDashboard({
 
   async function handleClaim(rewardId: string) {
     if (rewardId.startsWith("birthday-")) {
-      setLocalRewards((current) => {
-        const birthdayReward = makeBirthdayRewards(profile).find((reward) => reward.id === rewardId);
+      const birthdayReward = makeBirthdayRewards(profile).find((reward) => reward.id === rewardId);
 
-        if (!birthdayReward) return current;
+      if (!birthdayReward) return;
 
-        return [
-          { ...birthdayReward, status: "claimed" },
-          ...current.filter((reward) => reward.id !== rewardId),
-        ];
-      });
+      setLocalRewards((current) => [
+        { ...birthdayReward, status: "claimed" },
+        ...current.filter((reward) => reward.id !== rewardId && reward.reward_type !== birthdayReward.reward_type),
+      ]);
+
+      try {
+        const response = await fetch("/api/reward/birthday-claim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reward_type: birthdayReward.reward_type }),
+        });
+
+        const json = await response.json().catch(() => null);
+
+        if (!response.ok || !json?.reward) {
+          throw new Error(json?.error ?? "Failed to claim birthday reward");
+        }
+
+        setLocalRewards((current) => [
+          {
+            ...(json.reward as ClientReward),
+            is_birthday_reward: true,
+            gift_icon: "/birthday-cake.png",
+          },
+          ...current.filter((reward) => reward.id !== rewardId && reward.reward_type !== birthdayReward.reward_type),
+        ]);
+
+        router.refresh();
+      } catch {
+        setLocalRewards((current) =>
+          current.filter((reward) => reward.id !== rewardId && reward.reward_type !== birthdayReward.reward_type),
+        );
+      }
 
       return;
     }
@@ -856,7 +891,8 @@ export function ClientDashboard({
               <div className="min-w-0 pt-0.5">
                 {hasBirthdayToday ? (
                   <h1 className="text-[24px] font-black leading-tight text-white">
-                    Happy Birthday{" "}
+                    Happy Birthday
+                    <br />
                     <span className="text-[#f0cf61]">{displayName}</span>
                   </h1>
                 ) : (
@@ -892,7 +928,7 @@ export function ClientDashboard({
               type="button"
               className="mt-5 inline-flex items-center justify-center rounded-[10px] bg-[#f0cf61] px-5 py-3 font-raleway text-[15px] font-bold text-[#1c2530]"
             >
-              Give Feedback
+              Message Us
             </button>
           </div>
         </section>
