@@ -33,6 +33,8 @@ type ClientReward = {
   created_at?: string | null;
   earned_at?: string | null;
   redeemed_at?: string | null;
+  is_birthday_reward?: boolean;
+  gift_icon?: string;
 };
 
 type AnyRecord = Record<string, any>;
@@ -195,7 +197,7 @@ function getStampTheme(categoryName: string) {
     return {
       fill: "rgba(121, 134, 115, 0.24)",
       stroke: "#798673",
-      asset: "/star 2.png",
+      asset: "/star-blue.png",
     };
   }
 
@@ -203,7 +205,7 @@ function getStampTheme(categoryName: string) {
     return {
       fill: "rgba(95, 135, 156, 0.24)",
       stroke: "#5f879c",
-      asset: "/star (1).png",
+      asset: "/star-green.png",
     };
   }
 
@@ -230,16 +232,32 @@ function StampStar({
   categoryName: string;
 }) {
   const theme = getStampTheme(categoryName);
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
     <div className="relative flex aspect-square w-[clamp(54px,13.5vw,76px)] shrink-0 items-center justify-center">
-      {filled ? (
+      {filled && !imageFailed ? (
         <img
           src={theme.asset}
           alt={`${categoryName} stamp`}
           className="relative z-10 h-full w-full object-contain"
           draggable={false}
+          onError={() => setImageFailed(true)}
         />
+      ) : filled ? (
+        <svg
+          viewBox="0 0 100 100"
+          className="relative z-10 h-full w-full drop-shadow-[0_10px_18px_rgba(0,0,0,0.18)]"
+          aria-label={`${categoryName} stamp`}
+        >
+          <polygon
+            points="50,5 61,36 94,36 67,56 78,89 50,69 22,89 33,56 6,36 39,36"
+            fill={theme.stroke}
+            stroke={theme.stroke}
+            strokeWidth={3}
+            strokeLinejoin="round"
+          />
+        </svg>
       ) : (
         <svg
           viewBox="0 0 100 100"
@@ -258,6 +276,64 @@ function StampStar({
       )}
     </div>
   );
+}
+
+function isBirthdayToday(birthday?: string | null) {
+  if (!birthday) return false;
+
+  const today = new Date();
+  const raw = String(birthday);
+
+  const monthDayMatch = raw.match(/(?:^\d{4}-)?(\d{2})-(\d{2})/);
+  if (monthDayMatch) {
+    const month = Number(monthDayMatch[1]);
+    const day = Number(monthDayMatch[2]);
+
+    return today.getMonth() + 1 === month && today.getDate() === day;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  return today.getMonth() === parsed.getMonth() && today.getDate() === parsed.getDate();
+}
+
+function getTodayStorageDate() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getBirthdayPopupStorageKey(profileId: string) {
+  return `pros-birthday-popup-shown-${profileId}-${getTodayStorageDate()}`;
+}
+
+function makeBirthdayRewards(profile: Profile): ClientReward[] {
+  const today = new Date().toISOString();
+
+  return [
+    {
+      id: `birthday-discount-${profile.id}`,
+      reward_type: "20% Discount",
+      status: "available",
+      created_at: today,
+      earned_at: today,
+      is_birthday_reward: true,
+      gift_icon: "/birthday-cake.png",
+    },
+    {
+      id: `birthday-dessert-${profile.id}`,
+      reward_type: "Free Dessert",
+      status: "available",
+      created_at: today,
+      earned_at: today,
+      is_birthday_reward: true,
+      gift_icon: "/birthday-cake.png",
+    },
+  ];
 }
 
 function getRewardState(reward: ClientReward) {
@@ -309,7 +385,10 @@ function GiftCarouselCard({
 }) {
   const categoryName = extractCategoryName(reward, categoryMap, index);
   const state = getRewardState(reward);
-  const title = `Free ${getSingularCategory(categoryName)}`;
+  const title = reward.is_birthday_reward
+    ? reward.reward_type || "Birthday Gift"
+    : `Free ${getSingularCategory(categoryName)}`;
+  const giftIcon = reward.gift_icon || "/gift.png";
 
   return (
     <div
@@ -331,7 +410,7 @@ function GiftCarouselCard({
         <div className="absolute inset-0 rounded-full bg-[#f0cf61]/22 blur-md" />
         <div className="absolute h-[70px] w-[70px] rounded-full bg-white/14 shadow-inner" />
         <Image
-          src="/gift.png"
+          src={giftIcon}
           alt="Gift"
           width={72}
           height={72}
@@ -400,13 +479,18 @@ function RewardCelebrationModal({
   reward,
   categoryMap,
   onClose,
+  onClaim,
 }: {
   reward: ClientReward;
   categoryMap: Map<string, string>;
   onClose: () => void;
+  onClaim: (rewardId: string) => void;
 }) {
   const categoryName = extractCategoryName(reward, categoryMap, 0);
   const giftName = getSingularCategory(categoryName);
+  const isBirthdayReward = Boolean(reward.is_birthday_reward);
+  const birthdayGiftName = reward.reward_type || "birthday gift";
+  const modalIcon = isBirthdayReward ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
 
   const confettiPieces = [
     ["8%", "-120px", "0s", "#f0cf61"],
@@ -427,7 +511,7 @@ function RewardCelebrationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-5">
-      <style jsx>{`
+      <style>{`
         @keyframes confettiPop {
           0% {
             transform: translate3d(0, -80px, 0) rotate(0deg) scale(0.6);
@@ -506,7 +590,7 @@ function RewardCelebrationModal({
           <div className="mx-auto flex h-[112px] w-[112px] items-center justify-center">
             <div className="absolute h-[104px] w-[104px] rounded-full bg-[#f0cf61]/24 blur-xl" />
             <Image
-              src="/gift.png"
+              src={modalIcon}
               alt="Gift"
               width={100}
               height={100}
@@ -514,16 +598,35 @@ function RewardCelebrationModal({
             />
           </div>
 
-          <h2 className="mt-5 text-[28px] font-black leading-tight text-white">
-            You earned a free {giftName}
-          </h2>
+          {isBirthdayReward ? (
+            <div className="mt-5">
+              <h2 className="text-[28px] font-black leading-tight text-white">
+                Happy birthday!
+              </h2>
+              <p className="mt-3 text-[17px] font-bold leading-6 text-white/85">
+                You unlocked a {birthdayGiftName} gift.
+              </p>
+            </div>
+          ) : (
+            <h2 className="mt-5 text-[28px] font-black leading-tight text-white">
+              You earned a free {giftName}
+            </h2>
+          )}
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (isBirthdayReward) {
+                onClaim(reward.id);
+                onClose();
+                return;
+              }
+
+              onClose();
+            }}
             className="mt-7 w-full rounded-[12px] bg-[#f0cf61] px-4 py-3 text-[14px] font-black text-[#1c2530]"
           >
-            Congratulations
+            {isBirthdayReward ? "Claim gift" : "Congratulations"}
           </button>
         </div>
       </div>
@@ -552,11 +655,26 @@ export function ClientDashboard({
   }, [rewards, initialRewards]);
 
   useEffect(() => {
-    const refreshInterval = window.setInterval(() => {
-      router.refresh();
-    }, 5000);
+    let lastRefresh = Date.now();
 
-    return () => window.clearInterval(refreshInterval);
+    function refreshWhenActive() {
+      if (document.visibilityState !== "visible") return;
+
+      const now = Date.now();
+
+      if (now - lastRefresh < 30000) return;
+
+      lastRefresh = now;
+      router.refresh();
+    }
+
+    window.addEventListener("focus", refreshWhenActive);
+    document.addEventListener("visibilitychange", refreshWhenActive);
+
+    return () => {
+      window.removeEventListener("focus", refreshWhenActive);
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+    };
   }, [router]);
 
   const categoryMap = useMemo(
@@ -569,21 +687,55 @@ export function ClientDashboard({
     return stampRows.reduce((sum, item) => sum + Math.max(0, Number((item as AnyRecord).stamp_count ?? 0)), 0);
   }, [stampRows]);
 
+  const displayName = toTitleCase(profile.full_name || "Client");
+  const hasBirthdayToday = isBirthdayToday((profile as AnyRecord).birthday as string | null | undefined);
+
   const visibleRewards = useMemo(() => {
-    return localRewards.filter(
+    const baseRewards = localRewards.filter(
       (reward) => ["available", "claimed", "redeemed"].includes(reward.status ?? "") && isRedeemedRewardStillVisible(reward)
     );
-  }, [localRewards]);
+
+    if (!hasBirthdayToday) return baseRewards;
+
+    const existingBirthdayRewards = new Set(
+      baseRewards
+        .filter((reward) => reward.is_birthday_reward || String(reward.reward_type || "").toLowerCase().includes("birthday"))
+        .map((reward) => String(reward.reward_type || "").toLowerCase()),
+    );
+
+    const birthdayRewards = makeBirthdayRewards(profile).filter(
+      (reward) => !existingBirthdayRewards.has(String(reward.reward_type || "").toLowerCase()),
+    );
+
+    return [...birthdayRewards, ...baseRewards];
+  }, [hasBirthdayToday, localRewards, profile]);
 
   useEffect(() => {
+    const birthdayPopupKey = getBirthdayPopupStorageKey(profile.id);
+    const birthdayPopupAlreadyShown =
+      typeof window !== "undefined" && window.localStorage.getItem(birthdayPopupKey) === "true";
+
     const newestReward = visibleRewards.find((reward) => {
       const isNew = !seenRewardIdsRef.current.has(reward.id);
-      return isNew && (reward.status === "available" || reward.status === "claimed");
+
+      if (!isNew || (reward.status !== "available" && reward.status !== "claimed")) {
+        return false;
+      }
+
+      if (reward.is_birthday_reward && birthdayPopupAlreadyShown) {
+        return false;
+      }
+
+      return true;
     });
 
     visibleRewards.forEach((reward) => seenRewardIdsRef.current.add(reward.id));
 
     if (!newestReward) return;
+
+    if (newestReward.is_birthday_reward && typeof window !== "undefined") {
+      window.localStorage.setItem(birthdayPopupKey, "true");
+    }
 
     setCelebrationReward(newestReward);
 
@@ -600,9 +752,24 @@ export function ClientDashboard({
         clearTimeout(celebrationTimerRef.current);
       }
     };
-  }, [visibleRewards]);
+  }, [profile.id, visibleRewards]);
 
   async function handleClaim(rewardId: string) {
+    if (rewardId.startsWith("birthday-")) {
+      setLocalRewards((current) => {
+        const birthdayReward = makeBirthdayRewards(profile).find((reward) => reward.id === rewardId);
+
+        if (!birthdayReward) return current;
+
+        return [
+          { ...birthdayReward, status: "claimed" },
+          ...current.filter((reward) => reward.id !== rewardId),
+        ];
+      });
+
+      return;
+    }
+
     setLocalRewards((current) => current.map((reward) => (reward.id === rewardId ? { ...reward, status: "claimed" } : reward)));
 
     try {
@@ -618,7 +785,6 @@ export function ClientDashboard({
     }
   }
 
-  const displayName = toTitleCase(profile.full_name || "Client");
 
   return (
     <AppShell
@@ -629,7 +795,7 @@ export function ClientDashboard({
       logoSrc="/pros-logo-basic.png"
       logoAlt="PRO's Logo"
     >
-      <style jsx global>{`
+      <style>{`
         @keyframes prosGradientFloat {
           0% {
             transform: translate3d(-2%, -1%, 0) scale(1.04);
@@ -688,12 +854,21 @@ export function ClientDashboard({
           <div className="relative z-10">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 pt-0.5">
-                <h1 className="text-[24px] font-black leading-tight text-white">
-                  Hello, <span className="text-[#f0cf61]">{displayName}</span>
-                </h1>
-                <p className="mt-2 text-[15px] font-medium text-white/70">
-                  Let&apos;s earn more stamps!
-                </p>
+                {hasBirthdayToday ? (
+                  <h1 className="text-[24px] font-black leading-tight text-white">
+                    Happy Birthday{" "}
+                    <span className="text-[#f0cf61]">{displayName}</span>
+                  </h1>
+                ) : (
+                  <>
+                    <h1 className="text-[24px] font-black leading-tight text-white">
+                      Hello, <span className="text-[#f0cf61]">{displayName}</span>
+                    </h1>
+                    <p className="mt-2 text-[15px] font-medium text-white/70">
+                      Let&apos;s earn more stamps!
+                    </p>
+                  </>
+                )}
               </div>
 
               <div className="shrink-0 bg-white/95 p-2" style={{ borderRadius: 8 }}>
@@ -715,9 +890,9 @@ export function ClientDashboard({
 
             <button
               type="button"
-              className="mt-5 inline-flex items-center justify-center rounded-[10px] bg-[#f0cf61] px-5 py-3 text-[15px] font-bold text-[#1c2530]"
+              className="mt-5 inline-flex items-center justify-center rounded-[10px] bg-[#f0cf61] px-5 py-3 font-raleway text-[15px] font-bold text-[#1c2530]"
             >
-              Message Us
+              Give Feedback
             </button>
           </div>
         </section>
@@ -731,7 +906,7 @@ export function ClientDashboard({
 
             </div>
 
-            <div className="-mx-4 overflow-x-scroll px-4 pb-2 hide-scrollbar touch-pan-x overscroll-x-contain snap-x snap-mandatory" style={{ WebkitOverflowScrolling: "touch" }}>
+            <div className="-mx-4 overflow-x-auto overflow-y-visible px-4 pb-2 hide-scrollbar touch-auto overscroll-x-contain snap-x snap-mandatory" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y" }}>
               <div className="flex w-max gap-4">
                 {visibleRewards.map((reward, index) => (
                   <GiftCarouselCard
@@ -770,6 +945,7 @@ export function ClientDashboard({
             reward={celebrationReward}
             categoryMap={categoryMap}
             onClose={() => setCelebrationReward(null)}
+            onClaim={handleClaim}
           />
         ) : null}
       </div>

@@ -50,6 +50,24 @@
   font-display: swap;
 }
 
+@keyframes prosStarFade {
+  0% {
+    opacity: 0.25;
+  }
+
+  28% {
+    opacity: 1;
+  }
+
+  56% {
+    opacity: 0.25;
+  }
+
+  100% {
+    opacity: 0.25;
+  }
+}
+
 :root {
   --font-sans: "Raleway", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-display: "Raleway", ui-sans-serif, system-ui, sans-serif;

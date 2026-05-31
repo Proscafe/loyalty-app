@@ -22,7 +22,7 @@ type ClaimedReward = Reward & {
 const pageGradient =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
-export function StaffConsole({ profile, categories }: Props) {
+function StaffConsole({ profile, categories }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -230,6 +230,22 @@ export function StaffConsole({ profile, categories }: Props) {
     );
   }
 
+  async function readApiResponse(res: Response) {
+    const contentType = res.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/json")) {
+      return (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+    }
+
+    const text = await res.text().catch(() => "");
+    return {
+      error:
+        text && text.length < 140
+          ? text
+          : `API route failed with status ${res.status}. Make sure the route file exists and restart the server.`,
+    };
+  }
+
   async function saveClientPassword() {
     if (!client) return;
 
@@ -248,12 +264,12 @@ export function StaffConsole({ profile, categories }: Props) {
       body: JSON.stringify({ client_id: client.id, password: trimmedPassword }),
     });
 
-    const json = await res.json().catch(() => ({}));
+    const json = await readApiResponse(res);
 
     setBusy(false);
 
     if (!res.ok) {
-      flash(json.error ?? "Could not update password.", "error");
+      flash(json.error ?? `Could not update password. Status ${res.status}`, "error");
       return;
     }
 
@@ -269,15 +285,18 @@ export function StaffConsole({ profile, categories }: Props) {
 
     setBusy(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({ phone: trimmedPhone || null })
-      .eq("id", client.id);
+    const res = await fetch("/api/staff/client-phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: client.id, phone: trimmedPhone }),
+    });
+
+    const json = await readApiResponse(res);
 
     setBusy(false);
 
-    if (error) {
-      flash(error.message || "Could not update phone number.", "error");
+    if (!res.ok) {
+      flash(json.error ?? `Could not update phone number. Status ${res.status}`, "error");
       return;
     }
 
@@ -742,3 +761,6 @@ export function StaffConsole({ profile, categories }: Props) {
     </AppShell>
   );
 }
+
+export { StaffConsole };
+export default StaffConsole;

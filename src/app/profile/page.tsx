@@ -17,9 +17,13 @@ export default async function ProfilePage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, email, phone, client_code, birthday, created_at")
+    .select("id, full_name, email, phone, client_code, birthday, created_at, role")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
+
+  if (!profile) {
+    redirect("/login");
+  }
 
   return (
     <ProfileSettings

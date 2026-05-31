@@ -11,8 +11,10 @@ type ProfileSettingsProps = {
   recentRewards: any[];
 };
 
-const PAGE_BG =
+const CLIENT_PAGE_BG =
   "radial-gradient(circle at 16% 0%, rgba(207, 133, 124, 0.96) 0, rgba(207, 133, 124, 0.72) 30%, rgba(207, 133, 124, 0) 56%), radial-gradient(circle at 70% 78%, rgba(146, 83, 76, 0.98) 0, rgba(146, 83, 76, 0.78) 34%, rgba(146, 83, 76, 0) 62%), linear-gradient(155deg, #cf857c 0%, #b76d66 45%, #92534C 100%)";
+const STAFF_PAGE_BG =
+  "radial-gradient(circle at 16% 0%, rgba(121, 134, 115, 0.96) 0, rgba(121, 134, 115, 0.72) 30%, rgba(121, 134, 115, 0) 56%), radial-gradient(circle at 70% 78%, rgba(88, 98, 86, 0.98) 0, rgba(88, 98, 86, 0.78) 34%, rgba(88, 98, 86, 0) 62%), linear-gradient(155deg, #798673 0%, #687468 45%, #586256 100%)";
 const GLASS_CARD =
   "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06))";
 const GLASS_CARD_DARK =
@@ -151,6 +153,11 @@ export default function ProfileSettings({
   recentTransactions,
   recentRewards,
 }: ProfileSettingsProps) {
+  const isStaffProfile =
+    profile?.role === "staff" ||
+    profile?.role === "admin" ||
+    profile?.role === "master_admin";
+  const pageBackground = isStaffProfile ? STAFF_PAGE_BG : CLIENT_PAGE_BG;
   const router = useRouter();
   const supabase = createClient();
 
@@ -291,13 +298,12 @@ export default function ProfileSettings({
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    window.location.replace("/login");
+    void supabase.auth.signOut({ scope: "local" });
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden" style={{ background: PAGE_BG }}>
+    <main className="relative min-h-screen overflow-hidden" style={{ background: pageBackground }}>
       <style jsx global>{`
         @keyframes prosGradientFloat {
           0% {
