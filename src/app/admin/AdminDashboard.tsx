@@ -17,6 +17,20 @@ interface Metrics {
 
 type AdminUser = Profile & { is_active?: boolean | null };
 
+type AdminCategory = {
+  id: string;
+  name: string;
+  sort_order?: number | null;
+};
+
+type AdminClientStamp = {
+  id?: string;
+  client_id: string;
+  category_id: string;
+  stamp_count: number;
+  updated_at?: string | null;
+};
+
 interface Props {
   profile: Profile;
   users?: AdminUser[];
@@ -130,6 +144,11 @@ export function AdminDashboard({
   const [filter, setFilter] = useState<"all" | UserRole>("staff");
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(15);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [selectedCategories, setSelectedCategories] = useState<AdminCategory[]>([]);
+  const [selectedStamps, setSelectedStamps] = useState<AdminClientStamp[]>([]);
+  const [selectedRewards, setSelectedRewards] = useState<Reward[]>([]);
+  const [selectedLoading, setSelectedLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tone, setTone] = useState<"success" | "error">("success");
 
@@ -222,6 +241,11 @@ export function AdminDashboard({
     }
 
     setUsers((prev) => prev.map((user) => (user.id === userId ? { ...user, role } : user)));
+
+    if (selectedUser?.id === userId) {
+      setSelectedUser((prev) => (prev ? { ...prev, role } : prev));
+    }
+
     flash("Role updated.");
   }
 
@@ -236,6 +260,11 @@ export function AdminDashboard({
     setUsers((prev) =>
       prev.map((user) => (user.id === userId ? { ...user, is_active: false } : user)),
     );
+
+    if (selectedUser?.id === userId) {
+      setSelectedUser((prev) => (prev ? { ...prev, is_active: false } : prev));
+    }
+
     flash("Account deactivated.");
   }
 
@@ -255,7 +284,60 @@ export function AdminDashboard({
         user.id === userId ? { ...user, is_active: true, role } : user,
       ),
     );
+
+    if (selectedUser?.id === userId) {
+      setSelectedUser((prev) => (prev ? { ...prev, is_active: true, role } : prev));
+    }
+
     flash("Account reactivated.");
+  }
+
+  async function openUserProfile(user: AdminUser) {
+    setSelectedUser(user);
+    setSelectedLoading(true);
+    setSelectedCategories([]);
+    setSelectedStamps([]);
+    setSelectedRewards([]);
+
+    try {
+      const [categoryResult, stampResult, rewardResult] = await Promise.all([
+        supabase
+          .from("loyalty_categories")
+          .select("id, name, sort_order")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true }),
+
+        supabase
+          .from("client_stamps")
+          .select("id, client_id, category_id, stamp_count, updated_at")
+          .eq("client_id", user.id),
+
+        supabase
+          .from("rewards")
+          .select("*")
+          .eq("client_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(20),
+      ]);
+
+      if (categoryResult.error) {
+        flash(categoryResult.error.message, "error");
+      }
+
+      if (stampResult.error) {
+        flash(stampResult.error.message, "error");
+      }
+
+      if (rewardResult.error) {
+        flash(rewardResult.error.message, "error");
+      }
+
+      setSelectedCategories((categoryResult.data ?? []) as AdminCategory[]);
+      setSelectedStamps((stampResult.data ?? []) as AdminClientStamp[]);
+      setSelectedRewards((rewardResult.data ?? []) as Reward[]);
+    } finally {
+      setSelectedLoading(false);
+    }
   }
 
   const filteredUsers = useMemo(() => {
@@ -361,11 +443,15 @@ export function AdminDashboard({
           </div>
         </section>
 
-        <div className="mb-3 flex gap-1 rounded-full border border-white/14 bg-white/12 p-1 backdrop-blur-xl">
+        <div className="relative z-30 mb-3 flex gap-1 rounded-full border border-white/14 bg-white/12 p-1 backdrop-blur-xl">
           {TABS.map((item) => (
             <button
+              type="button"
               key={item}
-              onClick={() => setTab(item)}
+              onClick={() => {
+                setTab(item);
+                setSelectedUser(null);
+              }}
               className={`flex-1 rounded-full py-2 text-[11px] font-black transition ${
                 tab === item
                   ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.2)]"
@@ -378,12 +464,13 @@ export function AdminDashboard({
         </div>
 
         {tab === "Users" ? (
-          <div className="mb-5">
+          <div className="relative z-20 mb-5">
             <input
               value={searchTerm}
               onChange={(event) => {
                 setSearchTerm(event.target.value);
                 setVisibleUserCount(15);
+                setSelectedUser(null);
               }}
               placeholder="Search customers, staff, admin..."
               className="h-12 w-full rounded-full border border-white/18 bg-white px-5 text-[13px] font-bold text-black placeholder:text-zinc-400 outline-none backdrop-blur-xl focus:border-[#ffd66b]/70"
@@ -422,108 +509,138 @@ export function AdminDashboard({
 
         {tab === "Users" && (
           <section className="mb-12">
-            <div className="mb-4 flex gap-1 rounded-full border border-white/14 bg-white/12 p-1 text-[11px] backdrop-blur-xl">
-              {(["all", "client", "staff", "master_admin"] as const).map((item) => (
-                <button
-                  key={item}
-                  onClick={() => {
-                    setFilter(item);
-                    setVisibleUserCount(15);
-                  }}
-                  className={`flex-1 rounded-full py-2 font-black transition ${
-                    filter === item
-                      ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.2)]"
-                      : "text-white/68"
-                  }`}
-                >
-                  {item === "all" ? "All" : item === "master_admin" ? "Admin" : item === "staff" ? "Staff" : "Clients"}
-                </button>
-              ))}
-            </div>
+            {selectedUser ? (
+              <ClientProfilePanel
+                user={selectedUser}
+                currentUserId={profile.id}
+                categories={selectedCategories}
+                stamps={selectedStamps}
+                rewards={selectedRewards}
+                loading={selectedLoading}
+                onBack={() => setSelectedUser(null)}
+                onRoleChange={(role) => void setRole(selectedUser.id, role)}
+                onDeactivate={() => void deactivateUser(selectedUser.id)}
+                onReactivate={(role) => void reactivateUser(selectedUser.id, role)}
+              />
+            ) : (
+              <>
+                <div className="mb-4 flex gap-1 rounded-full border border-white/14 bg-white/12 p-1 text-[11px] backdrop-blur-xl">
+                  {(["all", "client", "staff", "master_admin"] as const).map((item) => (
+                    <button
+                      type="button"
+                      key={item}
+                      onClick={() => {
+                        setFilter(item);
+                        setVisibleUserCount(15);
+                        setSelectedUser(null);
+                      }}
+                      className={`flex-1 rounded-full py-2 font-black transition ${
+                        filter === item
+                          ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.2)]"
+                          : "text-white/68"
+                      }`}
+                    >
+                      {item === "all" ? "All" : item === "master_admin" ? "Admin" : item === "staff" ? "Staff" : "Clients"}
+                    </button>
+                  ))}
+                </div>
 
-            <div className="space-y-3">
-              {visibleUsers.map((user) => (
-                <div
-                  key={user.id}
-                  className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
-                  style={{ borderRadius: 24, background: GLASS_CARD }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-[17px] font-black text-white">
-                        {user.full_name}
-                      </div>
-                      <div className="mt-1 truncate text-[12px] font-semibold text-white/62">
-                        {user.email}
-                        {user.phone ? ` · ${user.phone}` : ""}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        {user.client_code ? (
-                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
-                            {user.client_code}
-                          </span>
-                        ) : null}
+                <div className="space-y-3">
+                  {visibleUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => void openUserProfile(user)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          void openUserProfile(user);
+                        }
+                      }}
+                      className="w-full cursor-pointer border border-white/20 p-4 text-left shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl transition active:scale-[0.99]"
+                      style={{ borderRadius: 24, background: GLASS_CARD }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[17px] font-black text-white">
+                            {user.full_name}
+                          </div>
+                          <div className="mt-1 truncate text-[12px] font-semibold text-white/62">
+                            {user.email}
+                            {user.phone ? ` · ${user.phone}` : ""}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            {user.client_code ? (
+                              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+                                {user.client_code}
+                              </span>
+                            ) : null}
 
-                        {user.is_active === false ? (
-                          <span className="rounded-full bg-red-500/14 px-2 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-red-300">
-                            Deactivated
-                          </span>
-                        ) : null}
+                            {user.is_active === false ? (
+                              <span className="rounded-full bg-red-500/14 px-2 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-red-300">
+                                Deactivated
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <select
+                          value={user.is_active === false ? "deactivated" : user.role}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => {
+                            event.stopPropagation();
+                            const value = event.target.value;
+
+                            if (value === "deactivated") {
+                              void deactivateUser(user.id);
+                              return;
+                            }
+
+                            if (user.is_active === false) {
+                              void reactivateUser(user.id, value as UserRole);
+                              return;
+                            }
+
+                            void setRole(user.id, value as UserRole);
+                          }}
+                          disabled={user.id === profile.id}
+                          className={`shrink-0 rounded-full border border-white/30 bg-white/88 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
+                            user.is_active === false ? "text-red-600" : "text-[#365665]"
+                          }`}
+                          title={user.id === profile.id ? "You cannot change your own role" : ""}
+                        >
+                          <option value="client">Client</option>
+                          <option value="staff">Staff</option>
+                          <option value="master_admin">Admin</option>
+                          <option value="deactivated" className="font-black text-red-600">
+                            Deactivate
+                          </option>
+                        </select>
                       </div>
                     </div>
+                  ))}
 
-                    <select
-                      value={user.is_active === false ? "deactivated" : user.role}
-                      onChange={(event) => {
-                        const value = event.target.value;
+                  {filteredUsers.length === 0 ? (
+                    <EmptyState text="No users in this view." />
+                  ) : null}
 
-                        if (value === "deactivated") {
-                          void deactivateUser(user.id);
-                          return;
-                        }
-
-                        if (user.is_active === false) {
-                          void reactivateUser(user.id, value as UserRole);
-                          return;
-                        }
-
-                        void setRole(user.id, value as UserRole);
-                      }}
-                      disabled={user.id === profile.id}
-                      className={`shrink-0 rounded-full border border-white/30 bg-white/88 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
-                        user.is_active === false ? "text-red-600" : "text-[#365665]"
-                      }`}
-                      title={user.id === profile.id ? "You cannot change your own role" : ""}
+                  {filteredUsers.length > visibleUsers.length ? (
+                    <button
+                      type="button"
+                      onClick={() => setVisibleUserCount((count) => count + 15)}
+                      className="w-full rounded-full bg-[#ffd66b] py-3 text-[12px] font-black text-[#365665] shadow-[0_14px_30px_rgba(255,214,107,0.18)]"
                     >
-                      <option value="client">Client</option>
-                      <option value="staff">Staff</option>
-                      <option value="master_admin">Admin</option>
-                      <option value="deactivated" className="font-black text-red-600">
-                        Deactivate
-                      </option>
-                    </select>
-                  </div>
+                      Load more
+                    </button>
+                  ) : null}
                 </div>
-              ))}
 
-              {filteredUsers.length === 0 ? (
-                <EmptyState text="No users in this view." />
-              ) : null}
-
-              {filteredUsers.length > visibleUsers.length ? (
-                <button
-                  type="button"
-                  onClick={() => setVisibleUserCount((count) => count + 15)}
-                  className="w-full rounded-full bg-[#ffd66b] py-3 text-[12px] font-black text-[#365665] shadow-[0_14px_30px_rgba(255,214,107,0.18)]"
-                >
-                  Load more
-                </button>
-              ) : null}
-            </div>
-
-            <p className="mt-4 px-1 text-[11px] font-semibold leading-relaxed text-white/58">
-              Showing the newest users first. Use search to find older customers faster.
-            </p>
+                <p className="mt-4 px-1 text-[11px] font-semibold leading-relaxed text-white/58">
+                  Tap a user to open their profile, stamps, and gifts.
+                </p>
+              </>
+            )}
           </section>
         )}
 
@@ -656,6 +773,202 @@ export function AdminDashboard({
         )}
       </div>
     </AppShell>
+  );
+}
+
+function ClientProfilePanel({
+  user,
+  currentUserId,
+  categories,
+  stamps,
+  rewards,
+  loading,
+  onBack,
+  onRoleChange,
+  onDeactivate,
+  onReactivate,
+}: {
+  user: AdminUser;
+  currentUserId: string;
+  categories: AdminCategory[];
+  stamps: AdminClientStamp[];
+  rewards: Reward[];
+  loading: boolean;
+  onBack: () => void;
+  onRoleChange: (role: UserRole) => void;
+  onDeactivate: () => void;
+  onReactivate: (role: UserRole) => void;
+}) {
+  const stampByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+
+    stamps.forEach((stamp) => {
+      map.set(stamp.category_id, stamp.stamp_count ?? 0);
+    });
+
+    return map;
+  }, [stamps]);
+
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="rounded-full bg-white/14 px-4 py-2 text-[12px] font-black text-white backdrop-blur-xl"
+      >
+        ← Back to users
+      </button>
+
+      <div
+        className="border border-white/20 p-5 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
+        style={{ borderRadius: 26, background: GLASS_CARD }}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-black uppercase tracking-[0.28em] text-white/58">
+              Member Profile
+            </div>
+            <h2 className="mt-2 truncate text-[25px] font-black leading-none text-[#ffd66b]">
+              {user.full_name || "Client"}
+            </h2>
+            <div className="mt-2 text-[12px] font-semibold leading-5 text-white/66">
+              {user.email || "No email"}
+              {user.phone ? (
+                <>
+                  <br />
+                  {user.phone}
+                </>
+              ) : null}
+            </div>
+            {user.client_code ? (
+              <div className="mt-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+                {user.client_code}
+              </div>
+            ) : null}
+          </div>
+
+          <select
+            value={user.is_active === false ? "deactivated" : user.role}
+            onChange={(event) => {
+              const value = event.target.value;
+
+              if (value === "deactivated") {
+                onDeactivate();
+                return;
+              }
+
+              if (user.is_active === false) {
+                onReactivate(value as UserRole);
+                return;
+              }
+
+              onRoleChange(value as UserRole);
+            }}
+            disabled={user.id === currentUserId}
+            className={`shrink-0 rounded-full border border-white/30 bg-white/88 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
+              user.is_active === false ? "text-red-600" : "text-[#365665]"
+            }`}
+          >
+            <option value="client">Client</option>
+            <option value="staff">Staff</option>
+            <option value="master_admin">Admin</option>
+            <option value="deactivated" className="font-black text-red-600">
+              Deactivate
+            </option>
+          </select>
+        </div>
+
+        {user.is_active === false ? (
+          <div className="mt-4 rounded-2xl border border-red-300/25 bg-red-500/12 px-4 py-3 text-[12px] font-black text-red-200">
+            This account is deactivated.
+          </div>
+        ) : null}
+      </div>
+
+      <DashboardGroup title="Stamps">
+        {loading ? <EmptyState text="Loading profile..." /> : null}
+
+        {!loading && user.role !== "client" ? (
+          <EmptyState text="This account is not a client, so there are no loyalty stamps." />
+        ) : null}
+
+        {!loading && user.role === "client" ? (
+          <div className="space-y-3">
+            {categories.length === 0 ? <EmptyState text="No stamp categories found." /> : null}
+
+            {categories.map((category) => {
+              const count = Math.max(0, Math.min(5, stampByCategory.get(category.id) ?? 0));
+
+              return (
+                <div
+                  key={category.id}
+                  className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
+                  style={{ borderRadius: 22, background: GLASS_CARD }}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="truncate text-[15px] font-black text-white">
+                      {category.name === "Desserts 2" ? "Hooka" : category.name}
+                    </div>
+                    <div className="text-[13px] font-black tabular-nums text-[#ffd66b]">
+                      {count}/5
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-5 gap-2">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <div
+                        key={index}
+                        className={`h-2 rounded-full ${
+                          index < count ? "bg-[#ffd66b]" : "bg-white/45"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </DashboardGroup>
+
+      <DashboardGroup title="Gifts">
+        {loading ? null : rewards.length === 0 ? <EmptyState text="No gifts for this client yet." /> : null}
+
+        <div className="space-y-3">
+          {rewards.map((reward) => (
+            <div
+              key={reward.id}
+              className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
+              style={{ borderRadius: 22, background: GLASS_CARD }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-[16px] font-black text-[#ffd66b]">
+                    {normalizeRewardText(reward.reward_type)}
+                  </div>
+                  <div className="mt-1 text-[11px] font-semibold leading-5 text-white/62">
+                    Earned {formatDate(reward.earned_at)}
+                    {reward.redeemed_at ? <> · Confirmed {formatDate(reward.redeemed_at)}</> : null}
+                  </div>
+                </div>
+
+                <span
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] ${
+                    reward.status === "available"
+                      ? "bg-[#ffd66b] text-[#365665]"
+                      : reward.status === "redeemed" || reward.status === "claimed"
+                        ? "bg-white/16 text-[#ffd66b]"
+                        : "bg-white/82 text-[#365665]"
+                  }`}
+                >
+                  {reward.status}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </DashboardGroup>
+    </div>
   );
 }
 
