@@ -25,11 +25,47 @@ export default async function ProfilePage() {
     redirect("/login");
   }
 
+  const [transactionsResult, rewardsResult, categoriesResult] = await Promise.all([
+    supabase
+      .from("stamp_transactions")
+      .select("*")
+      .eq("client_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(30),
+
+    supabase
+      .from("rewards")
+      .select("*")
+      .eq("client_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(30),
+
+    supabase.from("loyalty_categories").select("id, name"),
+  ]);
+
+  const categoryNameById = new Map(
+    (categoriesResult.data ?? []).map((category: any) => [
+      String(category.id),
+      category.name,
+    ]),
+  );
+
+  const recentTransactions = (transactionsResult.data ?? []).map((item: any) => ({
+    ...item,
+    category_name:
+      item.category_name ||
+      item.loyalty_categories?.name ||
+      categoryNameById.get(String(item.category_id)) ||
+      categoryNameById.get(String(item.loyalty_category_id)) ||
+      item.category ||
+      null,
+  }));
+
   return (
     <ProfileSettings
       profile={profile}
-      recentTransactions={[]}
-      recentRewards={[]}
+      recentTransactions={recentTransactions}
+      recentRewards={rewardsResult.data ?? []}
     />
   );
 }

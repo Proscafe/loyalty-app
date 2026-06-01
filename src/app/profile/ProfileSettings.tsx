@@ -42,20 +42,65 @@ function normalizeCategoryName(name: string) {
     return "Hooka";
   }
 
+  if (lower === "sandwich" || lower === "sandwiches" || lower === "sandwiche") return "Sandwich";
+  if (lower === "dessert" || lower === "desserts") return "Dessert";
   if (lower === "coffee" || lower === "coffees") return "Coffee";
   if (lower === "main course" || lower === "main courses") return "Main Course";
 
   return name;
 }
 
+function singularizeRewardName(value: string) {
+  const cleaned = value
+    .replace(/\s+Item$/i, "")
+    .replace(/\s+Reward$/i, "")
+    .replace(/^Free\s+(.+)\s+Item$/i, "Free $1")
+    .trim();
+
+  return cleaned
+    .replace(/\bSandwiches\b/gi, "Sandwich")
+    .replace(/\bSandwiche\b/gi, "Sandwich")
+    .replace(/\bMain Courses\b/gi, "Main Course")
+    .replace(/\bCoffees\b/gi, "Coffee")
+    .replace(/\bDesserts\b/gi, "Dessert")
+    .replace(/\bHookas\b/gi, "Hooka")
+    .replace(/\bHookahs\b/gi, "Hooka");
+}
+
+function cleanRewardName(value: string) {
+  return singularizeRewardName(value);
+}
+
 function getCategoryName(item: any) {
   const category =
+    item?.category_name ||
     item?.loyalty_categories?.name ||
     item?.category?.name ||
+    item?.categories?.name ||
     item?.reward_type ||
-    "Activity";
+    item?.reward_name ||
+    item?.type ||
+    "";
 
-  return normalizeCategoryName(String(category));
+  const cleaned = cleanRewardName(String(category || ""));
+
+  return cleaned ? normalizeCategoryName(cleaned) : "Activity";
+}
+
+function isBirthdayReward(item: any) {
+  const text = [
+    item?.reward_type,
+    item?.reward_name,
+    item?.type,
+    item?.category_name,
+    item?.loyalty_categories?.name,
+    item?.category?.name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return text.includes("birthday") || text.includes("20%") || text.includes("dessert");
 }
 
 function normalizeActionType(actionType?: string | null) {
@@ -83,15 +128,15 @@ function getActivityTitle(item: any) {
   if (item._type === "reward" || item.reward_type || item.status) {
     const category = getCategoryName(item);
 
-    if (item.status === "redeemed") {
-      return `Reward confirmed · ${category}`;
+    if (item.status === "redeemed" || item.status === "approved" || item.status === "confirmed") {
+      return `Gift approved · ${category}`;
     }
 
-    if (item.status === "claimed") {
-      return `Reward pending · ${category}`;
+    if (item.status === "claimed" || item.status === "pending") {
+      return `Gift pending · ${category}`;
     }
 
-    return `Reward earned · ${category}`;
+    return `Gift earned · ${category}`;
   }
 
   const action = normalizeActionType(item.action_type);
@@ -102,7 +147,7 @@ function getActivityTitle(item: any) {
 
 function getActivityIcon(item: any) {
   if (item._type === "reward" || item.reward_type || item.status) {
-    return "/gift.png";
+    return isBirthdayReward(item) ? "/birthday-cake.png" : "/gift.png";
   }
 
   return "/approved.png";
@@ -125,24 +170,23 @@ function getDaysInMonth(year: number, monthIndex: number) {
 
 function splitDate(value?: string | null) {
   if (!value) {
-    const now = new Date();
     return {
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
-      day: now.getDate(),
+      year: "",
+      month: "",
+      day: "",
     };
   }
 
   const [year, month, day] = value.split("-").map(Number);
 
   return {
-    year: year || new Date().getFullYear(),
-    month: month || 1,
-    day: day || 1,
+    year: year ? String(year) : "",
+    month: month ? String(month) : "",
+    day: day ? String(day) : "",
   };
 }
 
-function buildDate(year: number, month: number, day: number) {
+function buildDate(year: string, month: string, day: string) {
   const safeMonth = String(month).padStart(2, "0");
   const safeDay = String(day).padStart(2, "0");
   return `${year}-${safeMonth}-${safeDay}`;
@@ -173,14 +217,15 @@ export default function ProfileSettings({
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const years = useMemo(() => getYears(), []);
-  const days = useMemo(
-    () =>
-      Array.from(
-        { length: getDaysInMonth(birthYear, birthMonth - 1) },
-        (_, index) => index + 1,
-      ),
-    [birthYear, birthMonth],
-  );
+  const days = useMemo(() => {
+    const safeYear = birthYear ? Number(birthYear) : new Date().getFullYear();
+    const safeMonth = birthMonth ? Number(birthMonth) : 1;
+
+    return Array.from(
+      { length: getDaysInMonth(safeYear, safeMonth - 1) },
+      (_, index) => index + 1,
+    );
+  }, [birthYear, birthMonth]);
 
   const history = useMemo(() => {
     const rewardItems = recentRewards.map((item) => ({
@@ -204,8 +249,8 @@ export default function ProfileSettings({
       .slice(0, 5);
   }, [recentRewards, recentTransactions]);
 
-  async function saveBirthday(year: number, month: number, day: number) {
-    if (!profile?.id) return;
+  async function saveBirthday(year: string, month: string, day: string) {
+    if (!profile?.id || !year || !month || !day) return;
 
     const birthday = buildDate(year, month, day);
     setBirthdayStatus("");
@@ -228,7 +273,7 @@ export default function ProfileSettings({
     }
   }
 
-  async function handleDatePartChange(type: "year" | "month" | "day", value: number) {
+  async function handleDatePartChange(type: "year" | "month" | "day", value: string) {
     let nextYear = birthYear;
     let nextMonth = birthMonth;
     let nextDay = birthDay;
@@ -237,14 +282,18 @@ export default function ProfileSettings({
     if (type === "month") nextMonth = value;
     if (type === "day") nextDay = value;
 
-    const maxDays = getDaysInMonth(nextYear, nextMonth - 1);
-    if (nextDay > maxDays) nextDay = maxDays;
+    if (nextYear && nextMonth && nextDay) {
+      const maxDays = getDaysInMonth(Number(nextYear), Number(nextMonth) - 1);
+      if (Number(nextDay) > maxDays) nextDay = String(maxDays);
+    }
 
     setBirthYear(nextYear);
     setBirthMonth(nextMonth);
     setBirthDay(nextDay);
 
-    await saveBirthday(nextYear, nextMonth, nextDay);
+    if (nextYear && nextMonth && nextDay) {
+      await saveBirthday(nextYear, nextMonth, nextDay);
+    }
   }
 
   async function handleChangePassword(event: React.FormEvent<HTMLFormElement>) {
@@ -304,7 +353,7 @@ export default function ProfileSettings({
 
   return (
     <main className="relative min-h-screen overflow-hidden" style={{ background: pageBackground }}>
-      <style jsx global>{`
+      <style>{`
         @keyframes prosGradientFloat {
           0% {
             transform: translate3d(-2%, -1%, 0) scale(1.04);
@@ -388,7 +437,7 @@ export default function ProfileSettings({
             Add your birthday
           </span>
           <span className="mt-1 block text-[13px] font-medium text-white/70">
-            We’ll celebrate you with a special birthday gift.
+            Your birthday deserves a treat from us.
           </span>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -399,11 +448,14 @@ export default function ProfileSettings({
               <select
                 value={birthDay}
                 onChange={(event) =>
-                  handleDatePartChange("day", Number(event.target.value))
+                  handleDatePartChange("day", event.target.value)
                 }
                 disabled={isSavingBirthday}
                 className="w-full rounded-[10px] border border-white/20 bg-white/15 px-3 py-3 text-[15px] text-white outline-none backdrop-blur-xl focus:border-[#f0cf61] disabled:opacity-60"
               >
+                <option value="" className="text-[#1c2530]">
+                  Day
+                </option>
                 {days.map((day) => (
                   <option key={day} value={day} className="text-[#1c2530]">
                     {day}
@@ -419,11 +471,14 @@ export default function ProfileSettings({
               <select
                 value={birthMonth}
                 onChange={(event) =>
-                  handleDatePartChange("month", Number(event.target.value))
+                  handleDatePartChange("month", event.target.value)
                 }
                 disabled={isSavingBirthday}
                 className="w-full rounded-[10px] border border-white/20 bg-white/15 px-3 py-3 text-[15px] text-white outline-none backdrop-blur-xl focus:border-[#f0cf61] disabled:opacity-60"
               >
+                <option value="" className="text-[#1c2530]">
+                  Month
+                </option>
                 {[
                   "Jan",
                   "Feb",
@@ -452,11 +507,14 @@ export default function ProfileSettings({
               <select
                 value={birthYear}
                 onChange={(event) =>
-                  handleDatePartChange("year", Number(event.target.value))
+                  handleDatePartChange("year", event.target.value)
                 }
                 disabled={isSavingBirthday}
                 className="w-full rounded-[10px] border border-white/20 bg-white/15 px-3 py-3 text-[15px] text-white outline-none backdrop-blur-xl focus:border-[#f0cf61] disabled:opacity-60"
               >
+                <option value="" className="text-[#1c2530]">
+                  Year
+                </option>
                 {years.map((year) => (
                   <option key={year} value={year} className="text-[#1c2530]">
                     {year}
