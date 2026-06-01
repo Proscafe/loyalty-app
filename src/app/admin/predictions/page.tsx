@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { PredictionsAdmin } from "./PredictionsAdmin";
 import type { Profile } from "@/types";
 
@@ -21,6 +22,22 @@ type PredictionMatchRow = {
   created_at: string;
 };
 
+function getAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return null;
+  }
+
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
 export default async function AdminPredictionsPage() {
   const supabase = await createClient();
 
@@ -32,7 +49,23 @@ export default async function AdminPredictionsPage() {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const admin = getAdminClient();
+
+  if (!admin) {
+    return (
+      <main className="min-h-screen bg-[#586256] px-5 py-10 font-raleway text-white">
+        <div className="mx-auto max-w-md rounded-[24px] bg-white/10 p-5">
+          <h1 className="text-[24px] font-black">Missing Supabase service key</h1>
+          <p className="mt-3 text-[14px] font-semibold leading-6 text-white/70">
+            Add SUPABASE_SERVICE_ROLE_KEY to your local .env.local and Vercel Environment Variables,
+            then restart the server/deploy again.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  const { data: profile } = await admin
     .from("profiles")
     .select("*")
     .eq("id", user.id)
@@ -42,7 +75,7 @@ export default async function AdminPredictionsPage() {
     redirect("/dashboard");
   }
 
-  const { data } = await supabase
+  const { data } = await admin
     .from("prediction_matches")
     .select(
       "id, home_team, away_team, match_label, venue, kickoff_at, opens_at, closes_at, home_score, away_score, secret_code, is_active, created_at",

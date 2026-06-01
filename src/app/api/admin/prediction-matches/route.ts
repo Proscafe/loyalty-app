@@ -40,7 +40,7 @@ function toNullableScore(value: unknown) {
   return score;
 }
 
-function getAdminClientOrNull() {
+function getAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -73,10 +73,20 @@ async function getAuthorizedDb(): Promise<
     };
   }
 
-  const admin = getAdminClientOrNull();
-  const db = admin ?? supabase;
+  const admin = getAdminClient();
 
-  const { data: profile, error: profileError } = await db
+  if (!admin) {
+    return {
+      error: jsonError(
+        "SUPABASE_SERVICE_ROLE_KEY is missing. Add it to .env.local and Vercel Environment Variables.",
+        500,
+      ),
+      db: null,
+      userId: null,
+    };
+  }
+
+  const { data: profile, error: profileError } = await admin
     .from("profiles")
     .select("id, role")
     .eq("id", user.id)
@@ -98,7 +108,7 @@ async function getAuthorizedDb(): Promise<
     };
   }
 
-  return { error: null, db, userId: user.id };
+  return { error: null, db: admin, userId: user.id };
 }
 
 function buildMatchPayload(body: {
