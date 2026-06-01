@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { Toast } from "@/components/Toast";
@@ -430,16 +431,31 @@ export function AdminDashboard({
             className="pointer-events-none absolute inset-0 h-full w-[128%] translate-x-8 scale-[1.06] object-cover object-right opacity-55"
           />
 
-          <div className="relative z-10">
-            <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-white/80">
-              Admin Dashboard
-            </p>
+          <div className="relative z-10 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-white/80">
+                Admin Dashboard
+              </p>
 
-            <h1 className="text-[30px] font-black leading-[1.02] tracking-[-0.04em] text-white">
-              Hello,
-              <br />
-              <span className="text-[#ffd66b]">{shortName(profile.full_name)}</span>
-            </h1>
+              <h1 className="text-[30px] font-black leading-[1.02] tracking-[-0.04em] text-white">
+                Hello,
+                <br />
+                <span className="text-[#ffd66b]">{shortName(profile.full_name)}</span>
+              </h1>
+            </div>
+
+            <Link
+              href="/admin/predictions"
+              aria-label="Open World Cup predictions"
+              className="group flex h-[112px] w-[112px] shrink-0 items-center justify-center transition active:scale-[0.98]"
+            >
+              <img
+                src="/WC-logo.png"
+                alt="World Cup"
+                className="h-[108px] w-[108px] object-contain drop-shadow-[0_18px_34px_rgba(35,48,39,0.22)] transition group-active:scale-95"
+                draggable={false}
+              />
+            </Link>
           </div>
         </section>
 

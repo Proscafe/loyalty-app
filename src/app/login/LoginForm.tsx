@@ -3,6 +3,7 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -22,6 +23,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 }
 
 export function LoginForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -91,6 +93,7 @@ export function LoginForm() {
       }
 
       const role = profile?.role ?? "client";
+      const nextPath = searchParams.get("next");
       const target =
         role === "master_admin" || role === "admin"
           ? "/admin"
@@ -98,7 +101,7 @@ export function LoginForm() {
             ? "/staff"
             : "/dashboard";
 
-      window.location.assign(target);
+      window.location.assign(nextPath && nextPath.startsWith("/") ? nextPath : target);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sign in.");
       setStatusText(null);
