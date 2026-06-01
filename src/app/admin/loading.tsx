@@ -1,85 +1,23 @@
-"use client";
-
-import { useMemo } from "react";
-
-const LOADING_IMAGES = Array.from({ length: 10 }, (_, index) => `/loading${index + 1}.jpg`);
-
-export default function Loading() {
-  const imageSrc = useMemo(() => {
-    const index = Math.floor(Math.random() * LOADING_IMAGES.length);
-    return LOADING_IMAGES[index];
-  }, []);
-
+export default function AdminLoading() {
   return (
-    <main className="fixed inset-0 z-[9999] flex min-h-screen items-center justify-center overflow-hidden bg-black font-raleway">
-      <img
-        src={imageSrc}
-        alt=""
-        className="absolute inset-0 h-full w-full object-cover"
-        draggable={false}
-      />
+    <main className="flex min-h-screen items-center justify-center bg-[#586256] px-6 font-raleway text-white">
+      <div className="text-center">
+        <img
+          src="/pros-logo-basic.png"
+          alt="PRO's Cafe"
+          className="mx-auto h-16 w-auto object-contain opacity-90"
+        />
 
-      <div className="absolute inset-0 bg-black/42" />
-
-      <section className="relative z-10 flex flex-col items-center justify-center px-6 text-center">
-        <div className="text-[46px] font-black uppercase leading-none tracking-[0.12em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)] sm:text-[64px]">
+        <div className="mt-6 text-[12px] font-black uppercase tracking-[0.34em] text-white/72">
           Loading
         </div>
 
-        <div className="mt-5 flex items-center justify-center gap-3">
-          <span className="pros-loading-star pros-loading-star-1">★</span>
-          <span className="pros-loading-star pros-loading-star-2">★</span>
-          <span className="pros-loading-star pros-loading-star-3">★</span>
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#ffd66b]" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#ffd66b] [animation-delay:160ms]" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#ffd66b] [animation-delay:320ms]" />
         </div>
-      </section>
-
-      <style>{`
-        @keyframes prosLoadingStarOne {
-          0% { opacity: 0; }
-          18% { opacity: 1; }
-          82% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-
-        @keyframes prosLoadingStarTwo {
-          0% { opacity: 0; }
-          22% { opacity: 0; }
-          42% { opacity: 1; }
-          82% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-
-        @keyframes prosLoadingStarThree {
-          0% { opacity: 0; }
-          46% { opacity: 0; }
-          66% { opacity: 1; }
-          82% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-
-        .pros-loading-star {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-size: 22px;
-          line-height: 1;
-          opacity: 0;
-          text-shadow: 0 8px 22px rgba(0, 0, 0, 0.42);
-        }
-
-        .pros-loading-star-1 {
-          animation: prosLoadingStarOne 1.8s ease-in-out infinite;
-        }
-
-        .pros-loading-star-2 {
-          animation: prosLoadingStarTwo 1.8s ease-in-out infinite;
-        }
-
-        .pros-loading-star-3 {
-          animation: prosLoadingStarThree 1.8s ease-in-out infinite;
-        }
-      `}</style>
+      </div>
     </main>
   );
 }

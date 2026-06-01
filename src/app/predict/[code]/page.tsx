@@ -103,7 +103,7 @@ export default async function PredictMatchPage({ params }: PageProps) {
     <PredictionPageClient
       match={match as PublicPredictionMatch}
       existingEntry={(existingEntry ?? null) as ExistingPredictionEntry | null}
-      state={getMatchState(match as PublicPredictionMatch)}
+      state={(match as PublicPredictionMatch).is_active ? "open" : "inactive"}
     />
   );
 }

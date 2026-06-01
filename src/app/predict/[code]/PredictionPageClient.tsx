@@ -81,6 +81,21 @@ function countdownTo(value?: string | null) {
   return `${minutes}m to Kickoff`;
 }
 
+function getClientMatchState(match: PublicPredictionMatch | null) {
+  if (!match) return "missing" as const;
+  if (!match.is_active) return "inactive" as const;
+
+  const now = Date.now();
+  const open = parseSavedLocalTime(match.opens_at);
+  const close = parseSavedLocalTime(match.closes_at);
+
+  if (!Number.isFinite(open) || !Number.isFinite(close)) return "not_open" as const;
+  if (now < open) return "not_open" as const;
+  if (now > close) return "closed" as const;
+
+  return "open" as const;
+}
+
 function messageForState(state: string) {
   if (state === "missing") return "This prediction link is not valid.";
   if (state === "inactive") return "This prediction game is inactive.";
@@ -107,18 +122,24 @@ export function PredictionPageClient({
   const [kickoffCountdown, setKickoffCountdown] = useState(() =>
     countdownTo(match?.kickoff_at),
   );
+  const [liveState, setLiveState] = useState(() =>
+    state === "missing" || state === "inactive" ? state : getClientMatchState(match),
+  );
 
   useEffect(() => {
     setKickoffCountdown(countdownTo(match?.kickoff_at));
+    setLiveState(state === "missing" || state === "inactive" ? state : getClientMatchState(match));
 
     const timer = window.setInterval(() => {
       setKickoffCountdown(countdownTo(match?.kickoff_at));
-    }, 60000);
+      setLiveState(state === "missing" || state === "inactive" ? state : getClientMatchState(match));
+    }, 15000);
 
     return () => window.clearInterval(timer);
-  }, [match?.kickoff_at]);
+  }, [match, match?.kickoff_at, state]);
 
-  const canSubmit = Boolean(match && state === "open" && !existingEntry && homeScore !== "" && awayScore !== "");
+  const displayState = liveState;
+  const canSubmit = Boolean(match && displayState === "open" && !existingEntry && homeScore !== "" && awayScore !== "");
 
   function cleanScore(value: string) {
     return value.replace(/[^0-9]/g, "").slice(0, 2);
@@ -189,13 +210,13 @@ export function PredictionPageClient({
           </div>
         </section>
 
-        {!match || state !== "open" ? (
+        {!match || displayState !== "open" ? (
           <section
             className="border border-white/20 p-5 text-center shadow-[0_18px_54px_rgba(35,48,39,0.16)] backdrop-blur-2xl"
             style={{ borderRadius: 26, background: GLASS_CARD }}
           >
             <div className="text-[24px] font-black text-[#ffd66b]">
-              {messageForState(state)}
+              {messageForState(displayState)}
             </div>
             {match ? (
               <p className="mt-3 text-[13px] font-semibold leading-5 text-white/64">
