@@ -37,6 +37,55 @@ const PAGE_BG =
 const GLASS_CARD =
   "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
 
+function parseSavedDateParts(value?: string | null) {
+  if (!value) return null;
+
+  const match = String(value)
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+
+  if (!match) return null;
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  };
+}
+
+function parseSavedLocalTime(value?: string | null) {
+  const parts = parseSavedDateParts(value);
+
+  if (!parts) {
+    const fallback = new Date(String(value ?? ""));
+    return Number.isNaN(fallback.getTime()) ? NaN : fallback.getTime();
+  }
+
+  return new Date(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    0,
+    0,
+  ).getTime();
+}
+
+function formatSavedDate(value?: string | null) {
+  const parts = parseSavedDateParts(value);
+
+  if (!parts) return "—";
+
+  const hour12 = parts.hour % 12 || 12;
+  const ampm = parts.hour >= 12 ? "PM" : "AM";
+  const minute = String(parts.minute).padStart(2, "0");
+
+  return `${parts.month}/${parts.day}/${parts.year}, ${hour12}:${minute} ${ampm}`;
+}
+
 function localValue(date: Date) {
   const pad = (value: number) => String(value).padStart(2, "0");
 
@@ -48,7 +97,14 @@ function localValue(date: Date) {
 function toLocalInputValue(value?: string | null) {
   if (!value) return "";
 
-  const date = new Date(value);
+  // Keep the exact date/time saved in Supabase instead of shifting by browser/server timezone.
+  const cleanValue = String(value).trim();
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(cleanValue)) {
+    return cleanValue.slice(0, 16);
+  }
+
+  const date = new Date(cleanValue);
   if (Number.isNaN(date.getTime())) return "";
 
   return localValue(date);
@@ -88,10 +144,7 @@ function formFromMatch(match: PredictionMatchRow): MatchForm {
 }
 
 function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleString();
+  return formatSavedDate(value);
 }
 
 function matchStatus(match: PredictionMatchRow) {
@@ -364,7 +417,7 @@ export function PredictionsAdmin({
         </section>
 
         {toast ? (
-          <div className="mb-4 rounded-2xl border border-[#ffd66b]/35 bg-[#ffd66b]/15 px-4 py-3 text-[12px] font-black text-[#ffd66b]">
+          <div className="mb-4 rounded-2xl border border-[#ffd66b]/45 bg-[#ffd66b]/20 px-4 py-3 text-[12px] font-black leading-5 text-[#ffd66b] shadow-[0_14px_35px_rgba(0,0,0,0.14)]">
             {toast}
           </div>
         ) : null}
@@ -400,7 +453,7 @@ export function PredictionsAdmin({
           />
 
           <PredictionDateInput
-            label="Kickoff"
+            label="Match timing"
             value={form.kickoff_at}
             onChange={(value) => setForm((current) => ({ ...current, kickoff_at: value }))}
           />
@@ -521,7 +574,7 @@ export function PredictionsAdmin({
                   />
 
                   <PredictionDateInput
-                    label="Kickoff"
+                    label="Match timing"
                     value={currentForm.kickoff_at}
                     onChange={(value) => updateEditForm(match.id, { kickoff_at: value })}
                   />
@@ -652,6 +705,7 @@ function PredictionDateInput({
       </span>
       <input
         type="datetime-local"
+        step={60}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="h-12 w-full rounded-2xl border border-white/20 bg-white px-3 text-[12px] font-bold text-black outline-none"

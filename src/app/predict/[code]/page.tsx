@@ -20,6 +20,27 @@ export type PublicPredictionMatch = {
   is_active: boolean;
 };
 
+function parseSavedLocalTime(value?: string | null) {
+  const match = String(value ?? "")
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+
+  if (!match) {
+    const fallback = new Date(String(value ?? ""));
+    return Number.isNaN(fallback.getTime()) ? NaN : fallback.getTime();
+  }
+
+  return new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    0,
+    0,
+  ).getTime();
+}
+
 export type ExistingPredictionEntry = {
   id: string;
   match_id: string;
@@ -31,8 +52,8 @@ export type ExistingPredictionEntry = {
 
 function getMatchState(match: PublicPredictionMatch) {
   const now = Date.now();
-  const open = new Date(match.opens_at).getTime();
-  const close = new Date(match.closes_at).getTime();
+  const open = parseSavedLocalTime(match.opens_at);
+  const close = parseSavedLocalTime(match.closes_at);
 
   if (!match.is_active) return "inactive";
   if (now < open) return "not_open";

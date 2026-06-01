@@ -21,7 +21,21 @@ function makeSecretCode(homeTeam: string, awayTeam: string) {
 }
 
 function toIso(value: unknown) {
-  const date = new Date(String(value ?? ""));
+  const raw = String(value ?? "").trim();
+
+  if (!raw) return null;
+
+  // datetime-local sends YYYY-MM-DDTHH:mm.
+  // Save that exact calendar date/time to Supabase without timezone shifting.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    return `${raw}:00.000Z`;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(raw)) {
+    return raw.endsWith("Z") ? raw : `${raw.replace(/\.\d+$/, "")}.000Z`;
+  }
+
+  const date = new Date(raw);
 
   if (Number.isNaN(date.getTime())) return null;
 

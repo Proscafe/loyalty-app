@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/AppShell";
 import type { ExistingPredictionEntry, PublicPredictionMatch } from "./page";
 
 const PAGE_BG =
@@ -9,12 +10,75 @@ const PAGE_BG =
 const GLASS_CARD =
   "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+function parseSavedDateParts(value?: string | null) {
+  if (!value) return null;
 
-  return date.toLocaleString();
+  const match = String(value)
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+
+  if (!match) return null;
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  };
+}
+
+function parseSavedLocalTime(value?: string | null) {
+  const parts = parseSavedDateParts(value);
+
+  if (!parts) {
+    const fallback = new Date(String(value ?? ""));
+    return Number.isNaN(fallback.getTime()) ? NaN : fallback.getTime();
+  }
+
+  return new Date(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    0,
+    0,
+  ).getTime();
+}
+
+function formatSavedDate(value?: string | null) {
+  const parts = parseSavedDateParts(value);
+
+  if (!parts) return "—";
+
+  const hour12 = parts.hour % 12 || 12;
+  const ampm = parts.hour >= 12 ? "PM" : "AM";
+  const minute = String(parts.minute).padStart(2, "0");
+
+  return `${parts.month}/${parts.day}/${parts.year}, ${hour12}:${minute} ${ampm}`;
+}
+
+function formatDate(value?: string | null) {
+  return formatSavedDate(value);
+}
+
+function countdownTo(value?: string | null) {
+  const target = parseSavedLocalTime(value);
+  const now = Date.now();
+
+  if (!Number.isFinite(target)) return "";
+  if (target <= now) return "Kickoff time";
+
+  const totalSeconds = Math.max(0, Math.floor((target - now) / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m to Kickoff`;
+  if (hours > 0) return `${hours}h ${minutes}m to Kickoff`;
+
+  return `${minutes}m to Kickoff`;
 }
 
 function messageForState(state: string) {
@@ -40,6 +104,19 @@ export function PredictionPageClient({
   const [awayScore, setAwayScore] = useState(existingEntry?.away_score?.toString() ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [kickoffCountdown, setKickoffCountdown] = useState(() =>
+    countdownTo(match?.kickoff_at),
+  );
+
+  useEffect(() => {
+    setKickoffCountdown(countdownTo(match?.kickoff_at));
+
+    const timer = window.setInterval(() => {
+      setKickoffCountdown(countdownTo(match?.kickoff_at));
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, [match?.kickoff_at]);
 
   const canSubmit = Boolean(match && state === "open" && !existingEntry && homeScore !== "" && awayScore !== "");
 
@@ -76,28 +153,40 @@ export function PredictionPageClient({
   }
 
   return (
-    <main
-      className="min-h-screen px-4 pb-10 pt-8 font-raleway text-white"
-      style={{ background: PAGE_BG }}
+    <AppShell
+      title="World Cup Predictions"
+      roleLabel=""
+      headerBackground="rgba(54,86,101,0.72)"
+      pageBackground={PAGE_BG}
+      logoSrc="/pros-logo-basic.png"
+      logoAlt="PRO's Logo"
     >
-      <div className="mx-auto w-full max-w-md">
+      <main
+        className="flex min-h-screen flex-col px-4 pb-8 pt-6 font-raleway text-white"
+        style={{ background: PAGE_BG }}
+      >
+      <div className="mx-auto w-full max-w-md flex-1">
         <section
-          className="mb-5 border border-white/20 p-5 shadow-[0_24px_70px_rgba(35,48,39,0.22)] backdrop-blur-2xl"
+          className="relative mb-5 overflow-hidden border border-white/20 p-5 shadow-[0_24px_70px_rgba(35,48,39,0.22)] backdrop-blur-2xl"
           style={{ borderRadius: 26, background: GLASS_CARD }}
         >
-          <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-white/70">
-            Pro&apos;s World Cup
-          </p>
+          <div
+            className="pointer-events-none absolute inset-0 opacity-34"
+            style={{
+              backgroundImage: "url('/client-main-card.png'), url('/client main card.png')",
+              backgroundSize: "cover",
+              backgroundPosition: "right center",
+              backgroundRepeat: "no-repeat",
+            }}
+          />
 
-          <h1 className="text-[33px] font-black leading-[0.98] tracking-[-0.04em] text-white">
-            Match
-            <br />
-            <span className="text-[#ffd66b]">Prediction</span>
-          </h1>
-
-          <p className="mt-4 text-[13px] font-semibold leading-5 text-white/64">
-            Predict the final score. You can submit only once.
-          </p>
+          <div className="relative z-10">
+            <h1 className="text-[33px] font-black leading-[0.98] tracking-[-0.04em] text-white">
+              Match
+              <br />
+              <span className="text-[#ffd66b]">Prediction</span>
+            </h1>
+          </div>
         </section>
 
         {!match || state !== "open" ? (
@@ -110,7 +199,15 @@ export function PredictionPageClient({
             </div>
             {match ? (
               <p className="mt-3 text-[13px] font-semibold leading-5 text-white/64">
-                {match.home_team} vs {match.away_team}
+                <span className="font-black uppercase text-[#ffd66b]">
+                  {match.home_team} VS {match.away_team}
+                </span>
+                <br />
+                <span className="font-black text-[#ffd66b]">
+                  {kickoffCountdown}
+                </span>
+                <br />
+                {formatDate(match.kickoff_at)}
                 <br />
                 Opens {formatDate(match.opens_at)}
                 <br />
@@ -127,21 +224,20 @@ export function PredictionPageClient({
               <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/50">
                 {match.match_label || "World Cup"}
               </div>
-              <div className="mt-2 text-[24px] font-black leading-tight text-white">
-                {match.home_team}
-                <br />
-                <span className="text-[#ffd66b]">VS</span>
-                <br />
-                {match.away_team}
+              <div className="mt-3 text-[28px] font-black uppercase leading-tight tracking-[0.02em] text-[#ffd66b]">
+                {match.home_team} <span className="text-white">VS</span> {match.away_team}
               </div>
-              <div className="mt-3 text-[12px] font-semibold text-white/62">
-                Kickoff {formatDate(match.kickoff_at)}
+              <div className="mt-3 text-[13px] font-black text-[#ffd66b]">
+                {kickoffCountdown}
+              </div>
+              <div className="mt-1 text-[12px] font-semibold text-white/62">
+                {formatDate(match.kickoff_at)}
               </div>
             </div>
 
             {existingEntry ? (
               <div className="rounded-3xl border border-[#ffd66b]/24 bg-[#ffd66b]/12 p-5 text-center">
-                <div className="text-[13px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+                <div className="text-[12px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
                   Already submitted
                 </div>
                 <div className="mt-3 text-[34px] font-black tabular-nums text-white">
@@ -157,13 +253,13 @@ export function PredictionPageClient({
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                   <ScoreInput
                     label={match.home_team}
                     value={homeScore}
                     onChange={(value) => setHomeScore(cleanScore(value))}
                   />
-                  <div className="pt-7 text-[13px] font-black uppercase tracking-[0.18em] text-white/52">
+                  <div className="flex h-14 items-center justify-center text-[13px] font-black uppercase tracking-[0.18em] text-white/72">
                     VS
                   </div>
                   <ScoreInput
@@ -196,7 +292,19 @@ export function PredictionPageClient({
           </section>
         )}
       </div>
-    </main>
+        <footer className="mx-auto mt-auto w-full max-w-md pt-10 text-center text-[12px] font-semibold text-white/54">
+          © Powered by{" "}
+          <a
+            href="https://wissamdesigns.com"
+            target="_blank"
+            rel="noreferrer"
+            className="font-black text-[#ffd66b]"
+          >
+            wissamdesigns.com
+          </a>
+        </footer>
+      </main>
+    </AppShell>
   );
 }
 
@@ -211,16 +319,13 @@ function ScoreInput({
 }) {
   return (
     <label className="block">
-      <div className="mb-2 truncate text-center text-[15px] font-black text-white">
-        {label}
-      </div>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         inputMode="numeric"
         pattern="[0-9]*"
         placeholder="0"
-        className="h-16 w-full rounded-3xl border border-white/20 bg-white/88 text-center text-[28px] font-black tabular-nums text-[#365665] outline-none placeholder:text-[#365665]/30"
+        className="mx-auto h-14 w-full max-w-[150px] rounded-[22px] border border-white/20 bg-white/88 text-center text-[24px] font-black tabular-nums text-[#365665] outline-none placeholder:text-[#365665]/30"
       />
     </label>
   );
