@@ -933,6 +933,67 @@ export function ClientDashboard({
           </div>
         </section>
 
+        <section
+          role="button"
+          tabIndex={0}
+          onClick={() => router.push("/world-cup")}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              router.push("/world-cup");
+            }
+          }}
+          className="relative mt-6 cursor-pointer overflow-hidden border border-white/15 px-4 py-4 shadow-[0_22px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl transition active:scale-[0.99]"
+          style={{
+            borderRadius: 18,
+            minHeight: 150,
+            background:
+              "linear-gradient(135deg, rgba(121, 134, 115, 0.96) 0%, rgba(104, 116, 104, 0.94) 45%, rgba(88, 98, 86, 0.96) 100%)",
+          }}
+        >
+          <div
+            className="pointer-events-none absolute inset-0 opacity-58"
+            style={{
+              backgroundImage: "url('/WC-branding.png')",
+              backgroundSize: "auto 92%",
+              backgroundPosition: "right bottom",
+              backgroundRepeat: "no-repeat",
+            }}
+            aria-hidden="true"
+          />
+
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#586256]/12 via-transparent to-transparent" />
+
+          <div className="relative z-10 flex min-h-[118px] items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="font-raleway text-[20px] font-black uppercase leading-[1.18] tracking-[0.08em] text-white">
+                Come
+                <br />
+                <span className="whitespace-nowrap font-black text-[#f0cf61]">
+                  Cheer, Play, Win
+                </span>
+                <br />
+                With Us
+              </h2>
+
+              <p className="mt-4 whitespace-nowrap font-raleway text-[13px] font-normal uppercase tracking-[0.14em] text-[#f0cf61]">
+                Live the experience
+              </p>
+            </div>
+
+            <div className="flex h-[122px] w-[92px] shrink-0 items-center justify-center">
+              <Image
+                src="/WC-logo.png"
+                alt="World Cup"
+                width={96}
+                height={122}
+                className="h-[122px] w-[96px] object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.26)]"
+                priority={false}
+              />
+            </div>
+          </div>
+        </section>
+
         {visibleRewards.length > 0 && (
           <section className="mt-10">
             <div className="mb-5 flex items-center justify-between">
