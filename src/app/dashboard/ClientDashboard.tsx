@@ -653,6 +653,10 @@ export function ClientDashboard({
   const router = useRouter();
   const [localRewards, setLocalRewards] = useState<ClientReward[]>((rewards ?? initialRewards ?? []) as ClientReward[]);
   const [celebrationReward, setCelebrationReward] = useState<ClientReward | null>(null);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackStatus, setFeedbackStatus] = useState<string | null>(null);
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(((rewards ?? initialRewards ?? []) as ClientReward[]).map((reward) => reward.id))
@@ -820,6 +824,50 @@ export function ClientDashboard({
     }
   }
 
+  async function sendFeedback() {
+    const message = feedbackMessage.trim();
+
+    if (!message) {
+      setFeedbackStatus("Please write your feedback first.");
+      return;
+    }
+
+    setIsSendingFeedback(true);
+    setFeedbackStatus(null);
+
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          client_id: profile.id,
+          client_name: profile.full_name,
+          client_email: profile.email,
+          client_phone: profile.phone,
+          client_code: profile.client_code,
+        }),
+      });
+
+      const json = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(json?.error || "Could not send feedback.");
+      }
+
+      setFeedbackMessage("");
+      setFeedbackStatus("Feedback sent! Thanks for sharing.");
+      window.setTimeout(() => {
+        setIsFeedbackOpen(false);
+        setFeedbackStatus(null);
+      }, 5000);
+    } catch (error) {
+      setFeedbackStatus(error instanceof Error ? error.message : "Could not send feedback.");
+    } finally {
+      setIsSendingFeedback(false);
+    }
+  }
+
 
   return (
     <AppShell
@@ -868,7 +916,7 @@ export function ClientDashboard({
 
       <div className="pros-client-moving-bg" aria-hidden="true" />
 
-      <div className="relative z-10 mx-auto w-full max-w-md px-4 pb-12 pt-4">
+      <div className="relative z-10 mx-auto w-full max-w-md px-4 pb-12 pt-4 font-raleway">
         <section
           className="relative overflow-hidden border border-white/15 px-5 py-5 shadow-[0_22px_60px_rgba(0,0,0,0.24)] backdrop-blur-xl"
           style={{ borderRadius: 18, background: GLASS_CARD_DARK, minHeight: 236 }}
@@ -926,9 +974,13 @@ export function ClientDashboard({
 
             <button
               type="button"
+              onClick={() => {
+                setIsFeedbackOpen(true);
+                setFeedbackStatus(null);
+              }}
               className="mt-5 inline-flex items-center justify-center rounded-[10px] bg-[#f0cf61] px-5 py-3 font-raleway text-[15px] font-bold text-[#1c2530]"
             >
-              Message Us
+              Your Feedback
             </button>
           </div>
         </section>
@@ -966,19 +1018,15 @@ export function ClientDashboard({
 
           <div className="relative z-10 flex min-h-[118px] items-center justify-between gap-2">
             <div className="min-w-0">
-              <h2 className="font-raleway text-[20px] font-black uppercase leading-[1.18] tracking-[0.08em] text-white">
-                Come
+              <h2 className="font-raleway text-[23px] font-black leading-[1.08] tracking-[0.01em] text-white">
+                Predict the scores
                 <br />
-                <span className="whitespace-nowrap font-black text-[#f0cf61]">
-                  Cheer, Play, Win
-                </span>
-                <br />
-                With Us
+                <span className="text-[#f0cf61]">&amp; win rewards</span>
               </h2>
 
-              <p className="mt-4 whitespace-nowrap font-raleway text-[13px] font-normal uppercase tracking-[0.14em] text-[#f0cf61]">
-                Live the experience
-              </p>
+              <div className="mt-4 inline-flex items-center justify-center rounded-[10px] bg-[#f0cf61] px-5 py-3 font-raleway text-[15px] font-bold text-[#1c2530] shadow-[0_12px_28px_rgba(0,0,0,0.18)]">
+                Play Now
+              </div>
             </div>
 
             <div className="flex h-[122px] w-[92px] shrink-0 items-center justify-center">
@@ -1045,6 +1093,79 @@ export function ClientDashboard({
             onClaim={handleClaim}
           />
         ) : null}
+
+        {isFeedbackOpen ? (
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm"
+            onClick={() => {
+              setIsFeedbackOpen(false);
+              setFeedbackStatus(null);
+            }}
+          >
+            <div
+              className="relative w-full max-w-sm border border-white/20 p-5 font-raleway shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
+              style={{ borderRadius: 24, background: GLASS_CARD_DARK }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFeedbackOpen(false);
+                  setFeedbackStatus(null);
+                }}
+                className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/14 text-[18px] font-black text-white/80"
+                aria-label="Close feedback"
+              >
+                ×
+              </button>
+
+              <h3 className="pr-9 text-[24px] font-black leading-tight text-[#f0cf61]">
+                Your Feedback
+              </h3>
+              <p className="mt-3 text-[16px] font-medium leading-5 text-white">
+                What&apos;s on your mind?
+              </p>
+
+              <textarea
+                value={feedbackMessage}
+                onChange={(event) => setFeedbackMessage(event.target.value)}
+                placeholder="Write your feedback here..."
+                rows={5}
+                className="mt-4 w-full resize-none rounded-[16px] border border-white/18 bg-white px-4 py-3 font-raleway text-[14px] font-semibold text-[#243744] outline-none placeholder:text-[#243744]/40 focus:border-[#f0cf61]"
+              />
+
+              {feedbackStatus ? (
+                <div
+                  className={`mt-3 rounded-2xl px-4 py-3 text-[12px] font-bold text-white ${
+                    feedbackStatus === "Feedback sent! Thanks for sharing."
+                      ? "bg-emerald-500/24"
+                      : "bg-white/12"
+                  }`}
+                >
+                  {feedbackStatus}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => void sendFeedback()}
+                disabled={isSendingFeedback}
+                className={`mt-4 inline-flex h-12 w-full items-center justify-center rounded-[10px] px-5 py-3 font-raleway text-[15px] font-bold text-[#1c2530] disabled:opacity-60 ${
+                  feedbackStatus === "Feedback sent! Thanks for sharing."
+                    ? "bg-emerald-400"
+                    : "bg-[#f0cf61]"
+                }`}
+              >
+                {isSendingFeedback
+                  ? "Sending..."
+                  : feedbackStatus === "Feedback sent! Thanks for sharing."
+                    ? "Feedback sent"
+                    : "Send Feedback"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
       </div>
     </AppShell>
   );
