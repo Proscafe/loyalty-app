@@ -127,3 +127,13 @@ body {
   @apply w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm font-medium
          placeholder:text-black/35 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent;
 }
+
+/* Pro's Cafe global font safety */
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: Raleway, var(--font-raleway), system-ui, sans-serif;
+}

@@ -34,6 +34,8 @@ type ClientReward = {
   created_at?: string | null;
   earned_at?: string | null;
   redeemed_at?: string | null;
+  claimed_at?: string | null;
+  expires_at?: string | null;
   is_birthday_reward?: boolean;
   gift_icon?: string;
 };
@@ -346,6 +348,7 @@ function makeBirthdayRewards(profile: Profile): ClientReward[] {
 function getRewardState(reward: ClientReward) {
   if (reward.status === "available") return { label: "Ready to claim", action: "Claim" };
   if (reward.status === "claimed") return { label: "Your gift is on its way.", action: "Pending" };
+  if (reward.status === "expired") return { label: "Expired", action: "Expired" };
   return { label: "Confirmed", action: "Confirmed" };
 }
 
@@ -379,6 +382,49 @@ function isRedeemedRewardStillVisible(reward: ClientReward) {
   return Date.now() - redeemedAt < 2 * 60 * 60 * 1000;
 }
 
+function rewardExpiryDate(reward: ClientReward) {
+  const expiresAt = reward.expires_at
+    ? new Date(reward.expires_at).getTime()
+    : new Date(reward.earned_at || reward.created_at || Date.now()).getTime() + 30 * 24 * 60 * 60 * 1000;
+
+  return Number.isNaN(expiresAt) ? null : expiresAt;
+}
+
+function isExpiredRewardStillVisible(reward: ClientReward) {
+  if (reward.status !== "expired") return true;
+
+  const expiresAt = rewardExpiryDate(reward);
+  if (!expiresAt) return false;
+
+  return Date.now() - expiresAt < 2 * 60 * 60 * 1000;
+}
+
+function getValidityLabel(reward: ClientReward) {
+  if (reward.is_birthday_reward) return null;
+  if (reward.status === "redeemed") return null;
+
+  const expiresAt = rewardExpiryDate(reward);
+  if (!expiresAt) return null;
+
+  const now = Date.now();
+
+  if (reward.status === "expired" || now > expiresAt) {
+    return "Expired";
+  }
+
+  const msLeft = expiresAt - now;
+  const daysLeft = Math.ceil(msLeft / (24 * 60 * 60 * 1000));
+
+  if (daysLeft > 5) return null;
+  if (daysLeft <= 1) return "Expires today";
+
+  return `Valid for ${daysLeft} days`;
+}
+
+function isExpiryUrgent(label: string | null) {
+  return label === "Expires today" || label === "Expired";
+}
+
 function GiftCarouselCard({
   reward,
   index,
@@ -397,6 +443,8 @@ function GiftCarouselCard({
     ? reward.reward_type || "Birthday Gift"
     : `Free ${getSingularCategory(categoryName)}`;
   const giftIcon = isBirthdayReward ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
+  const validityLabel = getValidityLabel(reward);
+  const urgentValidity = isExpiryUrgent(validityLabel);
 
   return (
     <div
@@ -413,6 +461,16 @@ function GiftCarouselCard({
             "linear-gradient(160deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04) 48%, rgba(255,255,255,0.02))",
         }}
       />
+
+      {validityLabel ? (
+        <div
+          className={`absolute right-2 top-2 z-10 rounded-[9px] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.06em] ${
+            urgentValidity ? "bg-[#ef4444] text-white" : "bg-white/16 text-white"
+          }`}
+        >
+          {validityLabel}
+        </div>
+      ) : null}
 
       <div className="relative mt-0 flex h-[82px] w-[82px] items-center justify-center">
         <div className="absolute inset-0 rounded-full bg-[#f0cf61]/22 blur-md" />
@@ -704,7 +762,10 @@ export function ClientDashboard({
 
   const visibleRewards = useMemo(() => {
     const baseRewards = localRewards.filter(
-      (reward) => ["available", "claimed", "redeemed"].includes(reward.status ?? "") && isRedeemedRewardStillVisible(reward)
+      (reward) =>
+        ["available", "claimed", "redeemed", "expired"].includes(reward.status ?? "") &&
+        isRedeemedRewardStillVisible(reward) &&
+        isExpiredRewardStillVisible(reward)
     );
 
     if (!hasBirthdayToday) return baseRewards;

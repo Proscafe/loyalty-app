@@ -1,23 +1,58 @@
-export default function AdminLoading() {
+export default function Loading() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#586256] px-6 font-raleway text-white">
-      <div className="text-center">
-        <img
-          src="/pros-logo-basic.png"
-          alt="PRO's Cafe"
-          className="mx-auto h-16 w-auto object-contain opacity-90"
-        />
+    <main
+      className="fixed inset-0 z-[9999] flex min-h-screen items-center justify-center overflow-hidden bg-black font-raleway text-white"
+      style={{
+        fontFamily: "Raleway, var(--font-raleway), system-ui, sans-serif",
+      }}
+    >
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{
+          backgroundImage: "url('/loading5.jpg')",
+        }}
+        aria-hidden="true"
+      />
 
-        <div className="mt-6 text-[12px] font-black uppercase tracking-[0.34em] text-white/72">
+      <div className="absolute inset-0 bg-black/58" aria-hidden="true" />
+
+      <section className="relative z-10 flex flex-col items-center px-6 text-center">
+        <div className="font-raleway text-[34px] font-black uppercase tracking-[0.22em] text-white drop-shadow-[0_12px_30px_rgba(0,0,0,0.42)]">
           Loading
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[#ffd66b]" />
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[#ffd66b] [animation-delay:160ms]" />
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[#ffd66b] [animation-delay:320ms]" />
+        <div className="mt-5 flex items-center justify-center gap-3">
+          {[0, 1, 2, 3, 4].map((star) => (
+            <span
+              key={star}
+              className="pros-loading-star text-[28px] leading-none text-[#ffd66b]"
+              style={{ animationDelay: `${star * 180}ms` }}
+            >
+              ★
+            </span>
+          ))}
         </div>
-      </div>
+      </section>
+
+      <style>{`
+        .pros-loading-star {
+          opacity: 0.2;
+          transform: scale(0.68);
+          animation: prosLoadingStar 1.45s ease-in-out infinite;
+        }
+
+        @keyframes prosLoadingStar {
+          0%, 100% {
+            opacity: 0.2;
+            transform: scale(0.68);
+          }
+
+          38%, 68% {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
     </main>
   );
 }

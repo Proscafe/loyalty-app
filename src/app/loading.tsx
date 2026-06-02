@@ -1,83 +1,56 @@
-"use client";
-
-import { useMemo } from "react";
-
-const LOADING_IMAGES = Array.from({ length: 10 }, (_, index) => `/loading${index + 1}.jpg`);
-
 export default function Loading() {
-  const imageSrc = useMemo(() => {
-    const index = Math.floor(Math.random() * LOADING_IMAGES.length);
-    return LOADING_IMAGES[index];
-  }, []);
-
   return (
-    <main className="fixed inset-0 z-[9999] flex min-h-screen items-center justify-center overflow-hidden bg-black font-raleway">
-      <img
-        src={imageSrc}
-        alt=""
-        className="absolute inset-0 h-full w-full object-cover"
-        draggable={false}
+    <main
+      className="fixed inset-0 z-[9999] flex min-h-screen items-center justify-center overflow-hidden bg-black font-raleway text-white"
+      style={{
+        fontFamily: "Raleway, var(--font-raleway), system-ui, sans-serif",
+      }}
+    >
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{
+          backgroundImage: "url('/loading1.jpg')",
+        }}
+        aria-hidden="true"
       />
 
-      <div className="absolute inset-0 bg-black/42" />
+      <div className="absolute inset-0 bg-black/58" aria-hidden="true" />
 
-      <section className="relative z-10 flex flex-col items-center justify-center px-6 text-center">
-        <div className="text-[46px] font-black uppercase leading-none tracking-[0.12em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)] sm:text-[64px]">
+      <section className="relative z-10 flex flex-col items-center px-6 text-center">
+        <div className="font-raleway text-[34px] font-black uppercase tracking-[0.22em] text-white drop-shadow-[0_12px_30px_rgba(0,0,0,0.42)]">
           Loading
         </div>
 
         <div className="mt-5 flex items-center justify-center gap-3">
-          <span className="pros-loading-star pros-loading-star-1">★</span>
-          <span className="pros-loading-star pros-loading-star-2">★</span>
-          <span className="pros-loading-star pros-loading-star-3">★</span>
+          {[0, 1, 2, 3, 4].map((star) => (
+            <span
+              key={star}
+              className="pros-loading-star text-[28px] leading-none text-[#ffd66b]"
+              style={{ animationDelay: `${star * 180}ms` }}
+            >
+              ★
+            </span>
+          ))}
         </div>
       </section>
 
       <style>{`
-        @keyframes prosLoadingStarOne {
-          0% { opacity: 0; }
-          18% { opacity: 1; }
-          82% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-
-        @keyframes prosLoadingStarTwo {
-          0% { opacity: 0; }
-          22% { opacity: 0; }
-          42% { opacity: 1; }
-          82% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-
-        @keyframes prosLoadingStarThree {
-          0% { opacity: 0; }
-          46% { opacity: 0; }
-          66% { opacity: 1; }
-          82% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-
         .pros-loading-star {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-size: 22px;
-          line-height: 1;
-          opacity: 0;
-          text-shadow: 0 8px 22px rgba(0, 0, 0, 0.42);
+          opacity: 0.2;
+          transform: scale(0.68);
+          animation: prosLoadingStar 1.45s ease-in-out infinite;
         }
 
-        .pros-loading-star-1 {
-          animation: prosLoadingStarOne 1.8s ease-in-out infinite;
-        }
+        @keyframes prosLoadingStar {
+          0%, 100% {
+            opacity: 0.2;
+            transform: scale(0.68);
+          }
 
-        .pros-loading-star-2 {
-          animation: prosLoadingStarTwo 1.8s ease-in-out infinite;
-        }
-
-        .pros-loading-star-3 {
-          animation: prosLoadingStarThree 1.8s ease-in-out infinite;
+          38%, 68% {
+            opacity: 1;
+            transform: scale(1);
+          }
         }
       `}</style>
     </main>

@@ -37,55 +37,6 @@ const PAGE_BG =
 const GLASS_CARD =
   "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
 
-function parseSavedDateParts(value?: string | null) {
-  if (!value) return null;
-
-  const match = String(value)
-    .trim()
-    .match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-
-  if (!match) return null;
-
-  return {
-    year: Number(match[1]),
-    month: Number(match[2]),
-    day: Number(match[3]),
-    hour: Number(match[4]),
-    minute: Number(match[5]),
-  };
-}
-
-function parseSavedLocalTime(value?: string | null) {
-  const parts = parseSavedDateParts(value);
-
-  if (!parts) {
-    const fallback = new Date(String(value ?? ""));
-    return Number.isNaN(fallback.getTime()) ? NaN : fallback.getTime();
-  }
-
-  return new Date(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    0,
-    0,
-  ).getTime();
-}
-
-function formatSavedDate(value?: string | null) {
-  const parts = parseSavedDateParts(value);
-
-  if (!parts) return "—";
-
-  const hour12 = parts.hour % 12 || 12;
-  const ampm = parts.hour >= 12 ? "PM" : "AM";
-  const minute = String(parts.minute).padStart(2, "0");
-
-  return `${parts.month}/${parts.day}/${parts.year}, ${hour12}:${minute} ${ampm}`;
-}
-
 function localValue(date: Date) {
   const pad = (value: number) => String(value).padStart(2, "0");
 
@@ -119,7 +70,7 @@ function makeDefaultForm(): MatchForm {
   return {
     home_team: "",
     away_team: "",
-    match_label: "World Cup",
+    match_label: "",
     venue: "",
     kickoff_at: localValue(kickoff),
     opens_at: localValue(opens),
@@ -144,7 +95,10 @@ function formFromMatch(match: PredictionMatchRow): MatchForm {
 }
 
 function formatDate(value: string) {
-  return formatSavedDate(value);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString();
 }
 
 function matchStatus(match: PredictionMatchRow) {
@@ -181,6 +135,8 @@ export function PredictionsAdmin({
   const [saving, setSaving] = useState(false);
   const [savingMatchId, setSavingMatchId] = useState<string | null>(null);
   const [downloadingQrId, setDownloadingQrId] = useState<string | null>(null);
+  const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<PredictionMatchRow | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   function linkFor(secretCode: string) {
@@ -396,26 +352,65 @@ export function PredictionsAdmin({
     }
   }
 
+  async function deleteMatch(matchId: string) {
+    setDeletingMatchId(matchId);
+    setToast(null);
+
+    try {
+      const response = await fetch("/api/admin/prediction-matches", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: matchId }),
+      });
+
+      const responseText = await response.text();
+
+      let json: {
+        success?: boolean;
+        error?: string;
+      } = {};
+
+      try {
+        json = responseText
+          ? (JSON.parse(responseText) as {
+              success?: boolean;
+              error?: string;
+            })
+          : {};
+      } catch {
+        json = {
+          error: `Invalid server response (${response.status}). Check the prediction-matches API route.`,
+        };
+      }
+
+      if (!response.ok || !json.success) {
+        setToast(json.error ?? `Could not delete game. Status ${response.status}`);
+        return;
+      }
+
+      setMatches((current) => current.filter((match) => match.id !== matchId));
+      setEditForms((current) => {
+        const next = { ...current };
+        delete next[matchId];
+        return next;
+      });
+      setExpandedMatchIds((current) => {
+        const next = new Set(current);
+        next.delete(matchId);
+        return next;
+      });
+      setDeleteCandidate(null);
+      setToast("Game deleted.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Could not delete game.");
+    } finally {
+      setDeletingMatchId(null);
+    }
+  }
+
   return (
     <AppShell title="Predictions" role={profile.role} pageBackground={PAGE_BG}>
       <main className="mx-auto min-h-screen w-full max-w-md px-4 pb-12 pt-5 font-raleway text-white">
-        <section
-          className="mb-5 border border-white/20 p-5 shadow-[0_24px_70px_rgba(35,48,39,0.22)] backdrop-blur-2xl"
-          style={{ borderRadius: 24, background: GLASS_CARD }}
-        >
-          <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-white/70">
-            Admin
-          </p>
-          <h1 className="text-[31px] font-black leading-none tracking-[-0.04em] text-white">
-            World Cup
-            <br />
-            <span className="text-[#ffd66b]">Predictions</span>
-          </h1>
-          <p className="mt-4 text-[13px] font-semibold leading-5 text-white/64">
-            Create and update private game links for customers inside the restaurant.
-          </p>
-        </section>
-
         {toast ? (
           <div className="mb-4 rounded-2xl border border-[#ffd66b]/45 bg-[#ffd66b]/20 px-4 py-3 text-[12px] font-black leading-5 text-[#ffd66b] shadow-[0_14px_35px_rgba(0,0,0,0.14)]">
             {toast}
@@ -427,6 +422,15 @@ export function PredictionsAdmin({
           className="mb-6 space-y-3 border border-white/20 p-4 shadow-[0_18px_54px_rgba(35,48,39,0.16)] backdrop-blur-2xl"
           style={{ borderRadius: 24, background: GLASS_CARD }}
         >
+          <div className="pb-2">
+            <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-white/70">
+              Admin
+            </p>
+            <h1 className="text-[31px] font-black leading-none tracking-[-0.04em] text-white">
+              Create <span className="text-[#ffd66b]">Game Link</span>
+            </h1>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <PredictionInput
               label="Home team"
@@ -441,13 +445,13 @@ export function PredictionsAdmin({
           </div>
 
           <PredictionInput
-            label="Place"
+            label="Description"
             value={form.venue}
             onChange={(value) => setForm((current) => ({ ...current, venue: value }))}
           />
 
           <PredictionInput
-            label="Label"
+            label="Tournament"
             value={form.match_label}
             onChange={(value) => setForm((current) => ({ ...current, match_label: value }))}
           />
@@ -507,28 +511,22 @@ export function PredictionsAdmin({
                 className="border border-white/20 p-4 shadow-[0_18px_54px_rgba(35,48,39,0.16)] backdrop-blur-2xl"
                 style={{ borderRadius: 24, background: GLASS_CARD }}
               >
-                <button
-                  type="button"
-                  onClick={() => toggleMatch(match.id)}
-                  className="mb-4 flex w-full items-start justify-between gap-3 text-left"
-                >
-                  <div className="min-w-0">
+                <div className="mb-4 flex w-full items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleMatch(match.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
                     <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/50">
-                      {match.match_label || "World Cup"}
+                      {match.match_label || "Final Game"}
                     </div>
                     <div className="mt-1 truncate text-[20px] font-black text-white">
                       {match.home_team} <span className="text-[#ffd66b]">vs</span> {match.away_team}
                     </div>
                     <div className="mt-1 text-[11px] font-semibold leading-5 text-white/62">
-                      {match.venue ? (
-                        <>
-                          Place {match.venue}
-                          <br />
-                        </>
-                      ) : null}
                       Kickoff {formatDate(match.kickoff_at)}
                     </div>
-                  </div>
+                  </button>
 
                   <div className="flex shrink-0 items-center gap-2">
                     <span
@@ -540,11 +538,25 @@ export function PredictionsAdmin({
                     >
                       {status}
                     </span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12 text-[16px] font-black text-white/72">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteCandidate(match)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/18 text-[15px] font-black text-red-100 ring-1 ring-red-200/20"
+                      aria-label="Delete game"
+                      title="Delete game"
+                    >
+                      ×
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleMatch(match.id)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12 text-[16px] font-black text-white/72"
+                      aria-label={expandedMatchIds.has(match.id) ? "Collapse game" : "Expand game"}
+                    >
                       {expandedMatchIds.has(match.id) ? "−" : "+"}
-                    </span>
+                    </button>
                   </div>
-                </button>
+                </div>
 
                 {expandedMatchIds.has(match.id) ? (
                   <div className="space-y-3 rounded-[20px] bg-white/10 p-3">
@@ -562,13 +574,13 @@ export function PredictionsAdmin({
                   </div>
 
                   <PredictionInput
-                    label="Place"
+                    label="Description"
                     value={currentForm.venue}
                     onChange={(value) => updateEditForm(match.id, { venue: value })}
                   />
 
                   <PredictionInput
-                    label="Label"
+                    label="Tournament"
                     value={currentForm.match_label}
                     onChange={(value) => updateEditForm(match.id, { match_label: value })}
                   />
@@ -659,6 +671,55 @@ export function PredictionsAdmin({
           ) : null}
         </section>
       </main>
+
+      {deleteCandidate ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/64 px-4 font-raleway backdrop-blur-sm"
+          onClick={() => {
+            if (deletingMatchId !== deleteCandidate.id) {
+              setDeleteCandidate(null);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-sm border border-black/10 p-5 text-black shadow-[0_24px_80px_rgba(0,0,0,0.48)]"
+            style={{
+              borderRadius: 26,
+              background: "rgba(224, 231, 219, 0.96)",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#c39a18]">
+              Confirm delete
+            </p>
+            <h2 className="mt-3 text-[24px] font-black leading-none tracking-[-0.04em] text-black">
+              Delete this game?
+            </h2>
+            <p className="mt-3 text-[13px] font-black leading-5 text-black/78">
+              This will remove {deleteCandidate.home_team} vs {deleteCandidate.away_team} and its prediction link.
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteCandidate(null)}
+                disabled={deletingMatchId === deleteCandidate.id}
+                className="h-11 rounded-full border border-black/35 bg-transparent text-[11px] font-black uppercase tracking-[0.12em] text-black disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteMatch(deleteCandidate.id)}
+                disabled={deletingMatchId === deleteCandidate.id}
+                className="h-11 rounded-full bg-red-500 text-[11px] font-black uppercase tracking-[0.12em] text-white disabled:opacity-60"
+              >
+                {deletingMatchId === deleteCandidate.id ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

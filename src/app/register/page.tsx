@@ -31,7 +31,7 @@ export default async function RegisterPage() {
             />
 
             <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-[#ffd66b]">
-              Loyalty Program
+              
             </p>
 
             <h1 className="font-raleway text-[35px] font-black uppercase leading-[0.95] tracking-[-0.035em] text-white">

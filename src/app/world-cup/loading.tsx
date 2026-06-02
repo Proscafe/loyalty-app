@@ -9,7 +9,7 @@ export default function Loading() {
       <div
         className="absolute inset-0 bg-cover bg-center"
         style={{
-          backgroundImage: "url('/loading2.jpg')",
+          backgroundImage: "url('/loading7.jpg')",
         }}
         aria-hidden="true"
       />

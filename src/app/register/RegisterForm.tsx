@@ -144,9 +144,9 @@ export function RegisterForm() {
         {loading ? "Creating account…" : "Create account"}
       </button>
 
-      <div className="pt-2 text-center text-sm font-semibold text-[#4D7688]">
+      <div className="pt-2 text-center text-sm font-semibold text-black">
         Already a member?{" "}
-        <Link href="/login" className="font-black text-[#365665] underline-offset-4 hover:underline">
+        <Link href="/login" className="font-black text-[#ffd66b] underline-offset-4 hover:underline">
           Sign in
         </Link>
       </div>

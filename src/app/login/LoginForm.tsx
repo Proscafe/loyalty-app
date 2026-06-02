@@ -6,20 +6,28 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(null), timeoutMs);
 
     promise
       .then((value) => {
         window.clearTimeout(timer);
         resolve(value);
       })
-      .catch((error) => {
+      .catch(() => {
         window.clearTimeout(timer);
-        reject(error);
+        resolve(null);
       });
   });
+}
+
+function safeNextPath(value: string | null) {
+  if (!value) return null;
+  if (!value.startsWith("/")) return null;
+  if (value.startsWith("//")) return null;
+
+  return value;
 }
 
 export function LoginForm() {
@@ -42,14 +50,10 @@ export function LoginForm() {
     try {
       const supabase = createClient();
 
-      const { error: signInError } = await withTimeout(
-        supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        }),
-        10000,
-        "Signing in is taking too long. Check the internet connection and try again.",
-      );
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
       if (signInError) {
         setError(signInError.message);
@@ -58,31 +62,29 @@ export function LoginForm() {
         return;
       }
 
-      setStatusText("Opening your account...");
+      const userId = data.user?.id;
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        window.location.assign("/dashboard");
+      if (!userId) {
+        window.location.replace("/dashboard");
         return;
       }
 
-      const profileResult = await Promise.race([
-        supabase
-          .from("profiles")
-          .select("role, is_active")
-          .eq("id", user.id)
-          .maybeSingle(),
-        new Promise<{ data: null }>((resolve) => {
-          window.setTimeout(() => resolve({ data: null }), 1800);
-        }),
-      ]);
+      setStatusText("Opening...");
 
-      const profile = profileResult.data as
+      const profileResult = await withTimeout(
+        (async () =>
+          await supabase
+            .from("profiles")
+            .select("role, is_active")
+            .eq("id", userId)
+            .maybeSingle())(),
+        900,
+      );
+
+      const profile = profileResult?.data as
         | { role?: string | null; is_active?: boolean | null }
-        | null;
+        | null
+        | undefined;
 
       if (profile?.is_active === false) {
         await supabase.auth.signOut({ scope: "local" });
@@ -93,15 +95,15 @@ export function LoginForm() {
       }
 
       const role = profile?.role ?? "client";
-      const nextPath = searchParams.get("next");
-      const target =
+      const nextPath = safeNextPath(searchParams.get("next"));
+      const roleTarget =
         role === "master_admin" || role === "admin"
           ? "/admin"
           : role === "staff"
             ? "/staff"
             : "/dashboard";
 
-      window.location.assign(nextPath && nextPath.startsWith("/") ? nextPath : target);
+      window.location.replace(nextPath ?? roleTarget);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sign in.");
       setStatusText(null);
@@ -163,7 +165,7 @@ export function LoginForm() {
         {loading ? "Please wait..." : "Sign in"}
       </button>
 
-      <div className="pt-2 text-center text-sm font-medium text-ink-800/65">
+      <div className="pt-2 text-center text-sm font-medium text-black">
         New here?{" "}
         <Link href="/register" className="font-extrabold text-brand-600 underline-offset-4 hover:underline">
           Create an account

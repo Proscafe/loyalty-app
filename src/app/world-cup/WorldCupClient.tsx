@@ -23,6 +23,10 @@ type LeaderboardRow = {
   isCurrentUser: boolean;
 };
 
+function firstNameOnly(value?: string | null) {
+  return (value || "Client").trim().split(/\s+/)[0] || "Client";
+}
+
 const FIFA_RANKED_TEAMS = [
   { rank: 1, name: "France" },
   { rank: 2, name: "Spain" },
@@ -135,7 +139,7 @@ export function WorldCupClient({
         className="min-h-screen px-4 pb-12 pt-6 font-raleway text-white"
         style={{ background: PAGE_BG }}
       >
-      <div className="mx-auto w-full max-w-md">
+      <div className="mx-auto w-full max-w-md font-raleway">
         <section
           className="relative mb-5 overflow-hidden px-5 py-6 shadow-[0_24px_70px_rgba(35,48,39,0.22)] backdrop-blur-2xl"
           style={{ borderRadius: 26, background: GLASS_CARD }}
@@ -152,16 +156,16 @@ export function WorldCupClient({
 
           <div className="relative z-10 flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-[34px] font-black uppercase leading-[0.96] tracking-[0.04em] text-white">
-                World Cup
+              <h1 className="font-raleway text-[28px] font-black uppercase leading-[1.12] tracking-[0.04em] text-white">
+                Cheer,
                 <br />
-                <span className="text-[#ffd66b]">Predictions</span>
+                Predict &amp; <span className="text-[#ffd66b]">Win</span>
               </h1>
 
               <p className="mt-4 max-w-[300px] text-[13px] font-semibold leading-5 text-white/68">
-                Guess the right score and earn <span className="font-black text-[#ffd66b]">3 points</span>.
+                Guess the right score and earn <span className="font-black text-[#ffd66b]">3 points</span>
                 <br />
-                Pick the winning team and earn <span className="font-black text-[#ffd66b]">1 point</span>.
+                Pick the winning team and earn <span className="font-black text-[#ffd66b]">1 point</span>
               </p>
             </div>
 
@@ -182,7 +186,7 @@ export function WorldCupClient({
           </h2>
 
           <p className="mt-2 text-[13px] font-normal leading-5 text-white/66">
-            A penalty shoot worth <span className="font-black text-[#ffd66b]">5 points</span>.
+            A penalty shoot worth <span className="font-black text-[#ffd66b]">5 points</span>
           </p>
 
           <button
@@ -242,7 +246,7 @@ export function WorldCupClient({
           </div>
 
           <div className="space-y-3">
-            {leaderboard.map((item, index) => (
+            {leaderboard.filter((item) => item.totalPoints > 0).map((item, index) => (
               <div
                 key={item.id}
                 className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${
@@ -260,7 +264,7 @@ export function WorldCupClient({
 
                   <div className="min-w-0">
                     <div className="truncate text-[14px] font-black text-white">
-                      {item.name}
+                      {firstNameOnly(item.name)}
                     </div>
                     <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white/46">
                       {item.totalPredictions} predictions
@@ -279,9 +283,9 @@ export function WorldCupClient({
               </div>
             ))}
 
-            {leaderboard.length === 0 ? (
+            {leaderboard.filter((item) => item.totalPoints > 0).length === 0 ? (
               <div className="rounded-2xl bg-white/10 px-4 py-5 text-center text-[13px] font-semibold text-white/60">
-                No predictions yet. Scan a match QR code to join.
+                No users with points yet.
               </div>
             ) : null}
           </div>
@@ -290,11 +294,11 @@ export function WorldCupClient({
 
       {isPickerOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/42 px-3 pb-3 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/42 px-3 pb-3 font-raleway backdrop-blur-sm"
           onClick={() => setIsPickerOpen(false)}
         >
           <div
-            className="max-h-[78vh] w-full max-w-md overflow-hidden shadow-[0_-24px_70px_rgba(0,0,0,0.28)]"
+            className="max-h-[78vh] w-full max-w-md overflow-hidden font-raleway shadow-[0_-24px_70px_rgba(0,0,0,0.28)]"
             style={{
               borderRadius: 28,
               background:

@@ -63,12 +63,24 @@ function StaffConsole({ profile, categories }: Props) {
     setTimeout(() => setToast(null), 2200);
   }, []);
 
+  async function cleanupRewardTimers() {
+    try {
+      await supabase.rpc("reset_stale_claimed_rewards");
+      await supabase.rpc("expire_old_rewards");
+    } catch {
+      // Best-effort cleanup only. Never block staff screen loading.
+    }
+  }
+
   const loadClaimedRewards = useCallback(async () => {
+    await cleanupRewardTimers();
+    
+
     const { data: rewardRows, error } = await supabase
       .from("rewards")
       .select("*")
       .eq("status", "claimed")
-      .order("earned_at", { ascending: true });
+      .order("claimed_at", { ascending: true });
 
     if (error) {
       flash("Could not load claim requests.", "error");
@@ -93,10 +105,13 @@ function StaffConsole({ profile, categories }: Props) {
         client: clientById.get(reward.client_id),
       })),
     );
-  }, [flash, supabase]);
+  }, [cleanupRewardTimers, flash, supabase]);
 
   const refreshSelectedClient = useCallback(
     async (clientId: string) => {
+      await cleanupRewardTimers();
+      
+
       const [{ data: nextStamps }, { data: nextRewards }] = await Promise.all([
         supabase.from("client_stamps").select("*").eq("client_id", clientId),
         supabase
@@ -110,7 +125,7 @@ function StaffConsole({ profile, categories }: Props) {
       setStamps((nextStamps ?? []) as ClientStamp[]);
       setRewards((nextRewards ?? []) as Reward[]);
     },
-    [supabase],
+    [cleanupRewardTimers, supabase],
   );
 
   const runSearch = useCallback(
@@ -234,7 +249,7 @@ function StaffConsole({ profile, categories }: Props) {
     const contentType = res.headers.get("content-type") ?? "";
 
     if (contentType.includes("application/json")) {
-      return (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+      return (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; phone?: string | null };
     }
 
     const text = await res.text().catch(() => "");
@@ -300,8 +315,7 @@ function StaffConsole({ profile, categories }: Props) {
       return;
     }
 
-    const responseJson = json as { error?: string; ok?: boolean; phone?: string | null };
-    const nextPhone = typeof responseJson.phone === "string" ? responseJson.phone : trimmedPhone;
+    const nextPhone = typeof json.phone === "string" ? json.phone : trimmedPhone;
 
     setClient({ ...client, phone: nextPhone || null });
     setPhoneDraft(nextPhone);
@@ -328,7 +342,13 @@ function StaffConsole({ profile, categories }: Props) {
 
       if (!res.ok || "error" in json) {
         setBusy(false);
-        flash(("error" in json && json.error) || "Could not add stamp.", "error");
+        const errorMessage = "error" in json ? String(json.error || "") : "";
+        flash(
+          errorMessage.includes("one_stamp_per_client_per_category_per_day")
+            ? "This client already received today's stamp in this category."
+            : errorMessage || "Could not add stamp.",
+          "error",
+        );
         await refreshSelectedClient(client.id);
         await loadClaimedRewards();
         return;
@@ -415,6 +435,19 @@ function StaffConsole({ profile, categories }: Props) {
     };
   }, [loadClaimedRewards, supabase]);
 
+  function maskPhoneNumber(value?: string | null) {
+    const raw = String(value || "").trim();
+
+    if (!raw) return "No phone";
+
+    const compact = raw.replace(/\s+/g, "");
+    const digits = compact.replace(/\D/g, "");
+
+    if (digits.length < 6) return compact;
+
+    return `${digits.slice(0, 2)}***${digits.slice(-3)}`;
+  }
+
   function singularRewardTitle(value?: string | null) {
     const text = String(value || "Reward")
       .replace(/ Item$/i, "")
@@ -456,14 +489,14 @@ function StaffConsole({ profile, categories }: Props) {
             <div className="font-raleway text-[17px] font-black leading-tight text-[#ffd66b]">
               {singularRewardTitle(reward.reward_type)}
             </div>
-            <div className="mt-1 text-[12px] font-semibold text-white/78">
-              Claimed {new Date(reward.earned_at || reward.created_at).toLocaleDateString()}
-            </div>
             {showClient && clientInfo && (
-              <div className="mt-1 truncate text-[12px] font-bold text-[#ffd66b]">
-                {clientInfo.full_name} · {clientInfo.client_code}
+              <div className="mt-1 truncate text-[12px] font-black text-white">
+                {clientInfo.full_name} · {maskPhoneNumber(clientInfo.phone)}
               </div>
             )}
+            <div className="mt-1 text-[12px] font-bold text-white/88">
+              Claimed {new Date((reward as any).claimed_at || reward.earned_at || reward.created_at).toLocaleDateString()}
+            </div>
             <div className="mt-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#ffd66b]">
               Pending approval
             </div>
@@ -549,7 +582,7 @@ function StaffConsole({ profile, categories }: Props) {
                       <div className="truncate text-[18px] font-black text-white">{result.full_name}</div>
                       {(result.phone || result.id_number) && (
                         <div className="mt-1 truncate text-[13px] font-bold text-white/70">
-                          {result.phone || "No phone"}
+                          {maskPhoneNumber(result.phone) || "No phone"}
                           {result.id_number ? ` - ID ${result.id_number}` : ""}
                         </div>
                       )}
@@ -618,7 +651,7 @@ function StaffConsole({ profile, categories }: Props) {
 
                   {(client.phone || client.id_number) && (
                     <div className="mt-4 text-[14px] font-bold text-white/78">
-                      {client.phone || "No phone"}
+                      {maskPhoneNumber(client.phone) || "No phone"}
                       {client.id_number ? ` - ID ${client.id_number}` : ""}
                     </div>
                   )}

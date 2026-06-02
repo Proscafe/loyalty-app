@@ -310,3 +310,50 @@ export async function PATCH(req: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { error: authError, db } = await getAuthorizedDb();
+
+    if (authError) return authError;
+    if (!db) return jsonError("Admin connection failed.", 500);
+
+    let body: {
+      id?: string;
+    };
+
+    try {
+      body = await req.json();
+    } catch {
+      return jsonError("Invalid request.", 400);
+    }
+
+    const matchId = String(body.id ?? "").trim();
+
+    if (!matchId) {
+      return jsonError("Match ID is required.", 400);
+    }
+
+    const { error: entriesError } = await db
+      .from("prediction_entries")
+      .delete()
+      .eq("match_id", matchId);
+
+    if (entriesError) {
+      return jsonError(entriesError.message, 400);
+    }
+
+    const { error } = await db.from("prediction_matches").delete().eq("id", matchId);
+
+    if (error) {
+      return jsonError(error.message, 400);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return jsonError(
+      error instanceof Error ? error.message : "Unexpected server error while deleting match.",
+      500,
+    );
+  }
+}

@@ -1,11 +1,25 @@
 import Image from "next/image";
+import { redirect } from "next/navigation";
+
 import { LoginForm } from "./LoginForm";
+import { getCurrentProfile } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const profile = await getCurrentProfile();
+
+  if (profile) {
+    if (profile.role === "master_admin") redirect("/admin");
+    if (profile.role === "staff") redirect("/staff");
+    redirect("/dashboard");
+  }
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#101820] px-4 py-6 sm:px-6 lg:px-8">
+    <main
+      className="relative min-h-screen overflow-hidden bg-[#111827] text-[#18212b]"
+      style={{ fontFamily: "Raleway, RalewayLocal, Arial, sans-serif" }}
+    >
       <Image
         src="/pros-login-bg.jpg"
         alt="PRO's Café & Sports Lounge"
@@ -14,30 +28,27 @@ export default function LoginPage() {
         sizes="100vw"
         className="object-cover object-center"
       />
+      <div className="absolute inset-0 bg-black/25" />
 
-      <div className="absolute inset-0 bg-black/45" />
-
-      <section className="relative z-10 flex min-h-[calc(100vh-48px)] items-center justify-center">
-        <div className="w-full max-w-[390px] rounded-[28px] bg-white/95 px-5 py-7 shadow-2xl backdrop-blur sm:max-w-[430px] sm:px-8 sm:py-8">
-          <div className="mb-5 flex justify-center">
+      <section className="relative z-10 flex min-h-screen items-center justify-center px-7 py-8 sm:px-8">
+        <div className="w-full max-w-[315px] rounded-[24px] bg-white/50 px-5 py-7 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:max-w-[340px] sm:px-7 sm:py-8">
+          <div className="mb-6 flex flex-col items-center text-center">
             <Image
               src="/pros-logo-basic.png"
               alt="PRO's Café & Sports Lounge logo"
-              width={150}
-              height={100}
+              width={132}
+              height={88}
               priority
-              className="h-auto w-36 object-contain sm:w-40"
+              className="mb-6 h-auto w-[112px] object-contain sm:w-[122px]"
             />
-          </div>
 
-          <div className="mb-6 text-center font-raleway">
-            <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.42em] text-brand-red sm:text-[11px]">
-              Loyalty Program
-            </p>
-
-            <h1 className="text-[30px] uppercase leading-[0.98] tracking-[0.02em] text-[#1f2933] sm:text-[36px]">
-              <span className="block font-normal">Join the</span>
-              <span className="block font-black text-brand-red">PRO&apos;s Club</span>
+            <h1 className="text-center uppercase leading-[0.96] tracking-[0.03em]">
+              <span className="block text-[30px] font-normal text-[#18212b] sm:text-[34px]">
+                Join the
+              </span>
+              <span className="block text-[30px] font-black tracking-[0.02em] text-[#c85b58] sm:text-[34px]">
+                PRO&apos;S CLUB
+              </span>
             </h1>
           </div>
 
