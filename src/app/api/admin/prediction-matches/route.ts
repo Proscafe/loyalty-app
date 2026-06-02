@@ -178,6 +178,34 @@ function buildMatchPayload(body: {
   };
 }
 
+export async function GET() {
+  try {
+    const { error: authError, db } = await getAuthorizedDb();
+
+    if (authError) return authError;
+    if (!db) return jsonError("Admin connection failed.", 500);
+
+    const { data, error } = await db
+      .from("prediction_matches")
+      .select(
+        "id, home_team, away_team, match_label, venue, kickoff_at, opens_at, closes_at, home_score, away_score, secret_code, is_active, created_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) {
+      return jsonError(error.message, 400);
+    }
+
+    return NextResponse.json({ matches: data ?? [] });
+  } catch (error) {
+    return jsonError(
+      error instanceof Error ? error.message : "Unexpected server error while loading matches.",
+      500,
+    );
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { error: authError, db, userId } = await getAuthorizedDb();

@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { AdminDashboard } from "./AdminDashboard";
+import { AdminDashboardClient } from "./AdminDashboardClient";
 import type { Profile, Reward, StampTransaction } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -27,24 +27,35 @@ export default async function AdminPage() {
     supabase.from("rewards").select("*", { count: "exact", head: true }).eq("status", "redeemed"),
   ]);
 
-  // Most-active category: highest count of add_stamp actions, joined to category name
   const { data: actionRows } = await supabase
-    .from("stamp_transactions").select("category_id").eq("action_type", "add_stamp");
+    .from("stamp_transactions")
+    .select("category_id")
+    .eq("action_type", "add_stamp");
 
   const countMap = new Map<string, number>();
-  (actionRows ?? []).forEach((r: { category_id: string | null }) => {
-    if (!r.category_id) return;
-    countMap.set(r.category_id, (countMap.get(r.category_id) ?? 0) + 1);
+
+  (actionRows ?? []).forEach((row: { category_id: string | null }) => {
+    if (!row.category_id) return;
+    countMap.set(row.category_id, (countMap.get(row.category_id) ?? 0) + 1);
   });
+
   let mostActiveCategoryName = "—";
+
   if (countMap.size > 0) {
     const [topId] = [...countMap.entries()].sort((a, b) => b[1] - a[1])[0];
-    const { data: cat } = await supabase.from("loyalty_categories").select("name").eq("id", topId).maybeSingle();
-    if (cat) mostActiveCategoryName = cat.name;
+    const { data: category } = await supabase
+      .from("loyalty_categories")
+      .select("name")
+      .eq("id", topId)
+      .maybeSingle();
+
+    if (category) {
+      mostActiveCategoryName = category.name;
+    }
   }
 
   return (
-    <AdminDashboard
+    <AdminDashboardClient
       profile={profile}
       users={(users ?? []) as Profile[]}
       recentTxns={(txns ?? []) as StampTransaction[]}
