@@ -10,9 +10,11 @@ type PageProps = {
 
 export type PublicPredictionMatch = {
   id: string;
+  sport_type: string | null;
   home_team: string;
   away_team: string;
   match_label: string | null;
+  venue: string | null;
   kickoff_at: string;
   opens_at: string;
   closes_at: string;

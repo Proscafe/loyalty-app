@@ -128,6 +128,7 @@ async function getAuthorizedDb(): Promise<
 function buildMatchPayload(body: {
   home_team?: string;
   away_team?: string;
+  sport_type?: string;
   match_label?: string;
   venue?: string;
   kickoff_at?: string;
@@ -136,9 +137,12 @@ function buildMatchPayload(body: {
   home_score?: string;
   away_score?: string;
 }) {
+  const sportType = body.sport_type === "basketball" ? "basketball" : "football";
   const homeTeam = String(body.home_team ?? "").trim();
   const awayTeam = String(body.away_team ?? "").trim();
-  const matchLabel = String(body.match_label ?? "World Cup").trim() || "World Cup";
+  const matchLabel =
+    String(body.match_label ?? (sportType === "basketball" ? "Basket" : "World Cup")).trim() ||
+    (sportType === "basketball" ? "Basket" : "World Cup");
   const venue = String(body.venue ?? "").trim() || null;
   const kickoffAt = toIso(body.kickoff_at);
   const opensAt = toIso(body.opens_at);
@@ -165,6 +169,7 @@ function buildMatchPayload(body: {
   return {
     error: null,
     payload: {
+      sport_type: sportType,
       home_team: homeTeam,
       away_team: awayTeam,
       match_label: matchLabel,
@@ -188,7 +193,7 @@ export async function GET() {
     const { data, error } = await db
       .from("prediction_matches")
       .select(
-        "id, home_team, away_team, match_label, venue, kickoff_at, opens_at, closes_at, home_score, away_score, secret_code, is_active, created_at",
+        "id, sport_type, home_team, away_team, match_label, venue, kickoff_at, opens_at, closes_at, home_score, away_score, secret_code, is_active, created_at",
       )
       .order("created_at", { ascending: false })
       .limit(100);
@@ -214,6 +219,7 @@ export async function POST(req: Request) {
     if (!db || !userId) return jsonError("Admin connection failed.", 500);
 
     let body: {
+      sport_type?: string;
       home_team?: string;
       away_team?: string;
       match_label?: string;
@@ -280,6 +286,7 @@ export async function PATCH(req: Request) {
 
     let body: {
       id?: string;
+      sport_type?: string;
       home_team?: string;
       away_team?: string;
       match_label?: string;

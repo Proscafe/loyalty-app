@@ -105,6 +105,23 @@ function messageForState(state: string) {
   return "";
 }
 
+function isBasketballMatch(match: PublicPredictionMatch | null) {
+  return (
+    match?.sport_type === "basketball" ||
+    /basket|basketball/i.test(`${match?.match_label ?? ""} ${match?.venue ?? ""}`)
+  );
+}
+
+function basketballEntryWinner(entry: ExistingPredictionEntry | null) {
+  if (!entry) return "home" as const;
+  return Number(entry.home_score ?? 0) >= Number(entry.away_score ?? 0) ? "home" : "away";
+}
+
+function basketballEntryWinBy(entry: ExistingPredictionEntry | null) {
+  if (!entry) return "";
+  return String(Math.max(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0)));
+}
+
 export function PredictionPageClient({
   match,
   existingEntry,
@@ -115,8 +132,13 @@ export function PredictionPageClient({
   state: "open" | "missing" | "inactive" | "not_open" | "closed";
 }) {
   const router = useRouter();
+  const isBasketball = isBasketballMatch(match);
   const [homeScore, setHomeScore] = useState(existingEntry?.home_score?.toString() ?? "");
   const [awayScore, setAwayScore] = useState(existingEntry?.away_score?.toString() ?? "");
+  const [basketballWinner, setBasketballWinner] = useState<"home" | "away">(
+    basketballEntryWinner(existingEntry),
+  );
+  const [basketballWinBy, setBasketballWinBy] = useState(basketballEntryWinBy(existingEntry));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [kickoffCountdown, setKickoffCountdown] = useState(() =>
@@ -139,7 +161,12 @@ export function PredictionPageClient({
   }, [match, match?.kickoff_at, state]);
 
   const displayState = liveState;
-  const canSubmit = Boolean(match && displayState === "open" && !existingEntry && homeScore !== "" && awayScore !== "");
+  const canSubmit = Boolean(
+    match &&
+      displayState === "open" &&
+      !existingEntry &&
+      (isBasketball ? basketballWinBy !== "" : homeScore !== "" && awayScore !== ""),
+  );
 
   function cleanScore(value: string) {
     return value.replace(/[^0-9]/g, "").slice(0, 2);
@@ -154,11 +181,19 @@ export function PredictionPageClient({
     const response = await fetch("/api/predictions/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        match_id: match.id,
-        home_score: Number(homeScore),
-        away_score: Number(awayScore),
-      }),
+      body: JSON.stringify(
+        isBasketball
+          ? {
+              match_id: match.id,
+              predicted_winner: basketballWinner,
+              predicted_margin: Number(basketballWinBy),
+            }
+          : {
+              match_id: match.id,
+              home_score: Number(homeScore),
+              away_score: Number(awayScore),
+            },
+      ),
     });
 
     const json = (await response.json()) as { error?: string };
@@ -196,7 +231,7 @@ export function PredictionPageClient({
             style={{
               backgroundImage: "url('/client-main-card.png'), url('/client main card.png')",
               backgroundSize: "cover",
-              backgroundPosition: "right center",
+              backgroundPosition: "left center",
               backgroundRepeat: "no-repeat",
             }}
           />
@@ -207,6 +242,11 @@ export function PredictionPageClient({
               <br />
               <span className="text-[#ffd66b]">Prediction</span>
             </h1>
+            <p className="mt-4 max-w-[280px] text-[13px] font-bold leading-5 text-[#ffd66b]">
+              Predict the match, earn points,
+              <br />
+              & collect gifts in your profile.
+            </p>
           </div>
         </section>
 
@@ -225,7 +265,7 @@ export function PredictionPageClient({
                 </span>
                 <br />
                 <span className="font-black text-[#ffd66b]">
-                  {kickoffCountdown}
+                  {isBasketball ? kickoffCountdown.replace("Kickoff", "Tip off") : kickoffCountdown}
                 </span>
                 <br />
                 {formatDate(match.kickoff_at)}
@@ -243,13 +283,13 @@ export function PredictionPageClient({
           >
             <div className="mb-5 text-center">
               <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/50">
-                {match.match_label || "World Cup"}
+                {isBasketball ? "BASKETBALL" : match.match_label || "World Cup"}
               </div>
               <div className="mt-3 text-[28px] font-black uppercase leading-tight tracking-[0.02em] text-[#ffd66b]">
                 {match.home_team} <span className="text-white">VS</span> {match.away_team}
               </div>
               <div className="mt-3 text-[13px] font-black text-[#ffd66b]">
-                {kickoffCountdown}
+                {isBasketball ? kickoffCountdown.replace("Kickoff", "Tip off") : kickoffCountdown}
               </div>
               <div className="mt-1 text-[12px] font-semibold text-white/62">
                 {formatDate(match.kickoff_at)}
@@ -261,9 +301,18 @@ export function PredictionPageClient({
                 <div className="text-[12px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
                   Already submitted
                 </div>
-                <div className="mt-3 text-[34px] font-black tabular-nums text-white">
-                  {existingEntry.home_score} - {existingEntry.away_score}
-                </div>
+                {isBasketball ? (
+                  <div className="mt-3 text-[21px] font-black leading-tight text-white">
+                    {(basketballEntryWinner(existingEntry) === "home"
+                      ? match.home_team
+                      : match.away_team)}{" "}
+                    to win by <span className="text-[#ffd66b]">{basketballEntryWinBy(existingEntry)}</span>
+                  </div>
+                ) : (
+                  <div className="mt-3 text-[34px] font-black tabular-nums text-white">
+                    {existingEntry.home_score} - {existingEntry.away_score}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => router.replace("/dashboard")}
@@ -274,21 +323,55 @@ export function PredictionPageClient({
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                  <ScoreInput
-                    label={match.home_team}
-                    value={homeScore}
-                    onChange={(value) => setHomeScore(cleanScore(value))}
-                  />
-                  <div className="flex h-14 items-center justify-center text-[13px] font-black uppercase tracking-[0.18em] text-white/72">
-                    VS
+                {isBasketball ? (
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <WinnerButton
+                        active={basketballWinner === "home"}
+                        label={match.home_team}
+                        onClick={() => setBasketballWinner("home")}
+                      />
+                      <WinnerButton
+                        active={basketballWinner === "away"}
+                        label={match.away_team}
+                        onClick={() => setBasketballWinner("away")}
+                      />
+                    </div>
+
+                    <div className="text-center">
+                      <div className="text-[11px] font-black uppercase tracking-[0.18em] text-white">
+                        Bonus Gift: Winning margin
+                      </div>
+                      <div className="mt-1 text-[13px] font-black text-[#ffd66b]">
+                        WIN BY HOW MANY POINTS?
+                      </div>
+
+                      <div className="mx-auto mt-4 w-[152px]">
+                        <ScoreInput
+                          label=""
+                          value={basketballWinBy}
+                          onChange={(value) => setBasketballWinBy(cleanScore(value))}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <ScoreInput
-                    label={match.away_team}
-                    value={awayScore}
-                    onChange={(value) => setAwayScore(cleanScore(value))}
-                  />
-                </div>
+                ) : (
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                    <ScoreInput
+                      label={match.home_team}
+                      value={homeScore}
+                      onChange={(value) => setHomeScore(cleanScore(value))}
+                    />
+                    <div className="flex h-14 items-center justify-center text-[13px] font-black uppercase tracking-[0.18em] text-white/72">
+                      VS
+                    </div>
+                    <ScoreInput
+                      label={match.away_team}
+                      value={awayScore}
+                      onChange={(value) => setAwayScore(cleanScore(value))}
+                    />
+                  </div>
+                )}
 
                 {error ? (
                   <div className="mt-4 rounded-2xl border border-red-300/30 bg-red-500/12 px-4 py-3 text-[12px] font-bold text-red-100">
@@ -329,6 +412,41 @@ export function PredictionPageClient({
   );
 }
 
+function WinnerButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onClick}
+      className={`flex min-h-[70px] items-center gap-3 rounded-[22px] border px-4 py-4 text-left transition ${
+        active
+          ? "border-[#ffd66b] bg-[#ffd66b] text-[#365665] shadow-[0_14px_30px_rgba(255,214,107,0.18)]"
+          : "border-white/24 bg-white/8 text-white"
+      }`}
+    >
+      <span
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+          active ? "border-[#365665] bg-[#365665]" : "border-white/60 bg-transparent"
+        }`}
+      >
+        {active ? <span className="h-2.5 w-2.5 rounded-full bg-[#ffd66b]" /> : null}
+      </span>
+      <span className="min-w-0 text-[15px] font-black leading-tight">
+        {label}
+      </span>
+    </button>
+  );
+}
+
 function ScoreInput({
   label,
   value,
@@ -340,13 +458,18 @@ function ScoreInput({
 }) {
   return (
     <label className="block">
+      {label ? (
+        <div className="mb-2 truncate text-center text-[11px] font-black uppercase tracking-[0.12em] text-white/62">
+          {label}
+        </div>
+      ) : null}
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         inputMode="numeric"
         pattern="[0-9]*"
         placeholder="0"
-        className="mx-auto h-14 w-full max-w-[150px] rounded-[22px] border border-white/20 bg-white/88 text-center text-[24px] font-black tabular-nums text-[#365665] outline-none placeholder:text-[#365665]/30"
+        className="h-14 w-full rounded-[22px] border border-white/20 bg-white/88 text-center text-[24px] font-black tabular-nums text-[#365665] outline-none placeholder:text-[#365665]/30"
       />
     </label>
   );

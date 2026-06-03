@@ -155,11 +155,28 @@ function MobileAdminDashboard({
       id: string;
       title: string;
       label: string;
+      sportType?: string | null;
       status: string;
       code: string;
       kickoff: string | null;
     }>
   >([]);
+  const [mobileGameCreateOpen, setMobileGameCreateOpen] = useState(false);
+  const [mobileGameKind, setMobileGameKind] = useState<"football" | "basketball">("basketball");
+  const [mobileGameSaving, setMobileGameSaving] = useState(false);
+  const [mobileGameForm, setMobileGameForm] = useState({
+    home_team: "",
+    away_team: "",
+    venue: "",
+    match_label: "",
+    kickoff_at: "",
+    opens_at: "",
+    closes_at: "",
+    home_score: "",
+    away_score: "",
+    basketball_winner: "home",
+    basketball_win_by: "",
+  });
 
   function flash(message: string, t: "success" | "error" = "success") {
     setTone(t);
@@ -208,6 +225,7 @@ function MobileAdminDashboard({
         ? (JSON.parse(text) as {
             matches?: Array<{
               id: string;
+              sport_type?: string | null;
               home_team: string | null;
               away_team: string | null;
               secret_code: string;
@@ -253,6 +271,82 @@ function MobileAdminDashboard({
       );
     } catch (error) {
       console.error(error);
+    }
+  }
+
+  async function createMobileGameLink() {
+    if (!mobileGameForm.home_team.trim() || !mobileGameForm.away_team.trim()) {
+      flash("Add both teams first.", "error");
+      return;
+    }
+
+    setMobileGameSaving(true);
+
+    const basketballWinBy = Number(mobileGameForm.basketball_win_by);
+    const hasBasketballResult =
+      Number.isInteger(basketballWinBy) && basketballWinBy >= 1 && basketballWinBy <= 99;
+
+    const payload =
+      mobileGameKind === "basketball"
+        ? {
+            ...mobileGameForm,
+            sport_type: "basketball",
+            match_label: mobileGameForm.match_label.trim() || "Basket",
+            venue:
+              mobileGameForm.venue.trim() ||
+              "Basketball rule: client chooses the winner, with bonus for exact win margin.",
+            home_score:
+              hasBasketballResult && mobileGameForm.basketball_winner === "home"
+                ? String(basketballWinBy)
+                : "",
+            away_score:
+              hasBasketballResult && mobileGameForm.basketball_winner === "away"
+                ? String(basketballWinBy)
+                : "",
+          }
+        : {
+            ...mobileGameForm,
+            sport_type: "football",
+            match_label: mobileGameForm.match_label.trim() || "World Cup",
+          };
+
+    try {
+      const response = await fetch("/api/admin/prediction-matches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await response.text();
+      const json = text ? (JSON.parse(text) as { match?: { id: string }; error?: string }) : {};
+
+      if (!response.ok || !json.match) {
+        flash(json.error ?? "Could not create game link.", "error");
+        return;
+      }
+
+      await refreshMobileGameLinks();
+
+      setMobileGameForm({
+        home_team: "",
+        away_team: "",
+        venue: "",
+        match_label: "",
+        kickoff_at: "",
+        opens_at: "",
+        closes_at: "",
+        home_score: "",
+        away_score: "",
+        basketball_winner: "home",
+        basketball_win_by: "",
+      });
+
+      setMobileGameCreateOpen(false);
+      flash("Game link created.");
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not create game link.", "error");
+    } finally {
+      setMobileGameSaving(false);
     }
   }
 
@@ -887,6 +981,150 @@ function MobileAdminDashboard({
 
         {tab === "Game Links" && (
           <section className="mb-12 space-y-4">
+            <div
+              className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
+              style={{ borderRadius: 24, background: GLASS_CARD }}
+            >
+              <button
+                type="button"
+                onClick={() => setMobileGameCreateOpen((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+              >
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.28em] text-white/58">
+                    Admin
+                  </div>
+                  <div className="mt-1 text-[22px] font-black leading-none text-white">
+                    Create <span className="text-[#ffd66b]">Game Link</span>
+                  </div>
+                </div>
+
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[20px] font-black text-white">
+                  {mobileGameCreateOpen ? "−" : "+"}
+                </div>
+              </button>
+
+              {mobileGameCreateOpen ? (
+                <div className="mt-4 border-t border-white/18 pt-4">
+                  <div className="mb-4 grid grid-cols-2 gap-2 rounded-full border border-white/14 bg-white/12 p-1">
+                    {(["football", "basketball"] as const).map((kind) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        onClick={() => setMobileGameKind(kind)}
+                        className={`rounded-full py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${
+                          mobileGameKind === kind
+                            ? "bg-[#ffd66b] text-[#365665]"
+                            : "text-white/68"
+                        }`}
+                      >
+                        {kind === "football" ? "Football" : "Basketball"}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="space-y-3">
+                    <MobileGameInput
+                      label={mobileGameKind === "basketball" ? "Team 1" : "Home Team"}
+                      value={mobileGameForm.home_team}
+                      onChange={(value) => setMobileGameForm((current) => ({ ...current, home_team: value }))}
+                    />
+                    <MobileGameInput
+                      label={mobileGameKind === "basketball" ? "Team 2" : "Away Team"}
+                      value={mobileGameForm.away_team}
+                      onChange={(value) => setMobileGameForm((current) => ({ ...current, away_team: value }))}
+                    />
+                    <MobileGameInput
+                      label="Tournament"
+                      value={mobileGameForm.match_label}
+                      onChange={(value) => setMobileGameForm((current) => ({ ...current, match_label: value }))}
+                    />
+                    <MobileGameInput
+                      label="Description"
+                      value={mobileGameForm.venue}
+                      onChange={(value) => setMobileGameForm((current) => ({ ...current, venue: value }))}
+                    />
+                    <MobileGameInput
+                      type="datetime-local"
+                      label="Match Timing"
+                      value={mobileGameForm.kickoff_at}
+                      onChange={(value) => setMobileGameForm((current) => ({ ...current, kickoff_at: value }))}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <MobileGameInput
+                        type="datetime-local"
+                        label="Open Time"
+                        value={mobileGameForm.opens_at}
+                        onChange={(value) => setMobileGameForm((current) => ({ ...current, opens_at: value }))}
+                      />
+                      <MobileGameInput
+                        type="datetime-local"
+                        label="Close Time"
+                        value={mobileGameForm.closes_at}
+                        onChange={(value) => setMobileGameForm((current) => ({ ...current, closes_at: value }))}
+                      />
+                    </div>
+
+                    {mobileGameKind === "football" ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        <MobileGameInput
+                          label="Home Score"
+                          value={mobileGameForm.home_score}
+                          onChange={(value) => setMobileGameForm((current) => ({ ...current, home_score: value }))}
+                        />
+                        <MobileGameInput
+                          label="Away Score"
+                          value={mobileGameForm.away_score}
+                          onChange={(value) => setMobileGameForm((current) => ({ ...current, away_score: value }))}
+                        />
+                      </div>
+                    ) : (
+                      <div className="rounded-[22px] border border-white/16 bg-white/8 p-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/64">
+                              Final Winner
+                            </span>
+                            <select
+                              value={mobileGameForm.basketball_winner}
+                              onChange={(event) => setMobileGameForm((current) => ({ ...current, basketball_winner: event.target.value }))}
+                              className="h-11 w-full rounded-[16px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
+                            >
+                              <option value="home">{mobileGameForm.home_team || "Team 1"}</option>
+                              <option value="away">{mobileGameForm.away_team || "Team 2"}</option>
+                            </select>
+                          </label>
+
+                          <MobileGameInput
+                            label="Final Win By"
+                            value={mobileGameForm.basketball_win_by}
+                            onChange={(value) => setMobileGameForm((current) => ({ ...current, basketball_win_by: value }))}
+                          />
+                        </div>
+
+                        <p className="mt-3 text-[11px] font-semibold leading-5 text-white/58">
+                          Leave final winner and win-by empty when creating the link. Add them after the game result is known.
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => void createMobileGameLink()}
+                      disabled={mobileGameSaving}
+                      className="h-12 w-full rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_14px_30px_rgba(255,214,107,0.18)] disabled:opacity-55"
+                    >
+                      {mobileGameSaving
+                        ? "Creating..."
+                        : mobileGameKind === "basketball"
+                          ? "Create Basketball Link"
+                          : "Create Football Link"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             {mobileGameLinks.length === 0 ? <EmptyState text="No games created yet." /> : null}
 
             {mobileGameLinks.map((game) => (
@@ -905,7 +1143,7 @@ function MobileAdminDashboard({
                       {game.title.split(" vs ")[1] ?? ""}
                     </div>
                     <div className="mt-3 text-[12px] font-bold leading-5 text-white/78">
-                      Kickoff {game.kickoff ? formatDate(game.kickoff) : "—"}
+                      {game.sportType === "basketball" ? "Tip off" : "Kickoff"} {game.kickoff ? formatDate(game.kickoff) : "—"}
                     </div>
                   </div>
 
@@ -953,6 +1191,32 @@ function MobileAdminDashboard({
 
       </div>
     </main>
+  );
+}
+
+function MobileGameInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/64">
+        {label}
+      </span>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full rounded-[16px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none focus:border-[#ffd66b]"
+      />
+    </label>
   );
 }
 
@@ -1427,6 +1691,7 @@ function DesktopAdminDashboard({
   const [selectedLoading, setSelectedLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tone, setTone] = useState<"success" | "error">("success");
+  const [gameKind, setGameKind] = useState<"football" | "basketball">("basketball");
   const [gameForm, setGameForm] = useState({
     home_team: "",
     away_team: "",
@@ -1437,6 +1702,8 @@ function DesktopAdminDashboard({
     closes_at: "",
     home_score: "",
     away_score: "",
+    basketball_winner: "home",
+    basketball_win_by: "",
   });
   const [gameSaving, setGameSaving] = useState(false);
   const [gameCreateOpen, setGameCreateOpen] = useState(false);
@@ -1502,11 +1769,33 @@ function DesktopAdminDashboard({
 
     setGameSaving(true);
 
+    const basketballWinBy = Number(gameForm.basketball_win_by);
+    const hasBasketballResult =
+      Number.isInteger(basketballWinBy) && basketballWinBy >= 1 && basketballWinBy <= 99;
+
+    const payload =
+      gameKind === "basketball"
+        ? {
+            ...gameForm,
+            sport_type: "basketball",
+            match_label: gameForm.match_label.trim() || "Basket",
+            venue:
+              gameForm.venue.trim() ||
+              "Basketball rule: client chooses the winner, with bonus for exact win margin.",
+            home_score: hasBasketballResult && gameForm.basketball_winner === "home" ? String(basketballWinBy) : "",
+            away_score: hasBasketballResult && gameForm.basketball_winner === "away" ? String(basketballWinBy) : "",
+          }
+        : {
+            ...gameForm,
+            sport_type: "football",
+            match_label: gameForm.match_label.trim() || "World Cup",
+          };
+
     try {
       const response = await fetch("/api/admin/prediction-matches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(gameForm),
+        body: JSON.stringify(payload),
       });
 
       const text = await response.text();
@@ -1528,6 +1817,8 @@ function DesktopAdminDashboard({
         closes_at: "",
         home_score: "",
         away_score: "",
+        basketball_winner: "home",
+        basketball_win_by: "",
       });
 
       flash("Game link created.");
@@ -2359,47 +2650,89 @@ function DesktopAdminDashboard({
 
             {tab === "Game Links" ? (
               <section className="space-y-4">
-                <Panel className="!p-4">
+                <Panel className="!p-3">
                   <button
                     type="button"
                     onClick={() => setGameCreateOpen((current) => !current)}
                     className="flex w-full items-center justify-between gap-4 text-left"
                   >
                     <div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/70">
+                      <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/65">
                         Admin
                       </div>
-                      <h2 className="mt-1 text-[22px] font-black leading-none tracking-[-0.04em] text-white">
+                      <h2 className="mt-1 text-[19px] font-black leading-none tracking-[-0.04em] text-white">
                         Create <span className="text-[#ffd66b]">Game Link</span>
                       </h2>
                     </div>
 
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/12 text-[20px] font-black text-white">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white">
                       {gameCreateOpen ? "−" : "+"}
                     </div>
                   </button>
 
                   {gameCreateOpen ? (
-                    <div className="mt-5 border-t border-white/18 pt-5">
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        <AdminGameInput label="Home Team" value={gameForm.home_team} onChange={(value) => setGameForm((current) => ({ ...current, home_team: value }))} />
-                        <AdminGameInput label="Away Team" value={gameForm.away_team} onChange={(value) => setGameForm((current) => ({ ...current, away_team: value }))} />
+                    <div className="mt-4 border-t border-white/16 pt-4">
+                      <div className="mb-4 grid grid-cols-2 gap-2 rounded-[16px] bg-white/10 p-1">
+                        {(["football", "basketball"] as const).map((kind) => (
+                          <button
+                            key={kind}
+                            type="button"
+                            onClick={() => setGameKind(kind)}
+                            className={`h-9 rounded-[13px] text-[10px] font-black uppercase tracking-[0.18em] transition ${
+                              gameKind === kind
+                                ? "bg-[#ffd66b] text-[#365665]"
+                                : "text-white/72 hover:bg-white/10"
+                            }`}
+                          >
+                            {kind === "football" ? "Football" : "Basketball"}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="grid gap-2 lg:grid-cols-2">
+                        <AdminGameInput label={gameKind === "basketball" ? "Team 1" : "Home Team"} value={gameForm.home_team} onChange={(value) => setGameForm((current) => ({ ...current, home_team: value }))} />
+                        <AdminGameInput label={gameKind === "basketball" ? "Team 2" : "Away Team"} value={gameForm.away_team} onChange={(value) => setGameForm((current) => ({ ...current, away_team: value }))} />
                         <AdminGameInput className="lg:col-span-2" label="Description" value={gameForm.venue} onChange={(value) => setGameForm((current) => ({ ...current, venue: value }))} />
                         <AdminGameInput className="lg:col-span-2" label="Tournament" value={gameForm.match_label} onChange={(value) => setGameForm((current) => ({ ...current, match_label: value }))} />
                         <AdminGameInput type="datetime-local" className="lg:col-span-2" label="Match Timing" value={gameForm.kickoff_at} onChange={(value) => setGameForm((current) => ({ ...current, kickoff_at: value }))} />
                         <AdminGameInput type="datetime-local" label="Open Time" value={gameForm.opens_at} onChange={(value) => setGameForm((current) => ({ ...current, opens_at: value }))} />
                         <AdminGameInput type="datetime-local" label="Close Time" value={gameForm.closes_at} onChange={(value) => setGameForm((current) => ({ ...current, closes_at: value }))} />
-                        <AdminGameInput label="Home Score" value={gameForm.home_score} onChange={(value) => setGameForm((current) => ({ ...current, home_score: value }))} />
-                        <AdminGameInput label="Away Score" value={gameForm.away_score} onChange={(value) => setGameForm((current) => ({ ...current, away_score: value }))} />
+
+                        {gameKind === "football" ? (
+                          <>
+                            <AdminGameInput label="Home Score" value={gameForm.home_score} onChange={(value) => setGameForm((current) => ({ ...current, home_score: value }))} />
+                            <AdminGameInput label="Away Score" value={gameForm.away_score} onChange={(value) => setGameForm((current) => ({ ...current, away_score: value }))} />
+                          </>
+                        ) : (
+                          <>
+                            <label className="block">
+                              <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">
+                                Final Winning Team
+                              </span>
+                              <select
+                                value={gameForm.basketball_winner}
+                                onChange={(event) => setGameForm((current) => ({ ...current, basketball_winner: event.target.value }))}
+                                className="h-11 w-full rounded-[14px] border border-white/20 bg-white px-3 text-[13px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
+                              >
+                                <option value="home">{gameForm.home_team || "Team 1"}</option>
+                                <option value="away">{gameForm.away_team || "Team 2"}</option>
+                              </select>
+                            </label>
+                            <AdminGameInput label="Final Win By" value={gameForm.basketball_win_by} onChange={(value) => setGameForm((current) => ({ ...current, basketball_win_by: value }))} />
+                            <p className="lg:col-span-2 text-[11px] font-bold leading-5 text-white/62">
+                              Leave these empty when creating the link. Add the final winner and win-by after the game result is known.
+                            </p>
+                          </>
+                        )}
                       </div>
 
                       <button
                         type="button"
                         onClick={() => void createGameLinkFromDesktop()}
                         disabled={gameSaving}
-                        className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
+                        className="mt-3 flex h-10 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
                       >
-                        {gameSaving ? "Creating..." : "Create Game Link"}
+                        {gameSaving ? "Creating..." : gameKind === "basketball" ? "Create Basketball Link" : "Create Football Link"}
                       </button>
                     </div>
                   ) : null}
@@ -2483,19 +2816,18 @@ function AdminGameInput({
 }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.2em] text-white">
+      <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">
         {label}
       </span>
       <input
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-14 w-full rounded-[18px] border border-white/20 bg-white px-4 text-[14px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
+        className="h-11 w-full rounded-[14px] border border-white/20 bg-white px-3 text-[13px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
       />
     </label>
   );
 }
-
 
 function DesktopTimeRangeFilter({
   value,
