@@ -21,7 +21,7 @@ function getAdminClient() {
   });
 }
 
-async function verifyStaffUser() {
+async function verifyStaffOrAdminUser() {
   const supabase = await createServerClient();
 
   const {
@@ -52,14 +52,14 @@ async function verifyStaffUser() {
 
 export async function POST(req: Request) {
   try {
-    const staff = await verifyStaffUser();
+    const staff = await verifyStaffOrAdminUser();
 
     if (!staff.ok) {
       return NextResponse.json({ error: staff.error }, { status: staff.status });
     }
 
     const body = await req.json();
-    const clientId = String(body.client_id ?? "");
+    const clientId = String(body.client_id ?? body.clientId ?? body.id ?? "");
     const phone = String(body.phone ?? "").trim();
 
     if (!clientId) {

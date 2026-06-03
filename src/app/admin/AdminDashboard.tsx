@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
@@ -38,7 +38,7 @@ interface Props {
   metrics: Metrics;
 }
 
-const TABS = ["Overview", "Users", "Activity", "Gifts", "Game Links"] as const;
+const TABS = ["Overview", "Users", "Activity", "Gifts", "Loyalty Program", "Game Links"] as const;
 type Tab = (typeof TABS)[number];
 
 const PAGE_BG =
@@ -812,7 +812,7 @@ function MobileAdminDashboard({
                             void setRole(user.id, value as UserRole);
                           }}
                           disabled={user.id === profile.id}
-                          className={`shrink-0 rounded-full border border-white/30 bg-white/88 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
+                          className={`shrink-0 rounded-full border border-white/30 bg-white/108 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
                             user.is_active === false ? "text-red-600" : "text-[#365665]"
                           }`}
                           title={user.id === profile.id ? "You cannot change your own role" : ""}
@@ -967,7 +967,7 @@ function MobileAdminDashboard({
                           ? "bg-[#ffd66b] text-[#365665]"
                           : reward.status === "redeemed" || reward.status === "claimed"
                             ? "bg-white/16 text-[#ffd66b]"
-                            : "bg-white/82 text-[#365665]"
+                            : "bg-white/102 text-[#365665]"
                       }`}
                     >
                       {reward.status}
@@ -976,6 +976,13 @@ function MobileAdminDashboard({
                 </div>
               );
             })}
+          </section>
+        )}
+
+
+        {tab === "Loyalty Program" && (
+          <section className="mb-12">
+            <LoyaltyProgramPanel compact />
           </section>
         )}
 
@@ -1079,7 +1086,7 @@ function MobileAdminDashboard({
                         />
                       </div>
                     ) : (
-                      <div className="rounded-[22px] border border-white/16 bg-white/8 p-3">
+                      <div className="rounded-[22px] border border-white/16 bg-white/10 p-3">
                         <div className="grid grid-cols-2 gap-3">
                           <label className="block">
                             <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/64">
@@ -1193,6 +1200,586 @@ function MobileAdminDashboard({
     </main>
   );
 }
+
+
+const DEFAULT_LOYALTY_SETTINGS = {
+  id: "default",
+  program_name: "PRO’s Club",
+  stamp_name: "Stamp",
+  gift_name: "Gift",
+  is_enabled: true,
+  average_stamp_cost: 0,
+  stamps_per_gift: 5,
+  currency: "$",
+};
+
+type LoyaltySettings = typeof DEFAULT_LOYALTY_SETTINGS;
+
+type LoyaltyProgramCategory = AdminCategory & {
+  is_active?: boolean | null;
+};
+
+function parseMoneyValue(value: string | number | null | undefined) {
+  const numberValue = typeof value === "number" ? value : Number(String(value ?? "").replace(/[^\d.]/g, ""));
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function formatLoyaltyMoney(value: number, currency: string) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return `${currency || "$"}${safeValue.toFixed(2)}`;
+}
+
+function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [settings, setSettings] = useState<LoyaltySettings>(DEFAULT_LOYALTY_SETTINGS);
+  const [categories, setCategories] = useState<LoyaltyProgramCategory[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingCategoryId, setSavingCategoryId] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [showDisableWarning, setShowDisableWarning] = useState(false);
+
+  const estimatedGiftCost = useMemo(
+    () => parseMoneyValue(settings.average_stamp_cost) * Math.max(1, Number(settings.stamps_per_gift) || 5),
+    [settings.average_stamp_cost, settings.stamps_per_gift],
+  );
+
+  function showMessage(text: string, tone: "success" | "error" = "success") {
+    setMessage({ text, tone });
+    setTimeout(() => setMessage(null), 2400);
+  }
+
+  async function loadLoyaltyProgram() {
+    setLoading(true);
+
+    try {
+      const [settingsResult, categoryResult] = await Promise.all([
+        supabase.from("loyalty_program_settings").select("*").limit(1),
+        supabase.from("loyalty_categories").select("*").order("sort_order", { ascending: true }),
+      ]);
+
+      if (!settingsResult.error && settingsResult.data && settingsResult.data.length > 0) {
+        const row = settingsResult.data[0] as Partial<LoyaltySettings>;
+
+        setSettings({
+          ...DEFAULT_LOYALTY_SETTINGS,
+          ...row,
+          id: String(row.id || "default"),
+          is_enabled: row.is_enabled !== false,
+          average_stamp_cost: parseMoneyValue(row.average_stamp_cost),
+          stamps_per_gift: Number(row.stamps_per_gift) || 5,
+          currency: String(row.currency || "$"),
+        });
+      } else if (settingsResult.error) {
+        console.warn("Loyalty settings table not ready:", settingsResult.error.message);
+      }
+
+      if (categoryResult.error) {
+        showMessage(categoryResult.error.message, "error");
+      } else {
+        setCategories((categoryResult.data ?? []) as LoyaltyProgramCategory[]);
+      }
+    } catch (error) {
+      console.error(error);
+      showMessage("Could not load loyalty settings.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadLoyaltyProgram();
+  }, []);
+
+  async function saveSettings(nextSettings = settings) {
+    setSavingSettings(true);
+
+    try {
+      const payload = {
+        id: nextSettings.id || "default",
+        program_name: nextSettings.program_name.trim() || DEFAULT_LOYALTY_SETTINGS.program_name,
+        stamp_name: nextSettings.stamp_name.trim() || DEFAULT_LOYALTY_SETTINGS.stamp_name,
+        gift_name: nextSettings.gift_name.trim() || DEFAULT_LOYALTY_SETTINGS.gift_name,
+        is_enabled: nextSettings.is_enabled,
+        average_stamp_cost: parseMoneyValue(nextSettings.average_stamp_cost),
+        stamps_per_gift: Math.max(1, Number(nextSettings.stamps_per_gift) || 5),
+        currency: nextSettings.currency.trim() || "$",
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from("loyalty_program_settings")
+        .upsert(payload)
+        .select("*")
+        .limit(1);
+
+      if (error) {
+        showMessage("Run the Loyalty Program SQL first, then save again.", "error");
+        console.error(error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const saved = data[0] as Partial<LoyaltySettings>;
+        setSettings((current) => ({ ...current, ...saved, id: String(saved.id || current.id) }));
+      } else {
+        setSettings(nextSettings);
+      }
+
+      showMessage(nextSettings.is_enabled ? "Loyalty program saved." : "Loyalty program disabled.");
+    } catch (error) {
+      console.error(error);
+      showMessage("Could not save loyalty program.", "error");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  function requestProgramToggle() {
+    if (settings.is_enabled) {
+      setShowDisableWarning(true);
+      return;
+    }
+
+    const nextSettings = { ...settings, is_enabled: true };
+    setSettings(nextSettings);
+    void saveSettings(nextSettings);
+  }
+
+  function confirmDisableProgram() {
+    const nextSettings = { ...settings, is_enabled: false };
+    setShowDisableWarning(false);
+    setSettings(nextSettings);
+    void saveSettings(nextSettings);
+  }
+
+  async function addCategory() {
+    const name = newCategoryName.trim();
+
+    if (!name) {
+      showMessage("Add a category name first.", "error");
+      return;
+    }
+
+    setSavingCategoryId("new");
+
+    try {
+      const { data, error } = await supabase
+        .from("loyalty_categories")
+        .insert({
+          name,
+          is_active: true,
+          sort_order: categories.length + 1,
+        })
+        .select("*")
+        .limit(1);
+
+      if (error) {
+        showMessage(error.message, "error");
+        return;
+      }
+
+      if (data && data.length > 0) {
+        setCategories((current) => [...current, data[0] as LoyaltyProgramCategory]);
+      }
+
+      setNewCategoryName("");
+      showMessage("Category added.");
+    } catch (error) {
+      console.error(error);
+      showMessage("Could not add category.", "error");
+    } finally {
+      setSavingCategoryId(null);
+    }
+  }
+
+  async function updateCategory(category: LoyaltyProgramCategory, updates: Partial<LoyaltyProgramCategory>) {
+    setSavingCategoryId(category.id);
+
+    try {
+      const payload: Record<string, unknown> = {};
+
+      if (typeof updates.name === "string") {
+        payload.name = updates.name.trim() || category.name;
+      }
+
+      if (typeof updates.is_active === "boolean") {
+        payload.is_active = updates.is_active;
+      }
+
+      const { data, error } = await supabase
+        .from("loyalty_categories")
+        .update(payload)
+        .eq("id", category.id)
+        .select("*")
+        .limit(1);
+
+      if (error) {
+        showMessage(error.message, "error");
+        return;
+      }
+
+      const updatedCategory = (data && data.length > 0 ? data[0] : { ...category, ...updates }) as LoyaltyProgramCategory;
+
+      setCategories((current) =>
+        current.map((item) => (item.id === category.id ? updatedCategory : item)),
+      );
+
+      showMessage("Category updated.");
+    } catch (error) {
+      console.error(error);
+      showMessage("Could not update category.", "error");
+    } finally {
+      setSavingCategoryId(null);
+    }
+  }
+
+  async function removeCategory(category: LoyaltyProgramCategory) {
+    const confirmed = window.confirm(`Remove ${category.name}? Disable it instead if clients already have stamps in this category.`);
+
+    if (!confirmed) return;
+
+    setSavingCategoryId(category.id);
+
+    try {
+      const { error } = await supabase.from("loyalty_categories").delete().eq("id", category.id);
+
+      if (error) {
+        showMessage(error.message, "error");
+        return;
+      }
+
+      setCategories((current) => current.filter((item) => item.id !== category.id));
+      showMessage("Category removed.");
+    } catch (error) {
+      console.error(error);
+      showMessage("Could not remove category.", "error");
+    } finally {
+      setSavingCategoryId(null);
+    }
+  }
+
+  const mainGridClass = compact ? "grid gap-3" : "grid gap-3 lg:grid-cols-[1.2fr_0.75fr_0.75fr_auto]";
+
+  return (
+    <div className="space-y-4">
+      <Panel>
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/62">
+              Admin
+            </div>
+            <h2 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
+              Loyalty Program
+            </h2>
+            <p className="mt-2 max-w-xl text-[12px] font-bold leading-5 text-white/68">
+              Manage the program name, stamp value, gift rules, and categories.
+            </p>
+          </div>
+
+          <span
+            className={`inline-flex h-10 items-center rounded-full px-4 text-[10px] font-black uppercase tracking-[0.16em] ${
+              settings.is_enabled
+                ? "bg-emerald-400/18 text-emerald-100"
+                : "bg-red-500/18 text-red-100"
+            }`}
+          >
+            {settings.is_enabled ? "Active" : "Disabled"}
+          </span>
+        </div>
+
+        {message ? (
+          <div
+            className={`mb-4 rounded-[16px] px-4 py-3 text-[12px] font-black ${
+              message.tone === "success"
+                ? "bg-emerald-400/16 text-emerald-100"
+                : "bg-red-500/16 text-red-100"
+            }`}
+          >
+            {message.text}
+          </div>
+        ) : null}
+
+        <div className="rounded-[22px] border border-white/16 bg-white/10 p-4">
+          <div className={mainGridClass}>
+            <LoyaltyTextInput
+              label="Program Name"
+              value={settings.program_name}
+              onChange={(value) => setSettings((current) => ({ ...current, program_name: value }))}
+              placeholder="PRO’s Club"
+            />
+            <LoyaltyNumberInput
+              label="Avg. Cost / Stamp"
+              value={String(settings.average_stamp_cost)}
+              onChange={(value) => setSettings((current) => ({ ...current, average_stamp_cost: parseMoneyValue(value) }))}
+              placeholder="0"
+            />
+            <LoyaltyNumberInput
+              label="Stamps Needed"
+              value={String(settings.stamps_per_gift)}
+              onChange={(value) => setSettings((current) => ({ ...current, stamps_per_gift: Number(value) || 1 }))}
+              placeholder="5"
+            />
+            <div className="flex gap-2 lg:items-end">
+              <button
+                type="button"
+                onClick={() => void saveSettings()}
+                disabled={savingSettings}
+                className="h-12 flex-1 rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.16em] text-[#365665] transition hover:bg-[#f0cf61] disabled:opacity-55 lg:flex-none"
+              >
+                {savingSettings ? "Saving" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={requestProgramToggle}
+                disabled={savingSettings}
+                className={`h-12 flex-1 rounded-full px-5 text-[10px] font-black uppercase tracking-[0.16em] transition disabled:opacity-55 lg:flex-none ${
+                  settings.is_enabled
+                    ? "bg-red-500/18 text-red-100 hover:bg-red-500/24"
+                    : "bg-emerald-400/18 text-emerald-100 hover:bg-emerald-400/24"
+                }`}
+              >
+                {settings.is_enabled ? "Disable" : "Enable"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[18px] border border-white/14 bg-white/10 p-4">
+              <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/52">
+                Estimated Gift Cost
+              </div>
+              <div className="mt-1 text-[26px] font-black leading-none text-[#ffd66b]">
+                {formatLoyaltyMoney(estimatedGiftCost, settings.currency)}
+              </div>
+            </div>
+            <div className="rounded-[18px] border border-white/14 bg-white/10 p-4 md:col-span-2">
+              <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/52">
+                Calculation
+              </div>
+              <p className="mt-1 text-[12px] font-bold leading-5 text-white/68">
+                Avg. cost per stamp × stamps needed = estimated gift cost.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-[22px] border border-white/16 bg-white/10 p-4">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-[18px] font-black tracking-[-0.04em] text-white">
+                Stamp Categories
+              </h3>
+              <p className="mt-1 text-[12px] font-bold leading-5 text-white/64">
+                Add, rename, disable, or remove categories.
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={newCategoryName}
+              onChange={(event) => setNewCategoryName(event.target.value)}
+              placeholder="New category name"
+              className="h-12 flex-1 rounded-[14px] border border-white/25 bg-white px-4 text-[13px] font-bold text-black outline-none focus:border-[#ffd66b]"
+            />
+            <button
+              type="button"
+              onClick={() => void addCategory()}
+              disabled={savingCategoryId === "new"}
+              className="h-12 rounded-[14px] bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.16em] text-[#365665] disabled:opacity-55"
+            >
+              Add Category
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="rounded-[18px] bg-white/10 p-4 text-[13px] font-bold text-white/62">
+              Loading categories...
+            </div>
+          ) : categories.length === 0 ? (
+            <div className="rounded-[18px] bg-white/10 p-4 text-[13px] font-bold text-white/62">
+              No categories yet. Add your first stamp category.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {categories.map((category) => (
+                <LoyaltyCategoryRow
+                  key={category.id}
+                  category={category}
+                  saving={savingCategoryId === category.id}
+                  onSave={(name) => void updateCategory(category, { name })}
+                  onToggle={() => void updateCategory(category, { is_active: category.is_active === false })}
+                  onRemove={() => void removeCategory(category)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      {showDisableWarning ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm sm:items-center sm:pb-0">
+          <div className="w-full max-w-md rounded-[28px] border border-white/18 bg-[#5f6f63] p-5 shadow-2xl">
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
+              Warning
+            </div>
+            <h3 className="mt-2 text-[23px] font-black tracking-[-0.04em] text-white">
+              Disable loyalty program?
+            </h3>
+            <p className="mt-3 text-[13px] font-bold leading-6 text-white/72">
+              Staff will not be able to add new stamps while the program is disabled. Clients can still view their profile and existing gifts.
+            </p>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setShowDisableWarning(false)}
+                className="h-12 rounded-full border border-white/20 bg-white/10 text-[11px] font-black uppercase tracking-[0.16em] text-white"
+              >
+                Keep Active
+              </button>
+              <button
+                type="button"
+                onClick={confirmDisableProgram}
+                className="h-12 rounded-full bg-red-500/22 text-[11px] font-black uppercase tracking-[0.16em] text-red-100"
+              >
+                Disable Program
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LoyaltyTextInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+        {label}
+      </span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="h-12 w-full rounded-[14px] border border-white/25 bg-white px-4 text-[13px] font-bold text-black outline-none focus:border-[#ffd66b]"
+      />
+    </label>
+  );
+}
+
+function LoyaltyNumberInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+        {label}
+      </span>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="h-12 w-full rounded-[14px] border border-white/25 bg-white px-4 text-[13px] font-bold text-black outline-none focus:border-[#ffd66b]"
+      />
+    </label>
+  );
+}
+
+function LoyaltyCategoryRow({
+  category,
+  saving,
+  onSave,
+  onToggle,
+  onRemove,
+}: {
+  category: LoyaltyProgramCategory;
+  saving: boolean;
+  onSave: (name: string) => void;
+  onToggle: () => void;
+  onRemove: () => void;
+}) {
+  const [name, setName] = useState(category.name);
+
+  useEffect(() => {
+    setName(category.name);
+  }, [category.name]);
+
+  const isActive = category.is_active !== false;
+  const isDirty = name.trim() !== category.name;
+
+  return (
+    <div className="rounded-[18px] border border-white/16 bg-white/10 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="h-11 w-full rounded-[14px] border border-white/18 bg-white px-3 text-[13px] font-black text-[#365665] outline-none focus:border-[#ffd66b]"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]">
+            <span className={isActive ? "text-emerald-100" : "text-red-100"}>
+              {isActive ? "Active" : "Disabled"}
+            </span>
+            <span className="text-white/36">•</span>
+            <span className="text-white/52">Category ID: {category.id.slice(0, 8)}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onSave(name)}
+            disabled={saving || !isDirty}
+            className="rounded-full bg-[#ffd66b] px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={onToggle}
+            disabled={saving}
+            className="rounded-full bg-white/14 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white disabled:opacity-45"
+          >
+            {isActive ? "Disable" : "Enable"}
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={saving}
+            className="rounded-full bg-red-500/16 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-red-100 disabled:opacity-45"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function MobileGameInput({
   label,
@@ -1309,7 +1896,7 @@ function ClientProfilePanel({
               onRoleChange(value as UserRole);
             }}
             disabled={user.id === currentUserId}
-            className={`shrink-0 rounded-full border border-white/30 bg-white/88 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
+            className={`shrink-0 rounded-full border border-white/30 bg-white/108 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
               user.is_active === false ? "text-red-600" : "text-[#365665]"
             }`}
           >
@@ -1402,7 +1989,7 @@ function ClientProfilePanel({
                       ? "bg-[#ffd66b] text-[#365665]"
                       : reward.status === "redeemed" || reward.status === "claimed"
                         ? "bg-white/16 text-[#ffd66b]"
-                        : "bg-white/82 text-[#365665]"
+                        : "bg-white/102 text-[#365665]"
                   }`}
                 >
                   {reward.status}
@@ -1469,7 +2056,7 @@ function ActionBadge({ action }: { action: StampTransaction["action_type"] }) {
       ),
     },
     reward_earned: {
-      className: "bg-white/86 text-[#365665]",
+      className: "bg-white/106 text-[#365665]",
       icon: (
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.35" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20 12v8H4v-8" />
@@ -1554,6 +2141,17 @@ function desktopFormatDate(value?: string | null) {
   return date.toLocaleString();
 }
 
+function desktopFormatDateOnly(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function desktopRoleLabel(role: UserRole) {
   if (role === "master_admin") return "Admin";
   if (role === "staff") return "Staff";
@@ -1626,6 +2224,43 @@ function maskPhone(value?: string | null) {
   return `${digits.slice(0, 2)}***${digits.slice(-3)}`;
 }
 
+type BirthdayProfileFields = {
+  birthday?: string | null;
+  birth_date?: string | null;
+  date_of_birth?: string | null;
+  dob?: string | null;
+};
+
+function getBirthdayValue(user: AdminUser) {
+  const birthdayFields = user as AdminUser & BirthdayProfileFields;
+
+  return (
+    birthdayFields.birthday ||
+    birthdayFields.birth_date ||
+    birthdayFields.date_of_birth ||
+    birthdayFields.dob ||
+    null
+  );
+}
+
+function getAgeFromBirthday(value?: string | null) {
+  if (!value) return null;
+
+  const birthday = new Date(value);
+  if (Number.isNaN(birthday.getTime())) return null;
+
+  const today = new Date();
+  let age = today.getFullYear() - birthday.getFullYear();
+
+  const birthdayPassedThisYear =
+    today.getMonth() > birthday.getMonth() ||
+    (today.getMonth() === birthday.getMonth() && today.getDate() >= birthday.getDate());
+
+  if (!birthdayPassedThisYear) age -= 1;
+
+  return age >= 0 ? age : null;
+}
+
 type DesktopTimeRange = "today" | "week" | "month" | "all";
 
 function getDesktopTimeRangeStart(range: DesktopTimeRange) {
@@ -1680,8 +2315,15 @@ function DesktopAdminDashboard({
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(recentTxns ?? []);
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
-  const [filter, setFilter] = useState<"all" | UserRole>("staff");
+  const [filter, setFilter] = useState<"all" | UserRole>("client");
   const [timeRange, setTimeRange] = useState<DesktopTimeRange>("week");
+  const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
+  const [lastVisitFilter, setLastVisitFilter] = useState<"all" | "active" | "inactive">("all");
+  const [customerSort, setCustomerSort] = useState<{
+    key: "name" | "contact" | "age" | "lastVisit" | "visits" | "status";
+    direction: "asc" | "desc";
+  }>({ key: "name", direction: "asc" });
+  const reportFilterRef = useRef<HTMLDivElement | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(15);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -1898,6 +2540,24 @@ function DesktopAdminDashboard({
       isMounted = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    if (!reportFiltersOpen) return;
+
+    function closeReportFilter(event: MouseEvent | TouchEvent) {
+      if (!reportFilterRef.current) return;
+      if (reportFilterRef.current.contains(event.target as Node)) return;
+      setReportFiltersOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeReportFilter);
+    document.addEventListener("touchstart", closeReportFilter);
+
+    return () => {
+      document.removeEventListener("mousedown", closeReportFilter);
+      document.removeEventListener("touchstart", closeReportFilter);
+    };
+  }, [reportFiltersOpen]);
 
   async function setRole(userId: string, role: UserRole) {
     const { error } = await supabase.from("profiles").update({ role }).eq("id", userId);
@@ -2225,7 +2885,7 @@ function DesktopAdminDashboard({
         .toLowerCase()
         .includes(search);
     });
-  }, [users, filter, searchTerm]);
+  }, [users, filter, searchTerm, timeRange]);
 
   const visibleUsers = useMemo(
     () => filteredUsers.slice(0, visibleUserCount),
@@ -2302,6 +2962,158 @@ function DesktopAdminDashboard({
   const latestActivities = visibleActivityTxns.slice(0, 5);
   const latestGifts = visibleGiftRows.slice(0, 50);
   const recentRewardClients = desktopUniqueCount(visibleGiftRows.map((reward) => reward.client_id));
+
+  const clientUsersForReports = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+
+    return users.filter((user) => {
+      const matchesProfile = filter === "all" ? true : user.role === filter;
+
+      if (!matchesProfile) return false;
+
+      if (!search) return true;
+
+      return [
+        user.full_name,
+        user.email,
+        user.phone,
+        user.client_code,
+        user.is_active === false ? "inactive deactivated" : "active",
+        desktopRoleLabel(user.role),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
+    });
+  }, [users, filter, searchTerm]);
+
+  const customerReportRows = useMemo(() => {
+    return clientUsersForReports.map((user) => {
+      const clientTxns = visibleActivityTxns.filter((txn) => txn.client_id === user.id);
+      const allClientTxns = activityTxns.filter((txn) => txn.client_id === user.id);
+      const lastTxn = allClientTxns
+        .slice()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+      const visits = clientTxns.length;
+      const totalVisits = allClientTxns.length;
+      const lastVisit = lastTxn?.created_at ?? null;
+      const age = getAgeFromBirthday(getBirthdayValue(user));
+      const lastVisitMs = lastVisit ? new Date(lastVisit).getTime() : NaN;
+      const inactive =
+        user.is_active === false ||
+        !Number.isFinite(lastVisitMs) ||
+        Date.now() - lastVisitMs > 30 * 24 * 60 * 60 * 1000;
+
+      const tier =
+        totalVisits >= 15
+          ? "Gold"
+          : totalVisits >= 7
+            ? "Silver"
+            : totalVisits >= 2
+              ? "Bronze"
+              : "New";
+
+      return {
+        user,
+        tier,
+        visits,
+        totalVisits,
+        lastVisit,
+        age,
+        inactive,
+      };
+    });
+  }, [activityTxns, clientUsersForReports, visibleActivityTxns]);
+
+  const filteredCustomerReportRows = useMemo(() => {
+    return customerReportRows.filter((row) => {
+      if (lastVisitFilter === "active") return !row.inactive;
+      if (lastVisitFilter === "inactive") return row.inactive;
+      return true;
+    });
+  }, [customerReportRows, lastVisitFilter]);
+
+  const sortedCustomerReportRows = useMemo(() => {
+    const direction = customerSort.direction === "asc" ? 1 : -1;
+
+    return filteredCustomerReportRows.slice().sort((a, b) => {
+      const textCompare = (first: string, second: string) =>
+        first.localeCompare(second) * direction;
+
+      if (customerSort.key === "name") {
+        return textCompare(a.user.full_name || "", b.user.full_name || "");
+      }
+
+      if (customerSort.key === "contact") {
+        return textCompare(a.user.phone || a.user.email || "", b.user.phone || b.user.email || "");
+      }
+
+      if (customerSort.key === "age") {
+        if (a.age === null && b.age === null) return 0;
+        if (a.age === null) return 1;
+        if (b.age === null) return -1;
+        return (a.age - b.age) * direction;
+      }
+
+      if (customerSort.key === "lastVisit") {
+        return ((new Date(a.lastVisit || 0).getTime() || 0) - (new Date(b.lastVisit || 0).getTime() || 0)) * direction;
+      }
+
+      if (customerSort.key === "visits") {
+        return (a.totalVisits - b.totalVisits) * direction;
+      }
+
+      return (Number(a.inactive) - Number(b.inactive)) * direction;
+    });
+  }, [customerSort, filteredCustomerReportRows]);
+
+  function sortCustomerTable(key: "name" | "contact" | "age" | "lastVisit" | "visits" | "status") {
+    setCustomerSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
+
+  function downloadVisibleCustomerTable() {
+    const csvEscape = (value: string | number | null | undefined) => {
+      const text = String(value ?? "");
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const visibleRows = sortedCustomerReportRows.slice(0, 80);
+    const headers = ["Name", "Member ID", "Contact", "Age", "Last Visit", "Visits", "Status"];
+    const rows = visibleRows.map((row) => [
+      row.user.full_name || "Client",
+      row.user.client_code || "",
+      row.user.phone || "",
+      row.age ?? "",
+      desktopFormatDateOnly(row.lastVisit),
+      row.totalVisits,
+      row.inactive ? "Inactive" : "Active",
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(csvEscape).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `customer-table-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  const newCustomerCount = customerReportRows.filter((row) => row.totalVisits <= 1).length;
+  const returningCustomerCount = customerReportRows.filter((row) => row.totalVisits > 1).length;
+  const clientCustomerRows = customerReportRows.filter((row) => row.user.role === "client");
+  const inactiveCustomerCount = clientCustomerRows.filter((row) => row.inactive).length;
+  const activeReportCustomers = clientCustomerRows.length - inactiveCustomerCount;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)] text-white" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
@@ -2450,14 +3262,13 @@ function DesktopAdminDashboard({
                 ) : (
                   <>
                     <Panel className="mb-4">
-                      <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white/70">
-                          Showing {desktopTimeRangeLabel(timeRange)}
-                        </div>
-                        <DesktopTimeRangeFilter value={timeRange} onChange={setTimeRange} />
+                      <div className="mb-4">
+                        <h2 className="mt-1 text-[24px] font-black tracking-[-0.04em] text-white">
+                          Customer behavior
+                        </h2>
                       </div>
 
-                      <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+                      <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
                         <input
                           value={searchTerm}
                           onChange={(event) => {
@@ -2465,100 +3276,177 @@ function DesktopAdminDashboard({
                             setVisibleUserCount(15);
                             setSelectedUser(null);
                           }}
-                          placeholder="Search customers, staff, admin..."
+                          placeholder="Search by name, phone, member ID..."
+                          onFocus={() => setReportFiltersOpen(false)}
                           className="h-12 w-full rounded-[14px] border border-white/25 bg-white px-4 text-[13px] font-bold text-black outline-none focus:border-[#ffd66b]"
                         />
 
-                        <div className="grid grid-cols-4 gap-1 rounded-[14px] bg-white/10 p-1">
-                          {(["all", "client", "staff", "master_admin"] as const).map((item) => (
-                            <button
-                              type="button"
-                              key={item}
-                              onClick={() => {
-                                setFilter(item);
-                                setVisibleUserCount(15);
-                                setSelectedUser(null);
-                              }}
-                              className={`rounded-[11px] px-3 py-2 text-[11px] font-black transition ${
-                                filter === item ? "bg-[#365665] text-white" : "text-white/72"
-                              }`}
-                            >
-                              {item === "all" ? "All" : item === "master_admin" ? "Admin" : item === "staff" ? "Staff" : "Clients"}
-                            </button>
-                          ))}
+                        <div ref={reportFilterRef} className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setReportFiltersOpen((current) => !current)}
+                            className="h-12 rounded-[14px] border border-white/25 bg-white/12 px-5 text-[12px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/18"
+                          >
+                            Filter
+                          </button>
+
+                          {reportFiltersOpen ? (
+                            <div className="absolute right-0 top-14 z-30 w-[280px] rounded-[22px] border border-white/24 bg-[#365665] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+                              <div className="space-y-4">
+                                <label className="block">
+                                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+                                    Date Range
+                                  </span>
+                                  <select
+                                    value={timeRange}
+                                    onChange={(event) => {
+                                      setTimeRange(event.target.value as DesktopTimeRange);
+                                      setReportFiltersOpen(false);
+                                    }}
+                                    className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
+                                  >
+                                    <option value="today">Today</option>
+                                    <option value="week">This week</option>
+                                    <option value="month">This month</option>
+                                    <option value="all">Show all</option>
+                                  </select>
+                                </label>
+
+                                <label className="block">
+                                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+                                    Last Visit
+                                  </span>
+                                  <select
+                                    value={lastVisitFilter}
+                                    onChange={(event) => {
+                                      setLastVisitFilter(event.target.value as "all" | "active" | "inactive");
+                                      setReportFiltersOpen(false);
+                                    }}
+                                    className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
+                                  >
+                                    <option value="all">All</option>
+                                    <option value="active">Active recently</option>
+                                    <option value="inactive">Inactive recently</option>
+                                  </select>
+                                </label>
+
+                                <label className="block">
+                                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+                                    Profile Tab
+                                  </span>
+                                  <select
+                                    value={filter}
+                                    onChange={(event) => {
+                                      setFilter(event.target.value as "all" | UserRole);
+                                      setReportFiltersOpen(false);
+                                    }}
+                                    className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
+                                  >
+                                    <option value="all">All profiles</option>
+                                    <option value="client">Clients</option>
+                                    <option value="staff">Staff</option>
+                                    <option value="master_admin">Admin</option>
+                                  </select>
+                                </label>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={downloadVisibleCustomerTable}
+                          title="Download table"
+                          aria-label="Download table"
+                          className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/25 bg-white/12 text-white transition hover:bg-white/18"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 3v11m0 0 4-4m-4 4-4-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M5 17v2.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V17" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      <div className="mb-4 grid gap-3 lg:grid-cols-4">
+                        <DesktopReportMetric label="New Customers" value={newCustomerCount} />
+                        <DesktopReportMetric label="Returning" value={returningCustomerCount} />
+                        <DesktopReportMetric label="Active" value={activeReportCustomers} />
+                        <DesktopReportMetric label="Inactive" value={inactiveCustomerCount} />
+                      </div>
+
+                      <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/10">
+                        <div className="grid grid-cols-[1.15fr_0.9fr_0.35fr_0.85fr_0.6fr_0.55fr_0.55fr] gap-6 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+                          <button type="button" onClick={() => sortCustomerTable("name")} className="text-left">Names</button>
+                          <button type="button" onClick={() => sortCustomerTable("contact")} className="text-left">Contact</button>
+                          <button type="button" onClick={() => sortCustomerTable("age")} className="text-left">Age</button>
+                          <button type="button" onClick={() => sortCustomerTable("lastVisit")} className="text-left">Last Visit</button>
+                          <button type="button" onClick={() => sortCustomerTable("visits")} className="pl-5 text-left">Visits</button>
+                          <button type="button" onClick={() => sortCustomerTable("status")} className="text-left">Status</button>
+                          <div>WA</div>
+                        </div>
+
+                        <div className="max-h-[560px] overflow-auto">
+                          {sortedCustomerReportRows.slice(0, 80).map((row) => {
+                            const digits = String(row.user.phone || "").replace(/\D/g, "");
+                            const whatsappUrl = digits ? `https://wa.me/${digits}` : "";
+
+                            return (
+                              <div
+                                key={row.user.id}
+                                className="grid grid-cols-[1.15fr_0.9fr_0.35fr_0.85fr_0.6fr_0.55fr_0.55fr] gap-6 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => void openUserProfile(row.user)}
+                                  className="min-w-0 text-left"
+                                >
+                                  <div className="truncate font-black text-white">{row.user.full_name || "Client"}</div>
+                                  <div className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-[#ffd66b]">
+                                    {row.user.client_code || "No ID"}
+                                  </div>
+                                </button>
+
+                                <div className="min-w-0">
+                                  <div className="truncate">{row.user.phone || "—"}</div>
+                                </div>
+
+                                <div>{row.age ?? "—"}</div>
+                                <div>{desktopFormatDateOnly(row.lastVisit)}</div>
+                                <div className="pl-5 font-black text-white">{row.totalVisits}</div>
+                                <div>
+                                  <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
+                                    row.inactive ? "bg-red-500/16 text-red-200" : "bg-emerald-400/16 text-emerald-100"
+                                  }`}>
+                                    {row.inactive ? "Inactive" : "Active"}
+                                  </span>
+                                </div>
+                                <div>
+                                  {whatsappUrl ? (
+                                    <a
+                                      href={whatsappUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                                    >
+                                      WA
+                                    </a>
+                                  ) : (
+                                    <span className="text-white/36">—</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {sortedCustomerReportRows.length === 0 ? (
+                            <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">
+                              No customer report data for this view.
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </Panel>
 
-                    <div className="overflow-hidden rounded-[28px] border border-white/24 bg-white/10 shadow-[0_24px_70px_rgba(35,54,47,0.18)] backdrop-blur-2xl">
-                      {visibleUsers.map((user) => (
-                        <div
-                          key={user.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => void openUserProfile(user)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              void openUserProfile(user);
-                            }
-                          }}
-                          className="grid cursor-pointer gap-3 border-b border-white/18 px-5 py-4 transition hover:bg-white/14 lg:grid-cols-[1.1fr_1fr_auto]"
-                        >
-                          <div className="min-w-0">
-                            <div className="truncate text-[15px] font-black text-white">{user.full_name}</div>
-                            <div className="mt-1 truncate text-[12px] font-bold text-white/70">{user.email || "No email"}</div>
-                          </div>
-
-                          <div className="min-w-0 text-[12px] font-bold text-white/72">
-                            {user.phone ? <div>{user.phone}</div> : null}
-                            {user.client_code ? <div className="font-black text-white">{user.client_code}</div> : null}
-                          </div>
-
-                          <select
-                            value={user.is_active === false ? "deactivated" : user.role}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={(event) => {
-                              event.stopPropagation();
-                              const value = event.target.value;
-
-                              if (value === "deactivated") {
-                                void deactivateUser(user.id);
-                                return;
-                              }
-
-                              if (user.is_active === false) {
-                                void reactivateUser(user.id, value as UserRole);
-                                return;
-                              }
-
-                              void setRole(user.id, value as UserRole);
-                            }}
-                            disabled={user.id === profile.id}
-                            className={`h-10 rounded-full border border-white/25 bg-white px-3 text-[11px] font-black outline-none disabled:opacity-55 ${
-                              user.is_active === false ? "text-red-600" : "text-white"
-                            }`}
-                          >
-                            <option value="client">Client</option>
-                            <option value="staff">Staff</option>
-                            <option value="master_admin">Admin</option>
-                            <option value="deactivated">Deactivate</option>
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-
-                    {filteredUsers.length === 0 ? <DesktopEmptyState text="No users in this view." /> : null}
-
-                    {filteredUsers.length > visibleUsers.length ? (
-                      <button
-                        type="button"
-                        onClick={() => setVisibleUserCount((count) => count + 15)}
-                        className="mt-4 rounded-full bg-[#365665] px-6 py-3 text-[12px] font-black text-white"
-                      >
-                        Load more
-                      </button>
-                    ) : null}
                   </>
                 )}
               </section>
@@ -2645,6 +3533,13 @@ function DesktopAdminDashboard({
                     </Panel>
                   );
                 })}
+              </section>
+            ) : null}
+
+
+            {tab === "Loyalty Program" ? (
+              <section>
+                <LoyaltyProgramPanel />
               </section>
             ) : null}
 
@@ -2752,7 +3647,7 @@ function DesktopAdminDashboard({
                   </div>
 
                   {createdGameLinks.length === 0 ? (
-                    <p className="rounded-[18px] border border-white/18 bg-white/8 p-4 text-[13px] font-bold text-white/70">
+                    <p className="rounded-[18px] border border-white/18 bg-white/10 p-4 text-[13px] font-bold text-white/70">
                       No created games yet.
                     </p>
                   ) : (
@@ -2857,6 +3752,15 @@ function DesktopTimeRangeFilter({
           {option.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function DesktopReportMetric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-[18px] border border-white/16 bg-white/10 p-4">
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">{label}</div>
+      <div className="mt-2 text-[22px] font-black tracking-[-0.04em] text-white">{value}</div>
     </div>
   );
 }
