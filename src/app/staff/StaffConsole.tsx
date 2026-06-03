@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { QrScanner } from "@/components/QrScanner";
@@ -17,6 +19,9 @@ type ClaimedReward = Reward & {
   client?: Profile;
 };
 
+const pageGradient =
+  "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
+
 type NativeBarcodeDetector = {
   detect: (source: CanvasImageSource) => Promise<Array<{ rawValue?: string }>>;
 };
@@ -28,28 +33,6 @@ type NativeBarcodeDetectorConstructor = new (options: {
 type WindowWithBarcodeDetector = Window & {
   BarcodeDetector?: NativeBarcodeDetectorConstructor;
 };
-
-function normalizeScannedClientCode(rawValue: string) {
-  const trimmed = rawValue.trim();
-
-  try {
-    const url = new URL(trimmed);
-    const fromQuery =
-      url.searchParams.get("client_code") ??
-      url.searchParams.get("code") ??
-      url.searchParams.get("client") ??
-      url.searchParams.get("id");
-
-    if (fromQuery) return fromQuery.trim().replace(/^#/, "");
-
-    const lastPathPart = url.pathname.split("/").filter(Boolean).pop();
-    if (lastPathPart) return decodeURIComponent(lastPathPart).trim().replace(/^#/, "");
-  } catch {
-    // Most QR codes are plain client codes, not full URLs.
-  }
-
-  return trimmed.replace(/^#/, "");
-}
 
 function FastQrScanner({
   onResult,
@@ -104,7 +87,7 @@ function FastQrScanner({
             return;
           }
         } catch {
-          // Keep scanning. Camera focus can make some frames unreadable.
+          // Keep scanning while the phone camera is focusing.
         }
       }
 
@@ -166,7 +149,7 @@ function FastQrScanner({
 
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_34%,rgba(0,0,0,0.62)_35%,rgba(0,0,0,0.84)_100%)]" />
 
-      <div className="absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-[32px] border-2 border-brand-500 shadow-[0_0_0_999px_rgba(0,0,0,0.10)]">
+      <div className="absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-[32px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.10)]">
         <div className="absolute -left-1 -top-1 h-12 w-12 rounded-tl-[32px] border-l-4 border-t-4 border-white" />
         <div className="absolute -right-1 -top-1 h-12 w-12 rounded-tr-[32px] border-r-4 border-t-4 border-white" />
         <div className="absolute -bottom-1 -left-1 h-12 w-12 rounded-bl-[32px] border-b-4 border-l-4 border-white" />
@@ -175,7 +158,7 @@ function FastQrScanner({
 
       <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-5">
         <div>
-          <div className="text-[11px] font-black uppercase tracking-[0.28em] text-brand-300">
+          <div className="text-[11px] font-black uppercase tracking-[0.28em] text-[#ffd66b]">
             Fast Scanner
           </div>
           <div className="mt-1 text-[14px] font-black text-white">
@@ -209,8 +192,11 @@ function FastQrScanner({
   );
 }
 
-export function StaffConsole({ profile, categories }: Props) {
+function StaffConsole({ profile, categories }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Profile[]>([]);
   const [searching, setSearching] = useState(false);
@@ -221,6 +207,10 @@ export function StaffConsole({ profile, categories }: Props) {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [claimedRewards, setClaimedRewards] = useState<ClaimedReward[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [showPasswordEditor, setShowPasswordEditor] = useState(false);
+  const [showPhoneEditor, setShowPhoneEditor] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"success" | "error">("success");
@@ -243,12 +233,24 @@ export function StaffConsole({ profile, categories }: Props) {
     setTimeout(() => setToast(null), 2200);
   }, []);
 
+  async function cleanupRewardTimers() {
+    try {
+      await supabase.rpc("reset_stale_claimed_rewards");
+      await supabase.rpc("expire_old_rewards");
+    } catch {
+      // Best-effort cleanup only. Never block staff screen loading.
+    }
+  }
+
   const loadClaimedRewards = useCallback(async () => {
+    await cleanupRewardTimers();
+    
+
     const { data: rewardRows, error } = await supabase
       .from("rewards")
       .select("*")
       .eq("status", "claimed")
-      .order("earned_at", { ascending: true });
+      .order("claimed_at", { ascending: true });
 
     if (error) {
       flash("Could not load claim requests.", "error");
@@ -273,10 +275,13 @@ export function StaffConsole({ profile, categories }: Props) {
         client: clientById.get(reward.client_id),
       })),
     );
-  }, [flash, supabase]);
+  }, [cleanupRewardTimers, flash, supabase]);
 
   const refreshSelectedClient = useCallback(
     async (clientId: string) => {
+      await cleanupRewardTimers();
+      
+
       const [{ data: nextStamps }, { data: nextRewards }] = await Promise.all([
         supabase.from("client_stamps").select("*").eq("client_id", clientId),
         supabase
@@ -290,7 +295,7 @@ export function StaffConsole({ profile, categories }: Props) {
       setStamps((nextStamps ?? []) as ClientStamp[]);
       setRewards((nextRewards ?? []) as Reward[]);
     },
-    [supabase],
+    [cleanupRewardTimers, supabase],
   );
 
   const runSearch = useCallback(
@@ -316,28 +321,90 @@ export function StaffConsole({ profile, categories }: Props) {
       setResults([]);
       setQuery("");
       setSelectedCategories([]);
+      setShowPasswordEditor(false);
+      setShowPhoneEditor(false);
+      setNewPassword("");
+      setPhoneDraft(selectedClient.phone ?? "");
       await refreshSelectedClient(selectedClient.id);
     },
     [refreshSelectedClient],
   );
 
-  async function onScanResult(text: string) {
-    setScanning(false);
-    const code = normalizeScannedClientCode(text);
+  function normalizeScannedCode(rawValue: string) {
+    const trimmed = rawValue.trim();
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .or(`client_code.eq.${code},id.eq.${code}`)
-      .eq("role", "client")
-      .maybeSingle();
+    try {
+      const url = new URL(trimmed);
+      const fromQuery =
+        url.searchParams.get("client_code") ??
+        url.searchParams.get("code") ??
+        url.searchParams.get("client") ??
+        url.searchParams.get("id");
 
-    if (error || !data) {
-      flash("Client not found for that QR.", "error");
-      return;
+      if (fromQuery) return fromQuery.trim().replace(/^#/, "");
+
+      const lastPathPart = url.pathname.split("/").filter(Boolean).pop();
+      if (lastPathPart) return decodeURIComponent(lastPathPart).trim().replace(/^#/, "");
+    } catch {
+      // QR is usually a plain client code.
     }
 
-    await pickClient(data as Profile);
+    return trimmed.replace(/^#/, "");
+  }
+
+  const loadClientFromScannedCode = useCallback(
+    async (rawCode: string, updateUrl = true) => {
+      const code = normalizeScannedCode(rawCode);
+
+      if (!code) {
+        flash("QR code is empty.", "error");
+        setScanning(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`, { cache: "no-store" });
+        const json = await res.json();
+
+        if (!res.ok || !json.client) {
+          flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
+          setScanning(false);
+          return;
+        }
+
+        const foundClient = json.client as Profile;
+
+        setScanning(false);
+        setClient(foundClient);
+        setResults([]);
+        setQuery("");
+        setSelectedCategories([]);
+        setShowPasswordEditor(false);
+        setShowPhoneEditor(false);
+        setNewPassword("");
+        setPhoneDraft(foundClient.phone ?? "");
+        await refreshSelectedClient(foundClient.id);
+        await loadClaimedRewards();
+
+        const nextPath = `/staff?client=${encodeURIComponent(foundClient.client_code ?? foundClient.id)}`;
+
+        if (updateUrl) {
+          window.history.replaceState(null, "", nextPath);
+        }
+
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        flash(`Opened ${foundClient.full_name}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not open scanned client.";
+        flash(message, "error");
+        setScanning(false);
+      }
+    },
+    [flash, loadClaimedRewards, refreshSelectedClient],
+  );
+
+  async function onScanResult(text: string) {
+    await loadClientFromScannedCode(text);
   }
 
   function toggleCategory(categoryId: string) {
@@ -346,6 +413,85 @@ export function StaffConsole({ profile, categories }: Props) {
         ? prev.filter((id) => id !== categoryId)
         : [...prev, categoryId],
     );
+  }
+
+  async function readApiResponse(res: Response) {
+    const contentType = res.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/json")) {
+      return (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; phone?: string | null };
+    }
+
+    const text = await res.text().catch(() => "");
+    return {
+      error:
+        text && text.length < 140
+          ? text
+          : `API route failed with status ${res.status}. Make sure the route file exists and restart the server.`,
+    };
+  }
+
+  async function saveClientPassword() {
+    if (!client) return;
+
+    const trimmedPassword = newPassword.trim();
+
+    if (trimmedPassword.length < 6) {
+      flash("Password must be at least 6 characters.", "error");
+      return;
+    }
+
+    setBusy(true);
+
+    const res = await fetch("/api/staff/client-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: client.id, password: trimmedPassword }),
+    });
+
+    const json = await readApiResponse(res);
+
+    setBusy(false);
+
+    if (!res.ok) {
+      flash(json.error ?? `Could not update password. Status ${res.status}`, "error");
+      return;
+    }
+
+    setNewPassword("");
+    setShowPasswordEditor(false);
+    flash("Client password updated.");
+  }
+
+  async function saveClientPhone() {
+    if (!client) return;
+
+    const trimmedPhone = phoneDraft.trim();
+
+    setBusy(true);
+
+    const res = await fetch("/api/staff/client-phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: client.id, phone: trimmedPhone }),
+    });
+
+    const json = await readApiResponse(res);
+
+    setBusy(false);
+
+    if (!res.ok) {
+      flash(json.error ?? `Could not update phone number. Status ${res.status}`, "error");
+      return;
+    }
+
+    const nextPhone = typeof json.phone === "string" ? json.phone : trimmedPhone;
+
+    setClient({ ...client, phone: nextPhone || null });
+    setPhoneDraft(nextPhone);
+    setShowPhoneEditor(false);
+    flash("Client phone number updated.");
+    await refreshSelectedClient(client.id);
   }
 
   async function addStamps() {
@@ -366,7 +512,13 @@ export function StaffConsole({ profile, categories }: Props) {
 
       if (!res.ok || "error" in json) {
         setBusy(false);
-        flash(("error" in json && json.error) || "Could not add stamp.", "error");
+        const errorMessage = "error" in json ? String(json.error || "") : "";
+        flash(
+          errorMessage.includes("one_stamp_per_client_per_category_per_day")
+            ? "This client already received today's stamp in this category."
+            : errorMessage || "Could not add stamp.",
+          "error",
+        );
         await refreshSelectedClient(client.id);
         await loadClaimedRewards();
         return;
@@ -379,6 +531,7 @@ export function StaffConsole({ profile, categories }: Props) {
       }
     }
 
+    setSelectedCategories([]);
     setBusy(false);
     await refreshSelectedClient(client.id);
     await loadClaimedRewards();
@@ -415,6 +568,12 @@ export function StaffConsole({ profile, categories }: Props) {
   }
 
   useEffect(() => {
+    const codeFromUrl = searchParams.get("client");
+    if (!codeFromUrl || client) return;
+    void loadClientFromScannedCode(codeFromUrl, false);
+  }, [client, loadClientFromScannedCode, searchParams]);
+
+  useEffect(() => {
     if (!query.trim()) {
       setResults([]);
       return;
@@ -446,196 +605,393 @@ export function StaffConsole({ profile, categories }: Props) {
     };
   }, [loadClaimedRewards, supabase]);
 
+  function maskPhoneNumber(value?: string | null) {
+    const raw = String(value || "").trim();
+
+    if (!raw) return "No phone";
+
+    const compact = raw.replace(/\s+/g, "");
+    const digits = compact.replace(/\D/g, "");
+
+    if (digits.length < 6) return compact;
+
+    return `${digits.slice(0, 2)}***${digits.slice(-3)}`;
+  }
+
+  function singularRewardTitle(value?: string | null) {
+    const text = String(value || "Reward")
+      .replace(/ Item$/i, "")
+      .trim();
+
+    if (/sandwiches/i.test(text)) return text.replace(/sandwiches/i, "Sandwich");
+    if (/desserts/i.test(text)) return text.replace(/desserts/i, "Dessert");
+    if (/main courses/i.test(text)) return text.replace(/main courses/i, "Main Course");
+    if (/coffees/i.test(text)) return text.replace(/coffees/i, "Coffee");
+    if (/hookas|hookahs/i.test(text)) return text.replace(/hookas|hookahs/i, "Hooka");
+
+    return text;
+  }
+
   const renderRewardCard = (reward: ClaimedReward, showClient = false) => {
     const clientInfo = showClient ? reward.client : null;
 
     return (
       <div
         key={reward.id}
-        className="card p-4 flex items-center gap-3 bg-gradient-to-r from-brand-50 to-white border-brand-200"
+        className="rounded-[28px] border border-white/25 bg-white/18 p-4 text-white shadow-[0_20px_55px_rgba(72,24,25,0.18)] backdrop-blur-2xl"
       >
-        <div className="size-10 rounded-full bg-brand-500 text-white flex items-center justify-center">🎁</div>
-        <div className="flex-1 min-w-0">
-          <div className="font-display font-bold">{reward.reward_type}</div>
-          <div className="text-xs text-black/50">
-            {categoryNameById.get(reward.category_id) ?? "Reward"} · Earned {new Date(reward.earned_at).toLocaleDateString()}
+        <div className="flex items-center gap-3">
+          <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-white/20">
+            <Image
+              src={
+                reward.reward_type === "20% Discount" || reward.reward_type === "Free Dessert"
+                  ? "/birthday-cake.png"
+                  : "/gift.png"
+              }
+              alt=""
+              width={38}
+              height={38}
+              className="h-[38px] w-[38px] object-contain"
+            />
           </div>
-          {showClient && clientInfo && (
-            <div className="text-xs font-semibold text-black/70 mt-1">
-              {clientInfo.full_name} · {clientInfo.client_code}
+
+          <div className="min-w-0 flex-1">
+            <div className="font-raleway text-[17px] font-black leading-tight text-[#ffd66b]">
+              {singularRewardTitle(reward.reward_type)}
             </div>
-          )}
-          <div className="text-[11px] font-semibold text-brand-700 mt-1">
-            Client requested approval
+            {showClient && clientInfo && (
+              <div className="mt-1 truncate text-[12px] font-black text-white">
+                {clientInfo.full_name} · {maskPhoneNumber(clientInfo.phone)}
+              </div>
+            )}
+            <div className="mt-1 text-[12px] font-bold text-white/88">
+              Claimed {new Date((reward as any).claimed_at || reward.earned_at || reward.created_at).toLocaleDateString()}
+            </div>
+            <div className="mt-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#ffd66b]">
+              Pending approval
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => confirmReward(reward.id)}
+            disabled={busy}
+            className="shrink-0 rounded-full bg-[#ffd66b] px-5 py-2 text-[12px] font-black text-[#365665] shadow-[0_12px_26px_rgba(255,214,107,0.22)] disabled:opacity-55"
+          >
+            Confirm
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => confirmReward(reward.id)}
-          disabled={busy}
-          className="btn-primary !py-2 !px-3 text-xs shrink-0"
-        >
-          Confirm
-        </button>
       </div>
     );
   };
 
   return (
-    <AppShell title="Staff Console" role={profile.role}>
+    <AppShell title="Staff Console" role={profile.role} pageBackground={pageGradient}>
       <Toast message={toast} tone={toastTone} />
       {scanning && <FastQrScanner onResult={onScanResult} onClose={() => setScanning(false)} />}
 
-      {!client && (
-        <section className="mb-4">
-          <h1 className="font-display text-3xl font-bold leading-tight mb-1">Find a client</h1>
-          <p className="text-sm text-black/60 mb-5">Scan their QR or search by name, phone, member ID, or ID number.</p>
-
-          <div className="flex gap-2 mb-3">
-            <input
-              className="input"
-              placeholder="Search…"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              autoComplete="off"
-            />
-            <button onClick={() => setScanning(true)} className="btn-primary !px-4 shrink-0" title="Scan QR">
-              <span aria-hidden>📷</span>
-            </button>
-          </div>
-
-          {claimedRewards.length > 0 && (
-            <div className="mb-5 space-y-2">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="font-display text-xl font-bold">Reward claims</h2>
-                <span className="text-xs text-black/50">{claimedRewards.length} pending</span>
+      <div className="mx-auto w-full max-w-md px-4 pb-12 pt-5 font-raleway text-white">
+        {!client && (
+          <section className="space-y-5">
+            <div className="relative overflow-hidden rounded-[16px] border border-white/20 bg-white/12 px-5 py-5 shadow-[0_18px_50px_rgba(71,23,24,0.14)] backdrop-blur-2xl">
+              <Image
+                src="/client-main-card.png"
+                alt=""
+                width={360}
+                height={180}
+                priority
+                className="pointer-events-none absolute inset-0 h-full w-[130%] translate-x-10 scale-[1.08] object-cover object-right opacity-60"
+              />
+              <div className="relative">
+                <h1 className="text-[28px] font-black leading-[1.05] tracking-[-0.04em] text-white">
+                  Hello,
+                  <br />
+                  <span className="text-[#ffd66b]">{profile.full_name || "Staff"}</span>
+                </h1>
               </div>
-              {claimedRewards.map((reward) => renderRewardCard(reward, true))}
             </div>
-          )}
 
-          {searching && <div className="text-xs text-black/50 px-1 mb-2">Searching…</div>}
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1 rounded-full border border-white/45 bg-[#e7e9e3] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl">
+                <input
+                  className="h-8 w-full bg-transparent text-[14px] font-black text-[#365665] outline-none placeholder:text-[#365665]/58"
+                  placeholder="Search for client..."
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  autoComplete="off"
+                />
+              </div>
 
-          <div className="space-y-2">
-            {results.map((result) => (
               <button
-                key={result.id}
-                onClick={() => pickClient(result)}
-                className="card w-full text-left p-4 hover:border-brand-300 transition"
+                type="button"
+                onClick={() => setScanning(true)}
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/45 bg-[#e7e9e3] text-[#365665] shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl active:scale-95"
+                title="Scan QR"
+                aria-label="Scan QR"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-display font-semibold text-lg">{result.full_name}</div>
-                    <div className="text-xs text-black/50">
-                      {result.client_code} {result.phone ? `· ${result.phone}` : ""}
-                    </div>
-                  </div>
-                  <div className="text-brand-700 text-xs font-bold">Open →</div>
-                </div>
+                <span className="relative block h-6 w-6">
+                  <span className="absolute left-0 top-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
+                  <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
+                  <span className="absolute bottom-0 left-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
+                  <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
+                </span>
               </button>
-            ))}
-            {query && !searching && results.length === 0 && (
-              <div className="card p-4 text-sm text-black/50 text-center">No matches.</div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {client && (
-        <>
-          <section className="mb-5">
-            <button onClick={() => setClient(null)} className="text-xs font-semibold text-black/50 mb-3">
-              ← Back to search
-            </button>
-            <div className="card p-5">
-              <div className="text-[10px] uppercase tracking-widest text-black/50 font-semibold">Member</div>
-              <div className="font-display text-2xl font-bold mt-1">{client.full_name}</div>
-              <div className="text-xs text-black/50 mt-1">
-                {client.client_code}{client.phone ? ` · ${client.phone}` : ""}{client.id_number ? ` · ID ${client.id_number}` : ""}
-              </div>
             </div>
-          </section>
 
-          {rewards.length > 0 && (
-            <section className="mb-5">
-              <div className="flex items-center justify-between px-1 mb-3">
-                <h2 className="font-display text-xl font-bold">Reward claims</h2>
-                <span className="text-xs text-black/50">{rewards.length} pending</span>
-              </div>
-              <div className="space-y-2">{rewards.map((reward) => renderRewardCard(reward))}</div>
-            </section>
-          )}
+            {searching && <div className="px-1 text-[12px] font-bold text-white/70">Searching...</div>}
 
-          <section className="mb-5">
-            <div className="flex items-end justify-between gap-3 mb-3">
-              <div>
-                <h2 className="font-display text-xl font-bold">Select categories</h2>
-                <p className="text-xs text-black/50 mt-1">Choose one or more categories, then add stamps once.</p>
-              </div>
-              {selectedCategories.length > 0 && (
+            <div className="space-y-3">
+              {results.map((result) => (
                 <button
-                  type="button"
-                  onClick={() => setSelectedCategories([])}
-                  className="text-xs font-semibold text-black/50 shrink-0"
+                  key={result.id}
+                  onClick={() => pickClient(result)}
+                  className="w-full rounded-[24px] border border-white/18 bg-white/18 p-4 text-left shadow-[0_14px_38px_rgba(72,24,25,0.10)] backdrop-blur-2xl transition active:scale-[0.99]"
                 >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              {categories.map((category) => {
-                const count = stampByCat.get(category.id) ?? 0;
-                const active = selectedCategories.includes(category.id);
-
-                return (
-                  <button
-                    key={category.id}
-                    onClick={() => toggleCategory(category.id)}
-                    className={`card p-4 text-left transition ${active ? "ring-2 ring-brand-500 border-brand-300" : ""}`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-display font-semibold">{category.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold tabular-nums text-black/60">{count}/5</span>
-                        <span
-                          className={`size-6 rounded-full border flex items-center justify-center text-xs font-bold ${
-                            active ? "bg-brand-500 border-brand-500 text-white" : "border-black/15 text-black/20"
-                          }`}
-                        >
-                          {active ? "✓" : ""}
-                        </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-[18px] font-black text-white">{result.full_name}</div>
+                      {(result.phone || result.id_number) && (
+                        <div className="mt-1 truncate text-[13px] font-bold text-white/70">
+                          {maskPhoneNumber(result.phone) || "No phone"}
+                          {result.id_number ? ` - ID ${result.id_number}` : ""}
+                        </div>
+                      )}
+                      <div className="mt-1 truncate text-[12px] font-bold text-white/48">
+                        {result.client_code}
                       </div>
                     </div>
-                    <div className="flex gap-1.5">
-                      {Array.from({ length: 5 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className={`flex-1 h-2 rounded-full ${index < count ? "bg-brand-500" : "bg-black/[0.07]"}`}
-                        />
-                      ))}
+                    <div className="shrink-0 rounded-full bg-[#ffd66b] px-5 py-2 text-[12px] font-black text-[#365665] shadow-[0_12px_26px_rgba(255,214,107,0.20)]">
+                      Open
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+                  </div>
+                </button>
+              ))}
 
-          <section className="mb-12">
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={addStamps}
-              disabled={selectedCategories.length === 0 || busy}
-              className="btn-brand w-full text-base !py-4"
-            >
-              {busy
-                ? "Working…"
-                : selectedCategories.length > 0
-                  ? `Add stamp to ${selectedCategories.length} ${selectedCategories.length === 1 ? "category" : "categories"}`
-                  : "Pick at least one category"}
-            </motion.button>
+              {query && !searching && results.length === 0 && (
+                <div className="rounded-[26px] border border-white/20 bg-white/18 p-5 text-center text-[14px] font-semibold text-white/72 backdrop-blur-2xl">
+                  No matches.
+                </div>
+              )}
+            </div>
+
+            {claimedRewards.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-[21px] font-black text-white">Reward Claims</h2>
+                  <span className="rounded-full bg-white/16 px-3 py-1 text-[11px] font-black text-[#ffd66b]">
+                    {claimedRewards.length} pending
+                  </span>
+                </div>
+                {claimedRewards.map((reward) => renderRewardCard(reward, true))}
+              </div>
+            )}
           </section>
-        </>
-      )}
+        )}
+
+        {client && (
+          <>
+            <section className="mb-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setClient(null);
+                  router.replace("/staff", { scroll: false });
+                }}
+                className="mb-3 rounded-full bg-white/14 px-4 py-2 text-[12px] font-black text-white/82 backdrop-blur-xl"
+              >
+                Back to search
+              </button>
+
+              <div className="relative overflow-hidden rounded-[34px] border border-white/20 bg-white/16 p-6 shadow-[0_24px_70px_rgba(71,23,24,0.20)] backdrop-blur-2xl">
+                <Image
+                  src="/client-main-card.png"
+                  alt=""
+                  width={420}
+                  height={210}
+                  priority
+                  className="pointer-events-none absolute inset-0 h-full w-[130%] translate-x-10 scale-[1.08] object-cover object-right opacity-60"
+                />
+                <div className="relative">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.34em] text-white">
+                    Member
+                  </p>
+                  <h1 className="text-[32px] font-black uppercase leading-[0.95] tracking-[-0.04em] text-[#ffd66b]">
+                    {client.full_name}
+                  </h1>
+
+                  {(client.phone || client.id_number) && (
+                    <div className="mt-4 text-[14px] font-bold text-white/78">
+                      {maskPhoneNumber(client.phone) || "No phone"}
+                      {client.id_number ? ` - ID ${client.id_number}` : ""}
+                    </div>
+                  )}
+
+                  <div className="mt-1 text-[12px] font-black uppercase tracking-[0.18em] text-white/55">
+                    {client.client_code}
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPasswordEditor((value) => !value);
+                        setShowPhoneEditor(false);
+                      }}
+                      className="rounded-full bg-[#ffd66b] px-4 py-2 text-[12px] font-black text-[#365665] shadow-[0_12px_26px_rgba(255,214,107,0.20)]"
+                    >
+                      Change password
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneDraft(client.phone ?? "");
+                        setShowPhoneEditor((value) => !value);
+                        setShowPasswordEditor(false);
+                      }}
+                      className="rounded-full border border-white/25 bg-white/18 px-4 py-2 text-[12px] font-black text-white backdrop-blur-xl"
+                    >
+                      Edit Phone Number
+                    </button>
+                  </div>
+
+                  {showPasswordEditor && (
+                    <div className="mt-4 rounded-[22px] border border-white/18 bg-white/14 p-3 backdrop-blur-xl">
+                      <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+                        New password
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={(event) => setNewPassword(event.target.value)}
+                          placeholder="New password"
+                          className="min-w-0 flex-1 rounded-full bg-[#e7e9e3] px-4 py-3 text-[13px] font-black text-[#365665] outline-none placeholder:text-[#365665]/55"
+                        />
+                        <button
+                          type="button"
+                          onClick={saveClientPassword}
+                          disabled={busy}
+                          className="rounded-full bg-[#ffd66b] px-5 py-3 text-[12px] font-black text-[#365665] disabled:opacity-60"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {showPhoneEditor && (
+                    <div className="mt-4 rounded-[22px] border border-white/18 bg-white/14 p-3 backdrop-blur-xl">
+                      <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+                        Phone number
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="tel"
+                          value={phoneDraft}
+                          onChange={(event) => setPhoneDraft(event.target.value)}
+                          placeholder="Phone number"
+                          className="min-w-0 flex-1 rounded-full bg-[#e7e9e3] px-4 py-3 text-[13px] font-black text-[#365665] outline-none placeholder:text-[#365665]/55"
+                        />
+                        <button
+                          type="button"
+                          onClick={saveClientPhone}
+                          disabled={busy}
+                          className="rounded-full bg-[#ffd66b] px-5 py-3 text-[12px] font-black text-[#365665] disabled:opacity-60"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {rewards.length > 0 && (
+              <section className="mb-5 space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-[21px] font-black text-white">Reward Claims</h2>
+                  <span className="rounded-full bg-white/16 px-3 py-1 text-[11px] font-black text-[#ffd66b]">
+                    {rewards.length} pending
+                  </span>
+                </div>
+                {rewards.map((reward) => renderRewardCard(reward))}
+              </section>
+            )}
+
+            <section className="mb-5">
+              <div className="mb-3 flex items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-[22px] font-black text-white">Select Categories</h2>
+                  <p className="mt-1 text-[12px] font-semibold text-white/68">
+                    Choose one or more categories.
+                  </p>
+                </div>
+                {selectedCategories.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategories([])}
+                    className="shrink-0 rounded-full bg-white/14 px-3 py-1 text-[11px] font-black text-white/72"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {categories.map((category) => {
+                  const count = stampByCat.get(category.id) ?? 0;
+                  const active = selectedCategories.includes(category.id);
+
+                  return (
+                    <button
+                      key={category.id}
+                      onClick={() => toggleCategory(category.id)}
+                      className={`rounded-[28px] border p-4 text-left shadow-[0_18px_45px_rgba(72,24,25,0.13)] backdrop-blur-2xl transition active:scale-[0.99] ${
+                        active
+                          ? "border-[#ffd66b] bg-white/28 ring-2 ring-[#ffd66b]/35"
+                          : "border-white/20 bg-white/16"
+                      }`}
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <span className="text-[17px] font-black text-white">{category.name === "Desserts 2" ? "Hooka" : category.name}</span>
+                        <span className="rounded-full bg-white/16 px-3 py-1 text-[12px] font-black tabular-nums text-[#ffd66b]">
+                          {count}/5
+                        </span>
+                      </div>
+
+                      <div className="flex gap-1.5">
+                        {Array.from({ length: 5 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className={`h-2.5 flex-1 rounded-full ${
+                              index < count ? "bg-[#ffd66b]" : "bg-[#d9ded5]/45"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="mb-12">
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={addStamps}
+                disabled={selectedCategories.length === 0 || busy}
+                className="w-full rounded-[24px] bg-[#ffd66b] px-6 py-4 text-[15px] font-black text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.22)] disabled:opacity-70"
+              >
+                {busy ? "Working..." : "Stamp it!"}
+              </motion.button>
+            </section>
+          </>
+        )}
+      </div>
     </AppShell>
   );
 }
+
+export { StaffConsole };
+export default StaffConsole;
