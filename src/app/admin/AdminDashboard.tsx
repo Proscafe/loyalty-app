@@ -136,6 +136,15 @@ function MobileAdminDashboard({
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<Tab>("Overview");
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+
+    if (requestedTab && TABS.includes(requestedTab as Tab)) {
+      setTab(requestedTab as Tab);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
   const [users, setUsers] = useState<AdminUser[]>(initialUsers);
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(recentTxns ?? []);
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
@@ -1217,6 +1226,7 @@ type LoyaltySettings = typeof DEFAULT_LOYALTY_SETTINGS;
 
 type LoyaltyProgramCategory = AdminCategory & {
   is_active?: boolean | null;
+  average_price?: number | null;
 };
 
 function parseMoneyValue(value: string | number | null | undefined) {
@@ -1240,10 +1250,6 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
   const [message, setMessage] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [showDisableWarning, setShowDisableWarning] = useState(false);
 
-  const estimatedGiftCost = useMemo(
-    () => parseMoneyValue(settings.average_stamp_cost) * Math.max(1, Number(settings.stamps_per_gift) || 5),
-    [settings.average_stamp_cost, settings.stamps_per_gift],
-  );
 
   function showMessage(text: string, tone: "success" | "error" = "success") {
     setMessage({ text, tone });
@@ -1369,6 +1375,7 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
         .from("loyalty_categories")
         .insert({
           name,
+          average_price: 0,
           is_active: true,
           sort_order: categories.length + 1,
         })
@@ -1402,6 +1409,10 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
 
       if (typeof updates.name === "string") {
         payload.name = updates.name.trim() || category.name;
+      }
+
+      if (typeof updates.average_price === "number") {
+        payload.average_price = parseMoneyValue(updates.average_price);
       }
 
       if (typeof updates.is_active === "boolean") {
@@ -1460,7 +1471,7 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
     }
   }
 
-  const mainGridClass = compact ? "grid gap-3" : "grid gap-3 lg:grid-cols-[1.2fr_0.75fr_0.75fr_auto]";
+  const mainGridClass = compact ? "grid gap-3" : "grid gap-3 lg:grid-cols-[1.2fr_0.75fr_auto]";
 
   return (
     <div className="space-y-4">
@@ -1510,12 +1521,6 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
               placeholder="PRO’s Club"
             />
             <LoyaltyNumberInput
-              label="Avg. Cost / Stamp"
-              value={String(settings.average_stamp_cost)}
-              onChange={(value) => setSettings((current) => ({ ...current, average_stamp_cost: parseMoneyValue(value) }))}
-              placeholder="0"
-            />
-            <LoyaltyNumberInput
               label="Stamps Needed"
               value={String(settings.stamps_per_gift)}
               onChange={(value) => setSettings((current) => ({ ...current, stamps_per_gift: Number(value) || 1 }))}
@@ -1545,24 +1550,6 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-[18px] border border-white/14 bg-white/10 p-4">
-              <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/52">
-                Estimated Gift Cost
-              </div>
-              <div className="mt-1 text-[26px] font-black leading-none text-[#ffd66b]">
-                {formatLoyaltyMoney(estimatedGiftCost, settings.currency)}
-              </div>
-            </div>
-            <div className="rounded-[18px] border border-white/14 bg-white/10 p-4 md:col-span-2">
-              <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/52">
-                Calculation
-              </div>
-              <p className="mt-1 text-[12px] font-bold leading-5 text-white/68">
-                Avg. cost per stamp × stamps needed = estimated gift cost.
-              </p>
-            </div>
-          </div>
         </div>
 
         <div className="mt-5 rounded-[22px] border border-white/16 bg-white/10 p-4">
@@ -1609,7 +1596,7 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
                   key={category.id}
                   category={category}
                   saving={savingCategoryId === category.id}
-                  onSave={(name) => void updateCategory(category, { name })}
+                  onSave={(name, averagePrice) => void updateCategory(category, { name, average_price: averagePrice })}
                   onToggle={() => void updateCategory(category, { is_active: category.is_active === false })}
                   onRemove={() => void removeCategory(category)}
                 />
@@ -1718,23 +1705,27 @@ function LoyaltyCategoryRow({
 }: {
   category: LoyaltyProgramCategory;
   saving: boolean;
-  onSave: (name: string) => void;
+  onSave: (name: string, averagePrice: number) => void;
   onToggle: () => void;
   onRemove: () => void;
 }) {
   const [name, setName] = useState(category.name);
+  const [averagePrice, setAveragePrice] = useState(String(parseMoneyValue(category.average_price)));
 
   useEffect(() => {
     setName(category.name);
-  }, [category.name]);
+    setAveragePrice(String(parseMoneyValue(category.average_price)));
+  }, [category.name, category.average_price]);
 
   const isActive = category.is_active !== false;
-  const isDirty = name.trim() !== category.name;
+  const isDirty =
+    name.trim() !== category.name ||
+    parseMoneyValue(averagePrice) !== parseMoneyValue(category.average_price);
 
   return (
     <div className="rounded-[18px] border border-white/16 bg-white/10 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="min-w-0 flex-1">
+      <div className="grid gap-3 lg:grid-cols-[1fr_180px_auto] lg:items-center">
+        <div className="min-w-0">
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -1749,10 +1740,24 @@ function LoyaltyCategoryRow({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <label className="block">
+          <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.18em] text-white/58">
+            Average Price
+          </span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={averagePrice}
+            onChange={(event) => setAveragePrice(event.target.value)}
+            className="h-11 w-full rounded-[14px] border border-white/18 bg-white px-3 text-[13px] font-black text-[#365665] outline-none focus:border-[#ffd66b]"
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-2 lg:justify-end">
           <button
             type="button"
-            onClick={() => onSave(name)}
+            onClick={() => onSave(name, parseMoneyValue(averagePrice))}
             disabled={saving || !isDirty}
             className="rounded-full bg-[#ffd66b] px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
           >
@@ -1779,7 +1784,6 @@ function LoyaltyCategoryRow({
     </div>
   );
 }
-
 
 function MobileGameInput({
   label,
@@ -2349,7 +2353,24 @@ function DesktopAdminDashboard({
   });
   const [gameSaving, setGameSaving] = useState(false);
   const [gameCreateOpen, setGameCreateOpen] = useState(false);
-  const [createdGameLinks, setCreatedGameLinks] = useState<Array<{ id: string; title: string; code: string; meta?: string }>>([]);
+  const [gameSort, setGameSort] = useState<{
+    key: "sport" | "match" | "date" | "status" | "players";
+    direction: "asc" | "desc";
+  }>({ key: "date", direction: "desc" });
+  const [createdGameLinks, setCreatedGameLinks] = useState<
+    Array<{
+      id: string;
+      title: string;
+      code: string;
+      sport: string;
+      matchLabel: string;
+      kickoff: string | null;
+      opensAt: string | null;
+      closesAt: string | null;
+      status: string;
+      players: number;
+    }>
+  >([]);
 
   function flash(message: string, t: "success" | "error" = "success") {
     setTone(t);
@@ -2367,6 +2388,60 @@ function DesktopAdminDashboard({
     return `${window.location.origin}/predict/${code}`;
   }
 
+  function setGameKickoffWithDefaultWindow(value: string) {
+    setGameForm((current) => {
+      if (!value) {
+        return { ...current, kickoff_at: "", opens_at: "", closes_at: "" };
+      }
+
+      const kickoff = new Date(value);
+      if (Number.isNaN(kickoff.getTime())) {
+        return { ...current, kickoff_at: value };
+      }
+
+      const formatLocalDateTime = (date: Date) => {
+        const pad = (number: number) => String(number).padStart(2, "0");
+
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      };
+
+      return {
+        ...current,
+        kickoff_at: value,
+        opens_at: formatLocalDateTime(new Date(kickoff.getTime() - 20 * 60 * 1000)),
+        closes_at: formatLocalDateTime(new Date(kickoff.getTime() + 10 * 60 * 1000)),
+      };
+    });
+  }
+
+  async function copyGamePredictionLink(code: string) {
+    await navigator.clipboard.writeText(predictionLinkFor(code));
+    flash("Game link copied.");
+  }
+
+  async function downloadGameQr(code: string, title: string) {
+    const link = predictionLinkFor(code);
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=900x900&data=${encodeURIComponent(link)}`;
+
+    try {
+      const response = await fetch(qrUrl);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+
+      anchor.href = objectUrl;
+      anchor.download = `${title}-qr.png`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      flash("QR downloaded.");
+    } catch {
+      window.open(qrUrl, "_blank", "noopener,noreferrer");
+      flash("QR opened.");
+    }
+  }
+
   async function refreshDesktopGameLinks() {
     try {
       const response = await fetch("/api/admin/prediction-matches", { method: "GET" });
@@ -2375,11 +2450,16 @@ function DesktopAdminDashboard({
         ? (JSON.parse(text) as {
             matches?: Array<{
               id: string;
+              sport_type?: string | null;
               home_team: string | null;
               away_team: string | null;
               secret_code: string;
               match_label: string | null;
               kickoff_at: string | null;
+              opens_at?: string | null;
+              closes_at?: string | null;
+              is_active?: boolean | null;
+              entries_count?: number | null;
             }>;
             error?: string;
           })
@@ -2390,13 +2470,35 @@ function DesktopAdminDashboard({
         return;
       }
 
+      const nowMs = Date.now();
+
       setCreatedGameLinks(
-        (json.matches ?? []).map((match) => ({
-          id: match.id,
-          title: `${match.home_team ?? "Home"} vs ${match.away_team ?? "Away"}`,
-          code: match.secret_code,
-          meta: `${match.match_label || "World Cup"} · ${desktopFormatDate(match.kickoff_at)}`,
-        })),
+        (json.matches ?? []).map((match) => {
+          const openMs = new Date(match.opens_at ?? "").getTime();
+          const closeMs = new Date(match.closes_at ?? "").getTime();
+
+          const status =
+            match.is_active === false
+              ? "Closed"
+              : Number.isFinite(openMs) && nowMs < openMs
+                ? "Scheduled"
+                : Number.isFinite(closeMs) && nowMs > closeMs
+                  ? "Closed"
+                  : "Open";
+
+          return {
+            id: match.id,
+            title: `${match.home_team ?? "Home"} vs ${match.away_team ?? "Away"}`,
+            code: match.secret_code,
+            sport: match.sport_type === "basketball" ? "Basketball" : "Football",
+            matchLabel: match.match_label || (match.sport_type === "basketball" ? "Basket" : "World Cup"),
+            kickoff: match.kickoff_at ?? null,
+            opensAt: match.opens_at ?? null,
+            closesAt: match.closes_at ?? null,
+            status,
+            players: Number(match.entries_count ?? 0),
+          };
+        }),
       );
     } catch (error) {
       flash(error instanceof Error ? error.message : "Could not load game links.", "error");
@@ -2411,10 +2513,6 @@ function DesktopAdminDashboard({
 
     setGameSaving(true);
 
-    const basketballWinBy = Number(gameForm.basketball_win_by);
-    const hasBasketballResult =
-      Number.isInteger(basketballWinBy) && basketballWinBy >= 1 && basketballWinBy <= 99;
-
     const payload =
       gameKind === "basketball"
         ? {
@@ -2424,13 +2522,15 @@ function DesktopAdminDashboard({
             venue:
               gameForm.venue.trim() ||
               "Basketball rule: client chooses the winner, with bonus for exact win margin.",
-            home_score: hasBasketballResult && gameForm.basketball_winner === "home" ? String(basketballWinBy) : "",
-            away_score: hasBasketballResult && gameForm.basketball_winner === "away" ? String(basketballWinBy) : "",
+            home_score: "",
+            away_score: "",
           }
         : {
             ...gameForm,
             sport_type: "football",
             match_label: gameForm.match_label.trim() || "World Cup",
+            home_score: "",
+            away_score: "",
           };
 
     try {
@@ -2962,6 +3062,28 @@ function DesktopAdminDashboard({
   const latestActivities = visibleActivityTxns.slice(0, 5);
   const latestGifts = visibleGiftRows.slice(0, 50);
   const recentRewardClients = desktopUniqueCount(visibleGiftRows.map((reward) => reward.client_id));
+
+  const sortedGameLinks = useMemo(() => {
+    const direction = gameSort.direction === "asc" ? 1 : -1;
+
+    return createdGameLinks.slice().sort((a, b) => {
+      const compareText = (first: string, second: string) => first.localeCompare(second) * direction;
+
+      if (gameSort.key === "sport") return compareText(a.sport, b.sport);
+      if (gameSort.key === "match") return compareText(a.title, b.title);
+      if (gameSort.key === "status") return compareText(a.status, b.status);
+      if (gameSort.key === "players") return (a.players - b.players) * direction;
+
+      return ((new Date(a.kickoff ?? 0).getTime() || 0) - (new Date(b.kickoff ?? 0).getTime() || 0)) * direction;
+    });
+  }, [createdGameLinks, gameSort]);
+
+  function sortGames(key: "sport" | "match" | "date" | "status" | "players") {
+    setGameSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
 
   const clientUsersForReports = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -3545,28 +3667,138 @@ function DesktopAdminDashboard({
 
             {tab === "Game Links" ? (
               <section className="space-y-4">
-                <Panel className="!p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-[26px] font-black tracking-[-0.04em] text-white">
+                      Created Games
+                    </h2>
+                    <p className="mt-1 text-[12px] font-bold text-white/65">
+                      Manage links, QR codes, players, scores, and leaderboards.
+                    </p>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => setGameCreateOpen((current) => !current)}
-                    className="flex w-full items-center justify-between gap-4 text-left"
+                    onClick={() => setGameCreateOpen(true)}
+                    className="rounded-full bg-[#ffd66b] px-6 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]"
                   >
-                    <div>
-                      <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/65">
-                        Admin
-                      </div>
-                      <h2 className="mt-1 text-[19px] font-black leading-none tracking-[-0.04em] text-white">
-                        Create <span className="text-[#ffd66b]">Game Link</span>
-                      </h2>
-                    </div>
-
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white">
-                      {gameCreateOpen ? "−" : "+"}
-                    </div>
+                    Create Link
                   </button>
+                </div>
 
-                  {gameCreateOpen ? (
-                    <div className="mt-4 border-t border-white/16 pt-4">
+                <Panel className="!p-4">
+                  {sortedGameLinks.length === 0 ? (
+                    <p className="rounded-[18px] border border-white/18 bg-white/10 p-4 text-[13px] font-bold text-white/70">
+                      No created games yet.
+                    </p>
+                  ) : (
+                    <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/8">
+                      <div className="grid grid-cols-[0.75fr_1.45fr_0.95fr_0.75fr_0.55fr_0.52fr_0.52fr_0.52fr] gap-3 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+                        <button type="button" onClick={() => sortGames("sport")} className="text-left">Sport</button>
+                        <button type="button" onClick={() => sortGames("match")} className="text-left">Match Name</button>
+                        <button type="button" onClick={() => sortGames("date")} className="text-left">Date</button>
+                        <button type="button" onClick={() => sortGames("status")} className="text-left">Status</button>
+                        <button type="button" onClick={() => sortGames("players")} className="text-left">Players</button>
+                        <div>Copy</div>
+                        <div>QR</div>
+                        <div>Open</div>
+                      </div>
+
+                      <div className="max-h-[560px] overflow-auto">
+                        {sortedGameLinks.map((game) => (
+                          <div
+                            key={game.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              window.location.href = `/admin/game-links/${game.id}`;
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                window.location.href = `/admin/game-links/${game.id}`;
+                              }
+                            }}
+                            className="grid cursor-pointer grid-cols-[0.75fr_1.45fr_0.95fr_0.75fr_0.55fr_0.52fr_0.52fr_0.52fr] items-center gap-3 border-b border-white/10 px-4 py-4 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
+                          >
+                            <div className="font-black text-[#ffd66b]">{game.sport}</div>
+                            <div className="min-w-0">
+                              <div className="truncate text-[14px] font-black text-white">{game.title}</div>
+                              <div className="truncate text-[10px] font-bold text-white/46">{game.matchLabel}</div>
+                            </div>
+                            <div>{desktopFormatDate(game.kickoff)}</div>
+                            <div>
+                              <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
+                                game.status === "Open"
+                                  ? "bg-[#ffd66b] text-[#365665]"
+                                  : game.status === "Closed"
+                                    ? "bg-red-500/16 text-red-100"
+                                    : "bg-white/14 text-white"
+                              }`}>
+                                {game.status}
+                              </span>
+                            </div>
+                            <div className="font-black text-white">{game.players}</div>
+
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void copyGamePredictionLink(game.code);
+                              }}
+                              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[15px] text-white transition hover:bg-white/20"
+                              title="Copy link"
+                            >
+                              ⧉
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void downloadGameQr(game.code, game.title);
+                              }}
+                              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[15px] text-white transition hover:bg-white/20"
+                              title="Download QR"
+                            >
+                              ▣
+                            </button>
+                            <a
+                              href={predictionLinkFor(game.code)}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[15px] font-black text-white transition hover:bg-white/20"
+                              title="Open prediction"
+                            >
+                              ↗
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Panel>
+
+                {gameCreateOpen ? (
+                  <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm lg:items-center lg:pb-0">
+                    <div className="w-full max-w-2xl rounded-[30px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
+                      <div className="mb-4 flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">Admin</div>
+                          <h3 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
+                            Create <span className="text-[#ffd66b]">Game Link</span>
+                          </h3>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setGameCreateOpen(false)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white"
+                        >
+                          ×
+                        </button>
+                      </div>
+
                       <div className="mb-4 grid grid-cols-2 gap-2 rounded-[16px] bg-white/10 p-1">
                         {(["football", "basketball"] as const).map((kind) => (
                           <button
@@ -3574,9 +3806,7 @@ function DesktopAdminDashboard({
                             type="button"
                             onClick={() => setGameKind(kind)}
                             className={`h-9 rounded-[13px] text-[10px] font-black uppercase tracking-[0.18em] transition ${
-                              gameKind === kind
-                                ? "bg-[#ffd66b] text-[#365665]"
-                                : "text-white/72 hover:bg-white/10"
+                              gameKind === kind ? "bg-[#ffd66b] text-[#365665]" : "text-white/72 hover:bg-white/10"
                             }`}
                           >
                             {kind === "football" ? "Football" : "Basketball"}
@@ -3584,106 +3814,29 @@ function DesktopAdminDashboard({
                         ))}
                       </div>
 
-                      <div className="grid gap-2 lg:grid-cols-2">
+                      <div className="grid gap-3 lg:grid-cols-2">
                         <AdminGameInput label={gameKind === "basketball" ? "Team 1" : "Home Team"} value={gameForm.home_team} onChange={(value) => setGameForm((current) => ({ ...current, home_team: value }))} />
                         <AdminGameInput label={gameKind === "basketball" ? "Team 2" : "Away Team"} value={gameForm.away_team} onChange={(value) => setGameForm((current) => ({ ...current, away_team: value }))} />
-                        <AdminGameInput className="lg:col-span-2" label="Description" value={gameForm.venue} onChange={(value) => setGameForm((current) => ({ ...current, venue: value }))} />
-                        <AdminGameInput className="lg:col-span-2" label="Tournament" value={gameForm.match_label} onChange={(value) => setGameForm((current) => ({ ...current, match_label: value }))} />
-                        <AdminGameInput type="datetime-local" className="lg:col-span-2" label="Match Timing" value={gameForm.kickoff_at} onChange={(value) => setGameForm((current) => ({ ...current, kickoff_at: value }))} />
+                        <AdminGameInput label="Tournament" value={gameForm.match_label} onChange={(value) => setGameForm((current) => ({ ...current, match_label: value }))} />
+                        <AdminGameInput label="Description" value={gameForm.venue} onChange={(value) => setGameForm((current) => ({ ...current, venue: value }))} />
+                        <AdminGameInput type="datetime-local" label="Match Timing" value={gameForm.kickoff_at} onChange={setGameKickoffWithDefaultWindow} />
                         <AdminGameInput type="datetime-local" label="Open Time" value={gameForm.opens_at} onChange={(value) => setGameForm((current) => ({ ...current, opens_at: value }))} />
                         <AdminGameInput type="datetime-local" label="Close Time" value={gameForm.closes_at} onChange={(value) => setGameForm((current) => ({ ...current, closes_at: value }))} />
 
-                        {gameKind === "football" ? (
-                          <>
-                            <AdminGameInput label="Home Score" value={gameForm.home_score} onChange={(value) => setGameForm((current) => ({ ...current, home_score: value }))} />
-                            <AdminGameInput label="Away Score" value={gameForm.away_score} onChange={(value) => setGameForm((current) => ({ ...current, away_score: value }))} />
-                          </>
-                        ) : (
-                          <>
-                            <label className="block">
-                              <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">
-                                Final Winning Team
-                              </span>
-                              <select
-                                value={gameForm.basketball_winner}
-                                onChange={(event) => setGameForm((current) => ({ ...current, basketball_winner: event.target.value }))}
-                                className="h-11 w-full rounded-[14px] border border-white/20 bg-white px-3 text-[13px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
-                              >
-                                <option value="home">{gameForm.home_team || "Team 1"}</option>
-                                <option value="away">{gameForm.away_team || "Team 2"}</option>
-                              </select>
-                            </label>
-                            <AdminGameInput label="Final Win By" value={gameForm.basketball_win_by} onChange={(value) => setGameForm((current) => ({ ...current, basketball_win_by: value }))} />
-                            <p className="lg:col-span-2 text-[11px] font-bold leading-5 text-white/62">
-                              Leave these empty when creating the link. Add the final winner and win-by after the game result is known.
-                            </p>
-                          </>
-                        )}
+
                       </div>
 
                       <button
                         type="button"
                         onClick={() => void createGameLinkFromDesktop()}
                         disabled={gameSaving}
-                        className="mt-3 flex h-10 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
+                        className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
                       >
-                        {gameSaving ? "Creating..." : gameKind === "basketball" ? "Create Basketball Link" : "Create Football Link"}
+                        {gameSaving ? "Creating..." : "Create Game Link"}
                       </button>
                     </div>
-                  ) : null}
-                </Panel>
-
-                <Panel className="!p-4">
-                  <div className="mb-4 flex items-center justify-between gap-4">
-                    <div>
-                      <h2 className="text-[20px] font-black text-white">Created Games</h2>
-                      <p className="mt-1 text-[12px] font-bold text-white/65">
-                        View and copy all created game links from the web admin.
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-white/12 px-3 py-1 text-[11px] font-black text-white">
-                      {createdGameLinks.length}
-                    </span>
                   </div>
-
-                  {createdGameLinks.length === 0 ? (
-                    <p className="rounded-[18px] border border-white/18 bg-white/10 p-4 text-[13px] font-bold text-white/70">
-                      No created games yet.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {createdGameLinks.map((game) => (
-                        <div key={game.id} className="flex items-center justify-between gap-3 rounded-[20px] border border-white/18 bg-white/10 p-4">
-                          <div className="min-w-0">
-                            <div className="truncate text-[15px] font-black text-white">{game.title}</div>
-                            {game.meta ? (
-                              <div className="mt-1 truncate text-[11px] font-bold text-white/60">{game.meta}</div>
-                            ) : null}
-                            <div className="mt-1 truncate text-[11px] font-bold text-white/65">{predictionLinkFor(game.code)}</div>
-                          </div>
-
-                          <div className="flex shrink-0 items-center gap-2">
-                            <a
-                              href={predictionLinkFor(game.code)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-full bg-[#ffd66b] px-4 py-2 text-[11px] font-black text-[#365665] transition hover:bg-[#f0cf61]"
-                            >
-                              Open
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => void navigator.clipboard.writeText(predictionLinkFor(game.code))}
-                              className="rounded-full bg-white/14 px-4 py-2 text-[11px] font-black text-white transition hover:bg-white/22"
-                            >
-                              Copy
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Panel>
+                ) : null}
               </section>
             ) : null}
 
@@ -3718,7 +3871,7 @@ function AdminGameInput({
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-[14px] border border-white/20 bg-white px-3 text-[13px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
+        className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
       />
     </label>
   );

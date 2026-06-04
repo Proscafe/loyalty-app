@@ -25,8 +25,6 @@ function toIso(value: unknown) {
 
   if (!raw) return null;
 
-  // datetime-local sends YYYY-MM-DDTHH:mm.
-  // Save that exact calendar date/time to Supabase without timezone shifting.
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
     return `${raw}:00.000Z`;
   }
@@ -36,7 +34,6 @@ function toIso(value: unknown) {
   }
 
   const date = new Date(raw);
-
   if (Number.isNaN(date.getTime())) return null;
 
   return date.toISOString();
@@ -202,7 +199,30 @@ export async function GET() {
       return jsonError(error.message, 400);
     }
 
-    return NextResponse.json({ matches: data ?? [] });
+    const matchIds = (data ?? []).map((match: { id: string }) => match.id);
+    const entryCounts = new Map<string, number>();
+
+    if (matchIds.length > 0) {
+      const { data: entries, error: entriesError } = await db
+        .from("prediction_entries")
+        .select("match_id")
+        .in("match_id", matchIds);
+
+      if (entriesError) {
+        return jsonError(entriesError.message, 400);
+      }
+
+      (entries ?? []).forEach((entry: { match_id: string }) => {
+        entryCounts.set(entry.match_id, (entryCounts.get(entry.match_id) ?? 0) + 1);
+      });
+    }
+
+    return NextResponse.json({
+      matches: (data ?? []).map((match: { id: string }) => ({
+        ...match,
+        entries_count: entryCounts.get(match.id) ?? 0,
+      })),
+    });
   } catch (error) {
     return jsonError(
       error instanceof Error ? error.message : "Unexpected server error while loading matches.",
@@ -255,17 +275,7 @@ export async function POST(req: Request) {
       .single();
 
     if (error) {
-      const message =
-        error.message.includes("prediction_matches") ||
-        error.message.includes("relation") ||
-        error.message.includes("schema cache") ||
-        error.message.includes("venue") ||
-        error.message.includes("home_score") ||
-        error.message.includes("away_score")
-          ? "Prediction table columns are missing. Run the Supabase SQL update first."
-          : error.message;
-
-      return jsonError(message, 400);
+      return jsonError(error.message, 400);
     }
 
     return NextResponse.json({ match: data });
@@ -324,17 +334,7 @@ export async function PATCH(req: Request) {
       .single();
 
     if (error) {
-      const message =
-        error.message.includes("prediction_matches") ||
-        error.message.includes("relation") ||
-        error.message.includes("schema cache") ||
-        error.message.includes("venue") ||
-        error.message.includes("home_score") ||
-        error.message.includes("away_score")
-          ? "Prediction table columns are missing. Run the Supabase SQL update first."
-          : error.message;
-
-      return jsonError(message, 400);
+      return jsonError(error.message, 400);
     }
 
     return NextResponse.json({ match: data });
