@@ -25,15 +25,11 @@ function toIso(value: unknown) {
 
   if (!raw) return null;
 
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
-    return `${raw}:00.000Z`;
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(raw)) {
-    return raw.endsWith("Z") ? raw : `${raw.replace(/\.\d+$/, "")}.000Z`;
-  }
-
+  // datetime-local gives YYYY-MM-DDTHH:mm.
+  // Parse it as the admin browser's local time, then store UTC.
+  // This keeps the same displayed time after reload.
   const date = new Date(raw);
+
   if (Number.isNaN(date.getTime())) return null;
 
   return date.toISOString();

@@ -23,32 +23,21 @@ export type PublicPredictionMatch = {
 };
 
 function parseSavedLocalTime(value?: string | null) {
-  const match = String(value ?? "")
-    .trim()
-    .match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!value) return NaN;
 
-  if (!match) {
-    const fallback = new Date(String(value ?? ""));
-    return Number.isNaN(fallback.getTime()) ? NaN : fallback.getTime();
-  }
+  const date = new Date(value);
 
-  return new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3]),
-    Number(match[4]),
-    Number(match[5]),
-    0,
-    0,
-  ).getTime();
+  return Number.isNaN(date.getTime()) ? NaN : date.getTime();
 }
 
 export type ExistingPredictionEntry = {
   id: string;
   match_id: string;
   client_id: string;
-  home_score: number;
-  away_score: number;
+  home_score: number | null;
+  away_score: number | null;
+  predicted_winner?: string | null;
+  predicted_margin?: number | null;
   created_at: string;
 };
 

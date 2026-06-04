@@ -288,6 +288,33 @@ export function GameLinkDetailsClient({
     );
   }
 
+  function setEditKickoffWithDefaultWindow(value: string) {
+    setEditForm((current) => {
+      if (!value) {
+        return { ...current, kickoff_at: "", opens_at: "", closes_at: "" };
+      }
+
+      const kickoff = new Date(value);
+
+      if (Number.isNaN(kickoff.getTime())) {
+        return { ...current, kickoff_at: value };
+      }
+
+      const formatLocalDateTime = (date: Date) => {
+        const pad = (number: number) => String(number).padStart(2, "0");
+
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      };
+
+      return {
+        ...current,
+        kickoff_at: value,
+        opens_at: formatLocalDateTime(new Date(kickoff.getTime() - 20 * 60 * 1000)),
+        closes_at: formatLocalDateTime(new Date(kickoff.getTime() + 10 * 60 * 1000)),
+      };
+    });
+  }
+
   async function deleteMatch() {
     const confirmed = window.confirm(`Delete ${title}? This will remove the game and its predictions.`);
 
@@ -312,11 +339,10 @@ export function GameLinkDetailsClient({
     setEditSaving(true);
     setMessage(null);
 
-    const response = await fetch("/api/admin/prediction-matches", {
-      method: "PATCH",
+    const response = await fetch(`/api/admin/game-links/${match.id}/edit`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id: match.id,
         sport_type: editForm.sport_type,
         home_team: editForm.home_team,
         away_team: editForm.away_team,
@@ -325,8 +351,6 @@ export function GameLinkDetailsClient({
         kickoff_at: editForm.kickoff_at,
         opens_at: editForm.opens_at,
         closes_at: editForm.closes_at,
-        home_score: "",
-        away_score: "",
       }),
     });
 
@@ -677,7 +701,7 @@ export function GameLinkDetailsClient({
               <EditInput label="Away Team" value={editForm.away_team} onChange={(value) => setEditForm((current) => ({ ...current, away_team: value }))} />
               <EditInput label="Tournament" value={editForm.match_label} onChange={(value) => setEditForm((current) => ({ ...current, match_label: value }))} />
               <EditInput label="Description" value={editForm.venue} onChange={(value) => setEditForm((current) => ({ ...current, venue: value }))} />
-              <EditInput type="datetime-local" label="Match Timing" value={editForm.kickoff_at} onChange={(value) => setEditForm((current) => ({ ...current, kickoff_at: value }))} />
+              <EditInput type="datetime-local" label="Match Timing" value={editForm.kickoff_at} onChange={setEditKickoffWithDefaultWindow} />
               <EditInput type="datetime-local" label="Open Time" value={editForm.opens_at} onChange={(value) => setEditForm((current) => ({ ...current, opens_at: value }))} />
               <EditInput type="datetime-local" label="Close Time" value={editForm.closes_at} onChange={(value) => setEditForm((current) => ({ ...current, closes_at: value }))} />
 

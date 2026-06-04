@@ -10,57 +10,28 @@ const PAGE_BG =
 const GLASS_CARD =
   "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
 
-function parseSavedDateParts(value?: string | null) {
-  if (!value) return null;
-
-  const match = String(value)
-    .trim()
-    .match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-
-  if (!match) return null;
-
-  return {
-    year: Number(match[1]),
-    month: Number(match[2]),
-    day: Number(match[3]),
-    hour: Number(match[4]),
-    minute: Number(match[5]),
-  };
-}
-
 function parseSavedLocalTime(value?: string | null) {
-  const parts = parseSavedDateParts(value);
+  if (!value) return NaN;
 
-  if (!parts) {
-    const fallback = new Date(String(value ?? ""));
-    return Number.isNaN(fallback.getTime()) ? NaN : fallback.getTime();
-  }
+  const date = new Date(value);
 
-  return new Date(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    0,
-    0,
-  ).getTime();
-}
-
-function formatSavedDate(value?: string | null) {
-  const parts = parseSavedDateParts(value);
-
-  if (!parts) return "—";
-
-  const hour12 = parts.hour % 12 || 12;
-  const ampm = parts.hour >= 12 ? "PM" : "AM";
-  const minute = String(parts.minute).padStart(2, "0");
-
-  return `${parts.month}/${parts.day}/${parts.year}, ${hour12}:${minute} ${ampm}`;
+  return Number.isNaN(date.getTime()) ? NaN : date.getTime();
 }
 
 function formatDate(value?: string | null) {
-  return formatSavedDate(value);
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString(undefined, {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function countdownTo(value?: string | null) {
@@ -242,7 +213,7 @@ export function PredictionPageClient({
               <br />
               <span className="text-[#ffd66b]">Prediction</span>
             </h1>
-            <p className="mt-4 max-w-[280px] text-[13px] font-bold leading-5 text-[#ffd66b]">
+            <p className="mt-4 max-w-[280px] text-[13px] font-bold leading-5 text-white">
               Predict the match, earn points,
               <br />
               & collect gifts in your profile.
@@ -252,29 +223,36 @@ export function PredictionPageClient({
 
         {!match || displayState !== "open" ? (
           <section
-            className="border border-white/20 p-5 text-center shadow-[0_18px_54px_rgba(35,48,39,0.16)] backdrop-blur-2xl"
+            className="border border-white/20 px-5 py-7 text-center shadow-[0_18px_54px_rgba(35,48,39,0.16)] backdrop-blur-2xl"
             style={{ borderRadius: 26, background: GLASS_CARD }}
           >
-            <div className="text-[24px] font-black text-[#ffd66b]">
-              {messageForState(displayState)}
-            </div>
             {match ? (
-              <p className="mt-3 text-[13px] font-semibold leading-5 text-white/64">
-                <span className="font-black uppercase text-[#ffd66b]">
-                  {match.home_team} VS {match.away_team}
-                </span>
-                <br />
-                <span className="font-black text-[#ffd66b]">
+              <>
+                <div className="text-[28px] font-black uppercase leading-tight tracking-[0.02em] text-[#ffd66b]">
+                  {match.home_team} <span className="text-white">VS</span> {match.away_team}
+                </div>
+
+                <div className="mt-4 text-[24px] font-black leading-tight text-white">
+                  {messageForState(displayState)}
+                </div>
+
+                <div className="mt-4 text-[15px] font-black leading-6 text-[#ffd66b]">
                   {isBasketball ? kickoffCountdown.replace("Kickoff", "Tip off") : kickoffCountdown}
-                </span>
-                <br />
-                {formatDate(match.kickoff_at)}
-                <br />
-                Opens {formatDate(match.opens_at)}
-                <br />
-                Closes {formatDate(match.closes_at)}
-              </p>
-            ) : null}
+                  <br />
+                  <span className="text-white">{formatDate(match.kickoff_at)}</span>
+                </div>
+
+                <div className="mt-3 text-[13px] font-bold leading-5 text-white/76">
+                  Opens {formatDate(match.opens_at)}
+                  <span className="mx-2 text-white/46">|</span>
+                  Closes {formatDate(match.closes_at)}
+                </div>
+              </>
+            ) : (
+              <div className="text-[24px] font-black text-white">
+                {messageForState(displayState)}
+              </div>
+            )}
           </section>
         ) : (
           <section
