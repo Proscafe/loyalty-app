@@ -149,6 +149,8 @@ function MobileAdminDashboard({
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(recentTxns ?? []);
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
+  const [categoryNamesById, setCategoryNamesById] = useState<Record<string, string>>({});
+  const [activityView, setActivityView] = useState<"activity" | "gifts">("activity");
   const [filter, setFilter] = useState<"all" | UserRole>("staff");
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(15);
@@ -2156,6 +2158,16 @@ function desktopFormatDateOnly(value?: string | null) {
   });
 }
 
+function desktopFormatTimeOnly(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleTimeString("en", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function desktopRoleLabel(role: UserRole) {
   if (role === "master_admin") return "Admin";
   if (role === "staff") return "Staff";
@@ -2319,8 +2331,10 @@ function DesktopAdminDashboard({
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(recentTxns ?? []);
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
+  const [categoryNamesById, setCategoryNamesById] = useState<Record<string, string>>({});
+  const [activityView, setActivityView] = useState<"activity" | "gifts">("activity");
   const [filter, setFilter] = useState<"all" | UserRole>("client");
-  const [timeRange, setTimeRange] = useState<DesktopTimeRange>("week");
+  const [timeRange, setTimeRange] = useState<DesktopTimeRange>("today");
   const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const [lastVisitFilter, setLastVisitFilter] = useState<"all" | "active" | "inactive">("all");
   const [customerSort, setCustomerSort] = useState<{
@@ -2579,7 +2593,7 @@ function DesktopAdminDashboard({
     let isMounted = true;
 
     async function loadAdminData() {
-      const [txnResult, rewardResult] = await Promise.all([
+      const [txnResult, rewardResult, categoryResult] = await Promise.all([
         supabase
           .from("stamp_transactions")
           .select("*")
@@ -2592,6 +2606,10 @@ function DesktopAdminDashboard({
           .select("*")
           .order("created_at", { ascending: false })
           .limit(250),
+
+        supabase
+          .from("loyalty_categories")
+          .select("id, name"),
       ]);
 
       if (!isMounted) return;
@@ -2607,6 +2625,14 @@ function DesktopAdminDashboard({
       if (rewardResult.data) {
         setGiftRows(rewards);
       }
+
+      const categoryNames: Record<string, string> = {};
+
+      ((categoryResult.data ?? []) as AdminCategory[]).forEach((category) => {
+        categoryNames[category.id] = category.name === "Desserts 2" ? "Hooka" : category.name;
+      });
+
+      setCategoryNamesById(categoryNames);
       void refreshDesktopGameLinks();
 
       const ids = Array.from(
@@ -3578,87 +3604,132 @@ function DesktopAdminDashboard({
               </section>
             ) : null}
 
-            {tab === "Activity" ? (
-              <section className="space-y-3">
+            {tab === "Activity" || tab === "Gifts" ? (
+              <section className="space-y-4">
                 <div className="flex flex-col gap-3 rounded-[20px] border border-white/22 bg-white/12 p-4 shadow-[0_18px_46px_rgba(0,0,0,0.10)] backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-[18px] font-black text-white">Activity</h2>
                     <p className="mt-1 text-[12px] font-bold text-white/70">Showing {desktopTimeRangeLabel(timeRange)}</p>
                   </div>
-                  <DesktopTimeRangeFilter value={timeRange} onChange={setTimeRange} />
-                </div>
 
-                {visibleActivityTxns.length === 0 ? <DesktopEmptyState text="No activity for this time range." /> : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex rounded-full bg-white/12 p-1">
+                      <button
+                        type="button"
+                        onClick={() => setActivityView("activity")}
+                        className={`rounded-full px-5 py-2 text-[11px] font-black uppercase tracking-[0.12em] transition ${
+                          activityView === "activity" ? "bg-[#365665] text-white" : "text-white/70"
+                        }`}
+                      >
+                        Activity
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActivityView("gifts")}
+                        className={`rounded-full px-5 py-2 text-[11px] font-black uppercase tracking-[0.12em] transition ${
+                          activityView === "gifts" ? "bg-[#365665] text-white" : "text-white/70"
+                        }`}
+                      >
+                        Gifts
+                      </button>
+                    </div>
 
-                {latestActivities.map((transaction) => {
-                  const clientName = profileNamesById[transaction.client_id ?? ""] ?? "Client";
-                  const actorName =
-                    profileNamesById[transaction.staff_id ?? ""] ||
-                    (transaction.staff_id ? "Staff user" : "System");
-
-                  return (
-                    <ActivityRow
-                      key={transaction.id}
-                      action={transaction.action_type}
-                      title={desktopLabelForAction(transaction.action_type, actorName)}
-                      meta={
-                        transaction.action_type === "reward_redeemed"
-                          ? `Claimed by ${actorName} · ${desktopFormatDate(transaction.created_at)}`
-                          : `${clientName} · ${desktopFormatDate(transaction.created_at)}`
-                      }
-                    />
-                  );
-                })}
-              </section>
-            ) : null}
-
-            {tab === "Gifts" ? (
-              <section className="space-y-3">
-                <div className="flex flex-col gap-3 rounded-[20px] border border-white/22 bg-white/12 p-4 shadow-[0_18px_46px_rgba(0,0,0,0.10)] backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h2 className="text-[18px] font-black text-white">Gifts</h2>
-                    <p className="mt-1 text-[12px] font-bold text-white/70">Showing {desktopTimeRangeLabel(timeRange)}</p>
+                    <DesktopTimeRangeFilter value={timeRange} onChange={setTimeRange} />
                   </div>
-                  <DesktopTimeRangeFilter value={timeRange} onChange={setTimeRange} />
                 </div>
 
-                {latestGifts.length === 0 ? <DesktopEmptyState text="No gifts for this time range." /> : null}
+                {activityView === "activity" ? (
+                  <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/10">
+                    <div className="grid grid-cols-[1.2fr_1fr_1fr_0.7fr_0.65fr] gap-6 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+                      <div>Client Name</div>
+                      <div>Category of the stamp</div>
+                      <div>Issue by</div>
+                      <div>Date</div>
+                      <div>Time</div>
+                    </div>
 
-                {latestGifts.map((reward) => {
-                  const clientName = profileNamesById[reward.client_id] ?? "Client";
-                  const confirmedByName = reward.redeemed_by
-                    ? profileNamesById[reward.redeemed_by] ?? "Staff user"
-                    : null;
-
-                  return (
-                    <Panel key={reward.id}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-[17px] font-black text-white">
-                            {desktopNormalizeRewardText(reward.reward_type)}
-                          </div>
-                          <div className="mt-1 text-[12px] font-black text-white/70">{clientName}</div>
-                          <div className="mt-1 text-[11px] font-bold leading-5 text-white/72">
-                            Earned {desktopFormatDate(reward.earned_at)}
-                            {reward.redeemed_at ? <> · Confirmed {desktopFormatDate(reward.redeemed_at)} {confirmedByName ? `by ${confirmedByName}` : ""}</> : null}
-                          </div>
+                    <div className="max-h-[560px] overflow-auto">
+                      {visibleActivityTxns.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">
+                          No activity for this time range.
                         </div>
+                      ) : null}
 
-                        <span
-                          className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] ${
-                            reward.status === "available"
-                              ? "bg-[#ffd66b] text-[#365665]"
-                              : reward.status === "redeemed" || reward.status === "claimed"
-                                ? "bg-[#365665]/10 text-white"
-                                : "bg-white/28 text-white/72"
-                          }`}
-                        >
-                          {String(reward.status)}
-                        </span>
-                      </div>
-                    </Panel>
-                  );
-                })}
+                      {visibleActivityTxns.map((transaction) => {
+                        const clientName = profileNamesById[transaction.client_id ?? ""] ?? "Client";
+                        const actorName =
+                          profileNamesById[transaction.staff_id ?? ""] ||
+                          (transaction.staff_id ? "Staff user" : "System");
+                        const categoryName =
+                          categoryNamesById[transaction.category_id ?? ""] ||
+                          (transaction.action_type === "reward_redeemed" ? "Gift" : "—");
+
+                        return (
+                          <div
+                            key={transaction.id}
+                            className="grid grid-cols-[1.2fr_1fr_1fr_0.7fr_0.65fr] gap-6 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 last:border-b-0 hover:bg-white/10"
+                          >
+                            <div className="truncate font-black text-white">{clientName}</div>
+                            <div className="truncate">{categoryName}</div>
+                            <div className="truncate">{actorName}</div>
+                            <div>{desktopFormatDateOnly(transaction.created_at)}</div>
+                            <div>{desktopFormatTimeOnly(transaction.created_at)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/10">
+                    <div className="grid grid-cols-[1.1fr_1.15fr_1fr_0.7fr_0.65fr_0.65fr] gap-6 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+                      <div>Client Name</div>
+                      <div>Gift</div>
+                      <div>Category</div>
+                      <div>Date</div>
+                      <div>Time</div>
+                      <div>Status</div>
+                    </div>
+
+                    <div className="max-h-[560px] overflow-auto">
+                      {latestGifts.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">
+                          No gifts for this time range.
+                        </div>
+                      ) : null}
+
+                      {latestGifts.map((reward) => {
+                        const clientName = profileNamesById[reward.client_id] ?? "Client";
+                        const categoryName = categoryNamesById[reward.category_id ?? ""] || "—";
+
+                        return (
+                          <div
+                            key={reward.id}
+                            className="grid grid-cols-[1.1fr_1.15fr_1fr_0.7fr_0.65fr_0.65fr] gap-6 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 last:border-b-0 hover:bg-white/10"
+                          >
+                            <div className="truncate font-black text-white">{clientName}</div>
+                            <div className="truncate">{desktopNormalizeRewardText(reward.reward_type)}</div>
+                            <div className="truncate">{categoryName}</div>
+                            <div>{desktopFormatDateOnly(reward.earned_at ?? reward.created_at)}</div>
+                            <div>{desktopFormatTimeOnly(reward.earned_at ?? reward.created_at)}</div>
+                            <div>
+                              <span
+                                className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
+                                  reward.status === "available"
+                                    ? "bg-[#ffd66b] text-[#365665]"
+                                    : reward.status === "redeemed" || reward.status === "claimed"
+                                      ? "bg-[#365665] text-white"
+                                      : "bg-white/28 text-white/72"
+                                }`}
+                              >
+                                {String(reward.status)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </section>
             ) : null}
 
@@ -4104,6 +4175,7 @@ function DesktopClientProfilePanel({
   onSendGift: (gift: string, description: string) => void;
 }) {
   const [giftPopupOpen, setGiftPopupOpen] = useState(false);
+  const [giftsOpen, setGiftsOpen] = useState(false);
   const [giftName, setGiftName] = useState("");
   const [giftDescription, setGiftDescription] = useState("");
 
@@ -4172,7 +4244,7 @@ function DesktopClientProfilePanel({
               }}
               disabled={user.id === currentUserId}
               className={`shrink-0 rounded-full border border-white/25 bg-white px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
-                user.is_active === false ? "text-red-600" : "text-white"
+                user.is_active === false ? "text-red-600" : "text-[#365665]"
               }`}
             >
               <option value="client">Client</option>
@@ -4233,7 +4305,7 @@ function DesktopClientProfilePanel({
                         type="button"
                         onClick={() => onRemoveStamp(category.id)}
                         disabled={loading || count <= 0}
-                        className="rounded-full border border-white/25 bg-white px-4 py-2 text-[11px] font-black text-white transition hover:border-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
+                        className="rounded-full border border-white/25 bg-white px-4 py-2 text-[11px] font-black text-[#365665] transition hover:border-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         Remove
                       </button>
@@ -4267,38 +4339,58 @@ function DesktopClientProfilePanel({
       </Panel>
 
       <Panel>
-        <h2 className="mb-4 text-[18px] font-black text-white">Gifts</h2>
-        {loading ? null : rewards.length === 0 ? <DesktopEmptyState text="No gifts for this client yet." /> : null}
+        <button
+          type="button"
+          onClick={() => setGiftsOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <div>
+            <h2 className="text-[18px] font-black text-white">Gifts</h2>
+            <p className="mt-1 text-[11px] font-bold text-white/72">
+              {rewards.length} gift{rewards.length === 1 ? "" : "s"}
+            </p>
+          </div>
 
-        <div className="space-y-3">
-          {rewards.map((reward) => (
-            <div key={reward.id} className="rounded-[16px] bg-white/10 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-[16px] font-black text-white">
-                    {desktopNormalizeRewardText(reward.reward_type)}
-                  </div>
-                  <div className="mt-1 text-[11px] font-semibold leading-5 text-white/72">
-                    Earned {desktopFormatDate(reward.earned_at)}
-                    {reward.redeemed_at ? <> · Confirmed {desktopFormatDate(reward.redeemed_at)}</> : null}
+          <span className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-[#365665]">
+            {giftsOpen ? "Hide" : "Show"}
+          </span>
+        </button>
+
+        {giftsOpen ? (
+          <div className="mt-4">
+            {loading ? null : rewards.length === 0 ? <DesktopEmptyState text="No gifts for this client yet." /> : null}
+
+            <div className="space-y-3">
+              {rewards.map((reward) => (
+                <div key={reward.id} className="rounded-[16px] bg-white/10 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-[16px] font-black text-white">
+                        {desktopNormalizeRewardText(reward.reward_type)}
+                      </div>
+                      <div className="mt-1 text-[11px] font-semibold leading-5 text-white/72">
+                        Earned {desktopFormatDate(reward.earned_at)}
+                        {reward.redeemed_at ? <> · Confirmed {desktopFormatDate(reward.redeemed_at)}</> : null}
+                      </div>
+                    </div>
+
+                    <span
+                      className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] ${
+                        reward.status === "available"
+                          ? "bg-[#ffd66b] text-[#365665]"
+                          : reward.status === "redeemed" || reward.status === "claimed"
+                            ? "bg-[#365665] text-white"
+                            : "bg-white/28 text-white/72"
+                      }`}
+                    >
+                      {String(reward.status)}
+                    </span>
                   </div>
                 </div>
-
-                <span
-                  className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] ${
-                    reward.status === "available"
-                      ? "bg-[#ffd66b] text-[#365665]"
-                      : reward.status === "redeemed" || reward.status === "claimed"
-                        ? "bg-[#365665]/10 text-white"
-                        : "bg-white/28 text-white/72"
-                  }`}
-                >
-                  {String(reward.status)}
-                </span>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ) : null}
       </Panel>
 
       {giftPopupOpen ? (
@@ -4322,15 +4414,15 @@ function DesktopClientProfilePanel({
               </div>
 
               <div className="min-w-0">
-                <h3 className="text-[22px] font-black tracking-[-0.03em] text-white">Send Gift</h3>
-                <p className="mt-1 text-[12px] font-bold leading-5 text-white/70">
+                <h3 className="text-[22px] font-black tracking-[-0.03em] text-[#365665]">Send Gift</h3>
+                <p className="mt-1 text-[12px] font-bold leading-5 text-[#365665]/70">
                   Send a manual gift to {user.full_name || "this client"}.
                 </p>
               </div>
             </div>
 
             <label className="mb-4 block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/70">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#365665]/70">
                 Description
               </span>
               <textarea
@@ -4338,19 +4430,19 @@ function DesktopClientProfilePanel({
                 onChange={(event) => setGiftDescription(event.target.value)}
                 rows={3}
                 placeholder="Example: Birthday gift, VIP compensation..."
-                className="w-full rounded-[16px] border border-white/25 bg-white/10 px-4 py-3 text-[13px] font-semibold text-white outline-none focus:border-[#ffd66b]"
+                className="w-full rounded-[16px] border border-[#365665]/20 bg-[#f4f1e9] px-4 py-3 text-[13px] font-semibold text-[#365665] outline-none focus:border-[#ffd66b]"
               />
             </label>
 
             <label className="mb-5 block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/70">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#365665]/70">
                 Gift
               </span>
               <input
                 value={giftName}
                 onChange={(event) => setGiftName(event.target.value)}
                 placeholder="Example: Free Dessert"
-                className="h-12 w-full rounded-[16px] border border-white/25 bg-white/10 px-4 text-[13px] font-semibold text-white outline-none focus:border-[#ffd66b]"
+                className="h-12 w-full rounded-[16px] border border-[#365665]/20 bg-[#f4f1e9] px-4 text-[13px] font-semibold text-[#365665] outline-none focus:border-[#ffd66b]"
               />
             </label>
 
@@ -4358,7 +4450,7 @@ function DesktopClientProfilePanel({
               <button
                 type="button"
                 onClick={() => setGiftPopupOpen(false)}
-                className="rounded-full border border-white/25 px-5 py-3 text-[12px] font-black text-white"
+                className="rounded-full border border-[#365665]/20 px-5 py-3 text-[12px] font-black text-[#365665]"
               >
                 Cancel
               </button>

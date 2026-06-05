@@ -82,6 +82,13 @@ function toTitleCase(value: string) {
     .join(" ");
 }
 
+function firstNameOnly(value?: string | null) {
+  const cleanName = cleanText(value);
+  const firstName = cleanName.split(/\s+/).filter(Boolean)[0];
+
+  return toTitleCase(firstName || "Client");
+}
+
 function pluralizeTitle(count: number, singular: string, plural?: string) {
   const label = count === 1 ? singular : plural ?? `${singular}s`;
   return `${count} ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
@@ -214,9 +221,9 @@ function getStampTheme(categoryName: string) {
 
   if (lower.includes("hooka") || lower.includes("hookah")) {
     return {
-      fill: "rgba(240, 207, 97, 0.22)",
-      stroke: "#f0cf61",
-      asset: "/star.png",
+      fill: "rgba(126, 91, 169, 0.24)",
+      stroke: "#7e5ba9",
+      asset: "/star-purple.png",
     };
   }
 
@@ -751,13 +758,102 @@ export function ClientDashboard({
     () => makeCategoryMap((categories ?? []) as LoyaltyCategory[]),
     [categories],
   );
-  const stampRows = (stamps ?? initialStamps ?? []) as ClientStamp[];
+
+  const rawStampRows = useMemo(
+    () => ((stamps ?? initialStamps ?? []) as ClientStamp[]),
+    [stamps, initialStamps],
+  );
+
+  const stampRows = useMemo(() => {
+    const rowsByCategory = new Map<string, ClientStamp>();
+
+    rawStampRows.forEach((stamp, index) => {
+      const record = stamp as AnyRecord;
+      const categoryId = cleanText(record.category_id);
+      const categoryName = extractCategoryName(stamp, categoryMap, index);
+      const key = categoryId || normalizeCategoryName(categoryName);
+
+      rowsByCategory.set(key, stamp);
+    });
+
+    const categoryRows =
+      ((categories ?? []) as LoyaltyCategory[])
+        .map((category, index) => {
+          const record = category as AnyRecord;
+          const categoryId = cleanText(record.id);
+          const categoryName = normalizeCategoryName(record.name);
+          const key = categoryId || categoryName;
+
+          return {
+            id: `empty-${key || index}`,
+            category_id: categoryId || null,
+            category_name: categoryName || DEFAULT_CATEGORY_ORDER[index] || "Reward",
+            stamp_count: 0,
+          } as ClientStamp & { category_name: string };
+        })
+        .filter((row) => normalizeCategoryName((row as AnyRecord).category_name) !== "Reward");
+
+    const fallbackRows = DEFAULT_CATEGORY_ORDER.map((name, index) => ({
+      id: `default-${name}`,
+      category_id: null,
+      category_name: name,
+      stamp_count: 0,
+      sort_order: index,
+    })) as Array<ClientStamp & { category_name: string }>;
+
+    const baseRows = categoryRows.length > 0 ? categoryRows : fallbackRows;
+
+    const mergedRows = baseRows.map((row, index) => {
+      const record = row as AnyRecord;
+      const categoryId = cleanText(record.category_id);
+      const categoryName = normalizeCategoryName(record.category_name || record.name);
+      const key = categoryId || categoryName;
+      const existingRow = rowsByCategory.get(key);
+
+      if (existingRow) {
+        return {
+          ...row,
+          ...existingRow,
+          category_name: categoryName,
+        } as ClientStamp & { category_name: string };
+      }
+
+      return {
+        ...row,
+        category_name: categoryName || DEFAULT_CATEGORY_ORDER[index] || "Reward",
+        stamp_count: 0,
+      } as ClientStamp & { category_name: string };
+    });
+
+    rawStampRows.forEach((stamp, index) => {
+      const record = stamp as AnyRecord;
+      const categoryId = cleanText(record.category_id);
+      const categoryName = extractCategoryName(stamp, categoryMap, index);
+      const normalizedName = normalizeCategoryName(categoryName);
+      const exists = mergedRows.some((row) => {
+        const rowRecord = row as AnyRecord;
+        return (
+          (categoryId && cleanText(rowRecord.category_id) === categoryId) ||
+          normalizeCategoryName(rowRecord.category_name || rowRecord.name) === normalizedName
+        );
+      });
+
+      if (!exists) {
+        mergedRows.push({
+          ...(stamp as ClientStamp),
+          category_name: normalizedName || DEFAULT_CATEGORY_ORDER[index] || "Reward",
+        } as ClientStamp & { category_name: string });
+      }
+    });
+
+    return mergedRows;
+  }, [categories, categoryMap, rawStampRows]);
 
   const totalStamps = useMemo(() => {
     return stampRows.reduce((sum, item) => sum + Math.max(0, Number((item as AnyRecord).stamp_count ?? 0)), 0);
   }, [stampRows]);
 
-  const displayName = toTitleCase(profile.full_name || "Client");
+  const displayName = firstNameOnly(profile.full_name);
   const hasBirthdayToday = isBirthdayToday((profile as AnyRecord).birthday as string | null | undefined);
 
   const visibleRewards = useMemo(() => {
@@ -1141,7 +1237,7 @@ export function ClientDashboard({
           >
             <div className="space-y-6">
               {stampRows.map((item, index) => (
-                <StampRow key={(item as AnyRecord).category_id || (item as AnyRecord).id || index} item={item} index={index} categoryMap={categoryMap} />
+                <StampRow key={(item as AnyRecord).category_id || (item as AnyRecord).category_name || (item as AnyRecord).id || index} item={item} index={index} categoryMap={categoryMap} />
               ))}
             </div>
           </div>
