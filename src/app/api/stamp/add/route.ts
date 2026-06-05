@@ -1,28 +1,51 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function getAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
-  }
-
-  return createSupabaseClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
+type AddStampRpcResult = {
+  success?: boolean;
+  new_stamp_count?: number;
+  reward_earned?: boolean;
+  reward?: {
+    id: string;
+    reward_type: string;
+    category_id: string;
+    category_name: string;
+    status: string;
+    earned_at: string;
+  };
+};
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function friendlyStampError(message: string) {
+  const lower = message.toLowerCase();
+
+  if (lower.includes("one_stamp_per_client_per_category_per_day")) {
+    return "This client already received today's stamp in this category.";
+  }
+
+  if (lower.includes("one_stamp_per_client_per_day")) {
+    return "This client already received today's stamp.";
+  }
+
+  if (lower.includes("category_not_found")) {
+    return "This category is disabled or not found.";
+  }
+
+  if (lower.includes("not_authorized") || lower.includes("permission denied")) {
+    return "Staff access required to add stamps.";
+  }
+
+  if (lower.includes("client") && lower.includes("not")) {
+    return "Client profile not found.";
+  }
+
+  return message || "Could not add stamp.";
 }
 
 export async function POST(req: Request) {
@@ -38,106 +61,45 @@ export async function POST(req: Request) {
       return jsonError("Please sign in first.", 401);
     }
 
-    const admin = getAdminClient();
-
-    const { data: staffProfile, error: staffError } = await admin
-      .from("profiles")
-      .select("id, role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (staffError) {
-      return jsonError(staffError.message, 400);
-    }
-
-    if (!staffProfile || !["staff", "admin", "master_admin"].includes(staffProfile.role)) {
-      return jsonError("Staff access required.", 403);
-    }
-
     const body = (await req.json().catch(() => ({}))) as {
       client_id?: string;
       clientId?: string;
       category_id?: string;
       categoryId?: string;
-      amount?: number;
     };
 
     const clientId = String(body.client_id ?? body.clientId ?? "").trim();
     const categoryId = String(body.category_id ?? body.categoryId ?? "").trim();
-    const amount = Number.isFinite(Number(body.amount)) ? Math.max(1, Number(body.amount)) : 1;
 
     if (!clientId || !categoryId) {
       return jsonError("Missing client_id or category_id.", 400);
     }
 
-    const { data: clientProfile, error: clientError } = await admin
-      .from("profiles")
-      .select("id, role")
-      .eq("id", clientId)
-      .maybeSingle();
-
-    if (clientError) {
-      return jsonError(clientError.message, 400);
-    }
-
-    if (!clientProfile || clientProfile.role !== "client") {
-      return jsonError("Client profile not found.", 404);
-    }
-
-    const { data: existingStamp, error: stampReadError } = await admin
-      .from("client_stamps")
-      .select("id, count")
-      .eq("client_id", clientId)
-      .eq("category_id", categoryId)
-      .maybeSingle();
-
-    if (stampReadError) {
-      return jsonError(stampReadError.message, 400);
-    }
-
-    const currentCount = Number(existingStamp?.count ?? 0);
-    const nextCount = currentCount + amount;
-
-    if (existingStamp?.id) {
-      const { error: updateError } = await admin
-        .from("client_stamps")
-        .update({
-          count: nextCount,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingStamp.id);
-
-      if (updateError) {
-        return jsonError(updateError.message, 400);
-      }
-    } else {
-      const { error: insertError } = await admin.from("client_stamps").insert({
-        client_id: clientId,
-        category_id: categoryId,
-        count: nextCount,
-      });
-
-      if (insertError) {
-        return jsonError(insertError.message, 400);
-      }
-    }
-
-    await admin.from("stamp_transactions").insert({
-      client_id: clientId,
-      staff_id: user.id,
-      category_id: categoryId,
-      action: "add_stamp",
-      amount,
-      created_at: new Date().toISOString(),
+    const { data, error } = await supabase.rpc("add_stamp", {
+      p_client_id: clientId,
+      p_category_id: categoryId,
     });
+
+    if (error) {
+      return jsonError(friendlyStampError(error.message), 400);
+    }
+
+    const result = data as AddStampRpcResult | null;
+
+    if (!result?.success) {
+      return jsonError("Could not add stamp.", 400);
+    }
 
     return NextResponse.json({
-      ok: true,
-      client_id: clientId,
-      category_id: categoryId,
-      count: nextCount,
+      success: true,
+      new_stamp_count: Number(result.new_stamp_count ?? 0),
+      reward_earned: Boolean(result.reward_earned),
+      reward: result.reward,
     });
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Could not add stamp.", 500);
+    return jsonError(
+      friendlyStampError(error instanceof Error ? error.message : "Could not add stamp."),
+      500,
+    );
   }
 }
