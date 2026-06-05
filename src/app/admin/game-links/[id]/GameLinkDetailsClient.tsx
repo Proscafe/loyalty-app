@@ -65,14 +65,32 @@ function toDateTimeLocal(value?: string | null) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function toPredictionDatePayloadValue(value?: string | null) {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) return "";
+
+  const date = new Date(raw);
+
+  if (Number.isNaN(date.getTime())) return raw;
+
+  return date.toISOString();
+}
+
 function winnerForScores(home: number, away: number) {
   if (home > away) return "home";
   if (away > home) return "away";
   return "draw";
 }
 
+function inferSportType(match: MatchRow | EditForm) {
+  const text = `${match.sport_type ?? ""} ${match.match_label ?? ""} ${match.venue ?? ""}`.toLowerCase();
+
+  return text.includes("basket") ? "basketball" : "football";
+}
+
 function predictionText(match: MatchRow, entry: EntryRow) {
-  if (match.sport_type === "basketball") {
+  if (inferSportType(match) === "basketball") {
     const winner =
       entry.predicted_winner === "away"
         ? match.away_team
@@ -106,7 +124,7 @@ function isResultSaved(match: MatchRow) {
 }
 
 function entryPredictedWinner(match: MatchRow, entry: EntryRow) {
-  if (match.sport_type === "basketball") {
+  if (inferSportType(match) === "basketball") {
     if (entry.predicted_winner === "home" || entry.predicted_winner === "away") {
       return entry.predicted_winner;
     }
@@ -131,7 +149,7 @@ function winnerCategoryForEntry(match: MatchRow, entry: EntryRow) {
 
   if (actualWinner === "draw" || predictedWinner !== actualWinner) return null;
 
-  if (match.sport_type === "basketball") {
+  if (inferSportType(match) === "basketball") {
     const actualMargin = Math.abs(actualHome - actualAway);
     const predictedMargin = entryPredictedMargin(entry);
 
@@ -202,7 +220,7 @@ export function GameLinkDetailsClient({
   entries: EntryRow[];
   profileNames: Record<string, { name: string; code: string; role?: string }>;
 }) {
-  const sportLabel = match.sport_type === "basketball" ? "Basketball" : "Football";
+  const sportLabel = inferSportType(match) === "basketball" ? "Basketball" : "Football";
   const title = `${match.home_team} vs ${match.away_team}`;
   const [homeScore, setHomeScore] = useState(String(match.home_score ?? ""));
   const [awayScore, setAwayScore] = useState(String(match.away_score ?? ""));
@@ -217,7 +235,7 @@ export function GameLinkDetailsClient({
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editForm, setEditForm] = useState<EditForm>({
-    sport_type: match.sport_type === "basketball" ? "basketball" : "football",
+    sport_type: inferSportType(match) === "basketball" ? "basketball" : "football",
     home_team: match.home_team,
     away_team: match.away_team,
     match_label: match.match_label ?? "",
@@ -347,14 +365,14 @@ export function GameLinkDetailsClient({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sport_type: editForm.sport_type,
+        sport_type: inferSportType(editForm),
         home_team: editForm.home_team,
         away_team: editForm.away_team,
         match_label: editForm.match_label,
         venue: editForm.venue,
-        kickoff_at: editForm.kickoff_at,
-        opens_at: editForm.opens_at,
-        closes_at: editForm.closes_at,
+        kickoff_at: toPredictionDatePayloadValue(editForm.kickoff_at),
+        opens_at: toPredictionDatePayloadValue(editForm.opens_at),
+        closes_at: toPredictionDatePayloadValue(editForm.closes_at),
       }),
     });
 
@@ -378,7 +396,7 @@ export function GameLinkDetailsClient({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
-        match.sport_type === "basketball"
+        inferSportType(match) === "basketball"
           ? {
               sport_type: "basketball",
               winner: basketWinner,
@@ -530,7 +548,7 @@ export function GameLinkDetailsClient({
                   </h2>
                   <p className="mt-1 text-[12px] font-bold text-white/62">
                     Right team: {winnerGroups.teamWinners.length + winnerGroups.exactWinners.length} ·{" "}
-                    {match.sport_type === "basketball" ? "Right margin" : "Right score"}: {winnerGroups.exactWinners.length}
+                    {inferSportType(match) === "basketball" ? "Right margin" : "Right score"}: {winnerGroups.exactWinners.length}
                   </p>
                 </div>
 
@@ -594,7 +612,7 @@ export function GameLinkDetailsClient({
               Save the final score to calculate winners.
             </p>
 
-            {match.sport_type === "basketball" ? (
+            {inferSportType(match) === "basketball" ? (
               <div className="mt-5 grid gap-3">
                 <label className="block">
                   <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">Winner</span>
@@ -640,11 +658,11 @@ export function GameLinkDetailsClient({
             </p>
 
             <div className="mt-5 overflow-hidden rounded-[22px] border border-white/18 bg-white/8">
-              <div className={`grid ${match.sport_type === "basketball" ? "grid-cols-[0.35fr_1fr_0.8fr]" : "grid-cols-[0.35fr_1fr_0.8fr_0.5fr]"} gap-3 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58`}>
+              <div className={`grid ${inferSportType(match) === "basketball" ? "grid-cols-[0.35fr_1fr_0.8fr]" : "grid-cols-[0.35fr_1fr_0.8fr_0.5fr]"} gap-3 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58`}>
                 <div>#</div>
                 <div>Name</div>
                 <div>Prediction</div>
-                {match.sport_type === "basketball" ? null : <div>Points</div>}
+                {inferSportType(match) === "basketball" ? null : <div>Points</div>}
               </div>
 
               {sortedEntries.map((entry, index) => {
@@ -655,7 +673,7 @@ export function GameLinkDetailsClient({
                     key={entry.id}
                     type="button"
                     onClick={() => toggleWinner(entry.client_id)}
-                    className={`grid w-full ${match.sport_type === "basketball" ? "grid-cols-[0.35fr_1fr_0.8fr]" : "grid-cols-[0.35fr_1fr_0.8fr_0.5fr]"} gap-3 border-b border-white/10 px-4 py-3 text-left text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10 ${
+                    className={`grid w-full ${inferSportType(match) === "basketball" ? "grid-cols-[0.35fr_1fr_0.8fr]" : "grid-cols-[0.35fr_1fr_0.8fr_0.5fr]"} gap-3 border-b border-white/10 px-4 py-3 text-left text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10 ${
                       selectedWinnerIds.includes(entry.client_id) ? "bg-[#ffd66b]/12" : ""
                     }`}
                   >
@@ -665,7 +683,7 @@ export function GameLinkDetailsClient({
                       {profile?.code ? <div className="text-[10px] text-[#ffd66b]">{profile.code}</div> : null}
                     </div>
                     <div>{predictionText(match, entry)}</div>
-                    {match.sport_type === "basketball" ? null : (
+                    {inferSportType(match) === "basketball" ? null : (
                       <div className="font-black text-white">{entry.points ?? 0}</div>
                     )}
                   </button>

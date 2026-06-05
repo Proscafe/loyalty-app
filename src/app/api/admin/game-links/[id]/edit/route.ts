@@ -9,6 +9,13 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
+type ExistingMatch = {
+  id: string;
+  sport_type?: string | null;
+  match_label?: string | null;
+  venue?: string | null;
+};
+
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -32,14 +39,21 @@ function toIso(value: unknown) {
 
   if (!raw) return null;
 
-  // datetime-local gives YYYY-MM-DDTHH:mm.
-  // Parse it as the admin browser's local time, then store UTC.
-  // This keeps 8:45 PM showing as 8:45 PM instead of shifting to 11:45 PM.
   const date = new Date(raw);
 
   if (Number.isNaN(date.getTime())) return null;
 
   return date.toISOString();
+}
+
+function inferSportType(input: {
+  sport_type?: string | null;
+  match_label?: string | null;
+  venue?: string | null;
+}) {
+  const text = `${input.sport_type ?? ""} ${input.match_label ?? ""} ${input.venue ?? ""}`.toLowerCase();
+
+  return text.includes("basket") ? "basketball" : "football";
 }
 
 export async function POST(req: Request, context: RouteContext) {
@@ -76,6 +90,20 @@ export async function POST(req: Request, context: RouteContext) {
       return jsonError("Admin access required.", 403);
     }
 
+    const { data: existingMatch, error: existingError } = await admin
+      .from("prediction_matches")
+      .select("id, sport_type, match_label, venue")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (existingError) {
+      return jsonError(existingError.message, 400);
+    }
+
+    if (!existingMatch) {
+      return jsonError("Game link not found.", 404);
+    }
+
     const body = (await req.json().catch(() => ({}))) as {
       sport_type?: string;
       home_team?: string;
@@ -87,13 +115,24 @@ export async function POST(req: Request, context: RouteContext) {
       closes_at?: string;
     };
 
-    const sportType = body.sport_type === "basketball" ? "basketball" : "football";
     const homeTeam = String(body.home_team ?? "").trim();
     const awayTeam = String(body.away_team ?? "").trim();
+
+    const existing = existingMatch as ExistingMatch;
+    const requestedMatchLabel = String(body.match_label ?? "").trim();
+    const requestedVenue = String(body.venue ?? "").trim();
+
+    const sportType = inferSportType({
+      sport_type: body.sport_type || existing.sport_type,
+      match_label: requestedMatchLabel || existing.match_label,
+      venue: requestedVenue || existing.venue,
+    });
+
     const matchLabel =
-      String(body.match_label ?? (sportType === "basketball" ? "Basket" : "World Cup")).trim() ||
+      requestedMatchLabel ||
+      String(existing.match_label ?? "").trim() ||
       (sportType === "basketball" ? "Basket" : "World Cup");
-    const venue = String(body.venue ?? "").trim() || null;
+    const venue = requestedVenue || null;
     const kickoffAt = toIso(body.kickoff_at);
     const opensAt = toIso(body.opens_at);
     const closesAt = toIso(body.closes_at);
@@ -124,10 +163,14 @@ export async function POST(req: Request, context: RouteContext) {
       })
       .eq("id", id)
       .select("*")
-      .single();
+      .maybeSingle();
 
     if (error) {
       return jsonError(error.message, 400);
+    }
+
+    if (!data) {
+      return jsonError("Game link not found.", 404);
     }
 
     return NextResponse.json({ match: data });

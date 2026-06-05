@@ -325,7 +325,7 @@ function MobileAdminDashboard({
       const response = await fetch("/api/admin/prediction-matches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(withPredictionDatePayload(payload)),
       });
 
       const text = await response.text();
@@ -2168,6 +2168,49 @@ function desktopFormatTimeOnly(value?: string | null) {
   });
 }
 
+function desktopVisitDayKey(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const pad = (number: number) => String(number).padStart(2, "0");
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function toPredictionDatePayloadValue(value?: string | null) {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) return "";
+
+  const date = new Date(raw);
+
+  if (Number.isNaN(date.getTime())) return raw;
+
+  return date.toISOString();
+}
+
+function withPredictionDatePayload<T extends { kickoff_at?: string | null; opens_at?: string | null; closes_at?: string | null }>(
+  payload: T,
+) {
+  return {
+    ...payload,
+    kickoff_at: toPredictionDatePayloadValue(payload.kickoff_at),
+    opens_at: toPredictionDatePayloadValue(payload.opens_at),
+    closes_at: toPredictionDatePayloadValue(payload.closes_at),
+  };
+}
+
+function inferPredictionSportType(match: {
+  sport_type?: string | null;
+  match_label?: string | null;
+  venue?: string | null;
+}) {
+  const text = `${match.sport_type ?? ""} ${match.match_label ?? ""} ${match.venue ?? ""}`.toLowerCase();
+
+  return text.includes("basket") ? "basketball" : "football";
+}
+
 function desktopRoleLabel(role: UserRole) {
   if (role === "master_admin") return "Admin";
   if (role === "staff") return "Staff";
@@ -2508,7 +2551,7 @@ function DesktopAdminDashboard({
             id: match.id,
             title: `${match.home_team ?? "Home"} vs ${match.away_team ?? "Away"}`,
             code: match.secret_code,
-            sport: match.sport_type === "basketball" ? "Basketball" : "Football",
+            sport: inferPredictionSportType(match) === "basketball" ? "Basketball" : "Football",
             matchLabel: match.match_label || (match.sport_type === "basketball" ? "Basket" : "World Cup"),
             kickoff: match.kickoff_at ?? null,
             opensAt: match.opens_at ?? null,
@@ -2555,7 +2598,7 @@ function DesktopAdminDashboard({
       const response = await fetch("/api/admin/prediction-matches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(withPredictionDatePayload(payload)),
       });
 
       const text = await response.text();
@@ -3148,8 +3191,8 @@ function DesktopAdminDashboard({
         .slice()
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
-      const visits = clientTxns.length;
-      const totalVisits = allClientTxns.length;
+      const visits = new Set(clientTxns.map((txn) => desktopVisitDayKey(txn.created_at)).filter(Boolean)).size;
+      const totalVisits = new Set(allClientTxns.map((txn) => desktopVisitDayKey(txn.created_at)).filter(Boolean)).size;
       const lastVisit = lastTxn?.created_at ?? null;
       const age = getAgeFromBirthday(getBirthdayValue(user));
       const lastVisitMs = lastVisit ? new Date(lastVisit).getTime() : NaN;
