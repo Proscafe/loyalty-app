@@ -1,0 +1,6 @@
+# Add this in Vercel Environment Variables and optionally .env.local
+
+NEXT_PUBLIC_SITE_URL=https://www.proscafe.net
+
+# This makes QR codes and copied game links always use the public client website,
+# not localhost and not admin.proscafe.net.

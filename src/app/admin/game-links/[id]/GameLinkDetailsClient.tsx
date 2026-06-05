@@ -173,8 +173,12 @@ function initialGiftOptions(sportLabel: string): GiftOption[] {
 }
 
 function predictionLinkFor(code: string) {
-  if (typeof window === "undefined") return `/predict/${code}`;
-  return `${window.location.origin}/predict/${code}`;
+  const publicUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "https://www.proscafe.net";
+
+  return `${publicUrl.replace(/\/$/, "")}/predict/${code}`;
 }
 
 function downloadQr(code: string, title: string) {
@@ -482,7 +486,7 @@ export function GameLinkDetailsClient({
 
             <div className="flex flex-wrap gap-2">
               <a
-                href={`/predict/${match.secret_code}`}
+                href={predictionLinkFor(match.secret_code)}
                 target="_blank"
                 rel="noreferrer"
                 className="flex h-11 w-11 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white transition hover:bg-white/20"

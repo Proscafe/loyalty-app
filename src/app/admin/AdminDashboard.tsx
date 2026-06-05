@@ -2384,8 +2384,12 @@ function DesktopAdminDashboard({
   }
 
   function predictionLinkFor(code: string) {
-    if (typeof window === "undefined") return `/predict/${code}`;
-    return `${window.location.origin}/predict/${code}`;
+    const publicUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "https://www.proscafe.net";
+
+    return `${publicUrl.replace(/\/$/, "")}/predict/${code}`;
   }
 
   function setGameKickoffWithDefaultWindow(value: string) {
