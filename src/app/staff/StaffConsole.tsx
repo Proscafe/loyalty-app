@@ -299,7 +299,7 @@ function BetterQrScanner({
     };
   }, [startAndroidScanner, startIphoneScanner, stopEverything]);
 
-  async function useAndroidMode() {
+  async function switchToAndroidSmoothMode() {
     try {
       setMode("loading");
       setCameraError(null);
@@ -312,7 +312,7 @@ function BetterQrScanner({
     }
   }
 
-  async function useIphoneMode() {
+  async function switchToStableScannerMode() {
     try {
       setMode("loading");
       setCameraError(null);
@@ -387,14 +387,14 @@ function BetterQrScanner({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => void useAndroidMode()}
+                onClick={() => void switchToAndroidSmoothMode()}
                 className="rounded-full bg-[#ffd66b] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#365665]"
               >
                 Android Mode
               </button>
               <button
                 type="button"
-                onClick={() => void useIphoneMode()}
+                onClick={() => void switchToStableScannerMode()}
                 className="rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
               >
                 Stable Mode
@@ -411,7 +411,7 @@ function BetterQrScanner({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => void useAndroidMode()}
+                onClick={() => void switchToAndroidSmoothMode()}
                 className={`rounded-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${
                   mode === "android" ? "bg-[#ffd66b] text-[#365665]" : "bg-white/14 text-white"
                 }`}
@@ -420,7 +420,7 @@ function BetterQrScanner({
               </button>
               <button
                 type="button"
-                onClick={() => void useIphoneMode()}
+                onClick={() => void switchToStableScannerMode()}
                 className={`rounded-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${
                   mode === "iphone" ? "bg-[#ffd66b] text-[#365665]" : "bg-white/14 text-white"
                 }`}
