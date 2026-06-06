@@ -21,18 +21,6 @@ type ClaimedReward = Reward & {
 const pageGradient =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
-type NativeBarcodeDetector = {
-  detect: (source: CanvasImageSource) => Promise<Array<{ rawValue?: string }>>;
-};
-
-type NativeBarcodeDetectorConstructor = new (options: {
-  formats: string[];
-}) => NativeBarcodeDetector;
-
-type WindowWithBarcodeDetector = Window & {
-  BarcodeDetector?: NativeBarcodeDetectorConstructor;
-};
-
 type Html5QrcodeInstance = {
   start: (
     cameraConfig: { facingMode: "environment" } | string,
@@ -56,10 +44,6 @@ type WindowWithHtml5Qrcode = Window & {
 
 const HTML5_QR_SCRIPT_ID = "pros-html5-qrcode-script";
 const HTML5_QR_REGION_ID = "pros-stable-qr-reader";
-
-function isAndroidDevice() {
-  return /Android/i.test(navigator.userAgent);
-}
 
 function loadHtml5QrScript() {
   return new Promise<void>((resolve, reject) => {
@@ -86,58 +70,36 @@ function loadHtml5QrScript() {
   });
 }
 
-function BetterQrScanner({
+function UniversalStableQrScanner({
   onResult,
   onClose,
 }: {
   onResult: (value: string) => void | Promise<void>;
   onClose: () => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const timerRef = useRef<number | null>(null);
-  const html5Ref = useRef<Html5QrcodeInstance | null>(null);
+  const scannerRef = useRef<Html5QrcodeInstance | null>(null);
   const lockedRef = useRef(false);
-  const [mode, setMode] = useState<"loading" | "android" | "iphone" | "error">("loading");
+  const [status, setStatus] = useState<"opening" | "scanning" | "error">("opening");
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  const stopAndroidCamera = useCallback(() => {
-    if (timerRef.current) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, []);
-
-  const stopIphoneScanner = useCallback(async () => {
-    const scanner = html5Ref.current;
-    html5Ref.current = null;
+  const stopScanner = useCallback(async () => {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
 
     if (!scanner) return;
 
     try {
       await scanner.stop();
     } catch {
-      // Already stopped.
+      // Scanner may already be stopped.
     }
 
     try {
       await scanner.clear();
     } catch {
-      // Already cleared.
+      // Some browsers clear automatically.
     }
   }, []);
-
-  const stopEverything = useCallback(async () => {
-    stopAndroidCamera();
-    await stopIphoneScanner();
-  }, [stopAndroidCamera, stopIphoneScanner]);
 
   const finishWithResult = useCallback(
     async (value: string) => {
@@ -146,83 +108,13 @@ function BetterQrScanner({
       if (!cleanValue || lockedRef.current) return;
 
       lockedRef.current = true;
-      await stopEverything();
+      await stopScanner();
       await onResult(cleanValue);
     },
-    [onResult, stopEverything],
+    [onResult, stopScanner],
   );
 
-  const startAndroidScanner = useCallback(async () => {
-    await stopIphoneScanner();
-
-    const BarcodeDetector = (window as WindowWithBarcodeDetector).BarcodeDetector;
-
-    if (!BarcodeDetector) {
-      throw new Error("Fast Android scanner is not available on this phone.");
-    }
-
-    const detector = new BarcodeDetector({ formats: ["qr_code"] });
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 24, max: 30 },
-      },
-    });
-
-    if (lockedRef.current) {
-      stream.getTracks().forEach((track) => track.stop());
-      return;
-    }
-
-    streamRef.current = stream;
-
-    const video = videoRef.current;
-
-    if (!video) throw new Error("Camera preview could not start.");
-
-    video.srcObject = stream;
-    video.setAttribute("playsinline", "true");
-    video.muted = true;
-    await video.play();
-
-    setMode("android");
-    setCameraError(null);
-
-    const scan = async () => {
-      if (lockedRef.current) return;
-
-      const currentVideo = videoRef.current;
-
-      if (currentVideo && currentVideo.readyState >= 2) {
-        try {
-          const codes = await detector.detect(currentVideo);
-          const rawValue = codes[0]?.rawValue?.trim();
-
-          if (rawValue) {
-            await finishWithResult(rawValue);
-            return;
-          }
-        } catch {
-          // Keep the preview steady and retry. Do not restart the camera.
-        }
-      }
-
-      timerRef.current = window.setTimeout(() => {
-        void scan();
-      }, 420);
-    };
-
-    timerRef.current = window.setTimeout(() => {
-      void scan();
-    }, 500);
-  }, [finishWithResult, stopIphoneScanner]);
-
-  const startIphoneScanner = useCallback(async () => {
-    stopAndroidCamera();
+  const startScanner = useCallback(async () => {
     await loadHtml5QrScript();
 
     const Html5Qrcode = (window as WindowWithHtml5Qrcode).Html5Qrcode;
@@ -231,17 +123,20 @@ function BetterQrScanner({
       throw new Error("QR scanner could not start.");
     }
 
-    const scanner = new Html5Qrcode(HTML5_QR_REGION_ID, false);
-    html5Ref.current = scanner;
+    const existingRegion = document.getElementById(HTML5_QR_REGION_ID);
+    if (existingRegion) existingRegion.innerHTML = "";
 
-    setMode("iphone");
+    const scanner = new Html5Qrcode(HTML5_QR_REGION_ID, false);
+    scannerRef.current = scanner;
+
+    setStatus("scanning");
     setCameraError(null);
 
     await scanner.start(
       { facingMode: "environment" },
       {
-        fps: 8,
-        qrbox: { width: 260, height: 260 },
+        fps: 6,
+        qrbox: { width: 280, height: 280 },
         aspectRatio: 1.7777778,
         disableFlip: true,
         experimentalFeatures: { useBarCodeDetectorIfSupported: true },
@@ -250,43 +145,24 @@ function BetterQrScanner({
         void finishWithResult(decodedText);
       },
       () => {
-        // Decode misses are normal; keep the camera running.
+        // Decode misses are normal. Do not update state here; that prevents blinking.
       },
     );
-  }, [finishWithResult, stopAndroidCamera]);
+  }, [finishWithResult]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function start() {
       try {
-        if (isAndroidDevice()) {
-          await startAndroidScanner();
-        } else {
-          await startIphoneScanner();
-        }
+        setStatus("opening");
+        lockedRef.current = false;
+        await startScanner();
       } catch (error) {
         if (cancelled) return;
 
-        try {
-          if (isAndroidDevice()) {
-            await startIphoneScanner();
-          } else {
-            await startAndroidScanner();
-          }
-        } catch (fallbackError) {
-          if (cancelled) return;
-
-          const message =
-            fallbackError instanceof Error
-              ? fallbackError.message
-              : error instanceof Error
-                ? error.message
-                : "Camera could not open.";
-
-          setCameraError(message);
-          setMode("error");
-        }
+        setCameraError(error instanceof Error ? error.message : "Camera could not open.");
+        setStatus("error");
       }
     }
 
@@ -295,54 +171,32 @@ function BetterQrScanner({
     return () => {
       cancelled = true;
       lockedRef.current = true;
-      void stopEverything();
+      void stopScanner();
     };
-  }, [startAndroidScanner, startIphoneScanner, stopEverything]);
+  }, [startScanner, stopScanner]);
 
-  async function switchToAndroidSmoothMode() {
+  async function restartScanner() {
     try {
-      setMode("loading");
+      setStatus("opening");
       setCameraError(null);
       lockedRef.current = false;
-      await stopEverything();
-      await startAndroidScanner();
+      await stopScanner();
+      await startScanner();
     } catch (error) {
-      setCameraError(error instanceof Error ? error.message : "Android scanner could not open.");
-      setMode("error");
-    }
-  }
-
-  async function switchToStableScannerMode() {
-    try {
-      setMode("loading");
-      setCameraError(null);
-      lockedRef.current = false;
-      await stopEverything();
-      await startIphoneScanner();
-    } catch (error) {
-      setCameraError(error instanceof Error ? error.message : "Stable scanner could not open.");
-      setMode("error");
+      setCameraError(error instanceof Error ? error.message : "Camera could not open.");
+      setStatus("error");
     }
   }
 
   return (
     <div className="fixed inset-0 z-[80] bg-black text-white">
-      <div className={`absolute inset-0 ${mode === "android" || mode === "loading" ? "block" : "hidden"}`}>
-        <video
-          ref={videoRef}
-          muted
-          playsInline
-          className="h-full w-full object-cover"
-        />
-      </div>
-
-      <div className={`absolute inset-0 ${mode === "iphone" ? "block" : "hidden"}`}>
+      <div className="absolute inset-0">
         <div id={HTML5_QR_REGION_ID} className="h-full w-full overflow-hidden bg-black" />
       </div>
 
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_34%,rgba(0,0,0,0.56)_35%,rgba(0,0,0,0.84)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_36%,rgba(0,0,0,0.50)_37%,rgba(0,0,0,0.82)_100%)]" />
 
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[270px] w-[270px] -translate-x-1/2 -translate-y-1/2 rounded-[34px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.08)]">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-[34px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.06)]">
         <div className="absolute -left-1 -top-1 h-12 w-12 rounded-tl-[34px] border-l-4 border-t-4 border-white" />
         <div className="absolute -right-1 -top-1 h-12 w-12 rounded-tr-[34px] border-r-4 border-t-4 border-white" />
         <div className="absolute -bottom-1 -left-1 h-12 w-12 rounded-bl-[34px] border-b-4 border-l-4 border-white" />
@@ -352,20 +206,18 @@ function BetterQrScanner({
       <div className="absolute left-0 right-0 top-0 flex items-start justify-between gap-4 p-5">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.28em] text-[#ffd66b]">
-            <span className={`h-2.5 w-2.5 rounded-full ${mode === "android" || mode === "iphone" ? "bg-emerald-300" : "bg-[#ffd66b]"}`} />
+            <span className={`h-2.5 w-2.5 rounded-full ${status === "scanning" ? "bg-emerald-300" : "bg-[#ffd66b]"}`} />
             QR Scanner
           </div>
           <div className="mt-1 text-[14px] font-black text-white">
             Hold the QR inside the yellow square
           </div>
           <div className="mt-1 text-[11px] font-bold text-white/58">
-            {mode === "android"
-              ? "Android smooth mode active"
-              : mode === "iphone"
-                ? "iPhone stable mode active"
-                : mode === "error"
-                  ? "Camera error"
-                  : "Opening camera..."}
+            {status === "scanning"
+              ? "Stable scanner active"
+              : status === "error"
+                ? "Camera error"
+                : "Opening camera..."}
           </div>
         </div>
 
@@ -384,50 +236,28 @@ function BetterQrScanner({
             <div className="text-[13px] font-bold leading-5 text-red-200">
               {cameraError}
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => void switchToAndroidSmoothMode()}
-                className="rounded-full bg-[#ffd66b] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#365665]"
-              >
-                Android Mode
-              </button>
-              <button
-                type="button"
-                onClick={() => void switchToStableScannerMode()}
-                className="rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
-              >
-                Stable Mode
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => void restartScanner()}
+              className="w-full rounded-full bg-[#ffd66b] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#365665]"
+            >
+              Restart Camera
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="text-[13px] font-bold leading-5 text-white/82">
-              {mode === "loading"
+              {status === "opening"
                 ? "Opening camera..."
-                : "Move closer and keep the QR flat inside the square."}
+                : "Move closer, keep the QR flat, and fill most of the square."}
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => void switchToAndroidSmoothMode()}
-                className={`rounded-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${
-                  mode === "android" ? "bg-[#ffd66b] text-[#365665]" : "bg-white/14 text-white"
-                }`}
-              >
-                Android Smooth
-              </button>
-              <button
-                type="button"
-                onClick={() => void switchToStableScannerMode()}
-                className={`rounded-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${
-                  mode === "iphone" ? "bg-[#ffd66b] text-[#365665]" : "bg-white/14 text-white"
-                }`}
-              >
-                Stable
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => void restartScanner()}
+              className="w-full rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
+            >
+              Restart Camera
+            </button>
           </div>
         )}
       </div>
@@ -932,7 +762,7 @@ function StaffConsole({ profile, categories }: Props) {
   return (
     <AppShell title="Staff Console" role={profile.role} pageBackground={pageGradient}>
       <Toast message={toast} tone={toastTone} />
-      {scanning && <BetterQrScanner onResult={onScanResult} onClose={() => setScanning(false)} />}
+      {scanning && <UniversalStableQrScanner onResult={onScanResult} onClose={() => setScanning(false)} />}
 
       <div className="mx-auto w-full max-w-md px-4 pb-12 pt-5 font-raleway text-white">
         {!client && (
