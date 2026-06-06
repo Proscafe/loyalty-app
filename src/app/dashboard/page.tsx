@@ -16,8 +16,13 @@ export default async function DashboardPage() {
     // Best-effort cleanup only.
   }
 
-  const [{ data: categories }, { data: stamps }, { data: rewards }] = await Promise.all([
-    supabase.from("loyalty_categories").select("*").eq("is_active", true).order("sort_order"),
+  const [
+    { data: categories },
+    { data: stamps },
+    { data: rewards },
+    loyaltySettingsResult,
+  ] = await Promise.all([
+    supabase.from("loyalty_categories").select("*").order("sort_order"),
     supabase.from("client_stamps").select("*").eq("client_id", profile.id),
     supabase
       .from("rewards")
@@ -25,7 +30,11 @@ export default async function DashboardPage() {
       .eq("client_id", profile.id)
       .in("status", ["available", "claimed", "redeemed", "expired"])
       .order("earned_at", { ascending: false }),
+    supabase.from("loyalty_program_settings").select("is_enabled").eq("id", "default").maybeSingle(),
   ]);
+
+  const loyaltySettings = loyaltySettingsResult.data as { is_enabled?: boolean | null } | null;
+  const isLoyaltyProgramEnabled = loyaltySettings?.is_enabled !== false;
 
   return (
     <ClientDashboard
@@ -33,6 +42,7 @@ export default async function DashboardPage() {
       categories={(categories ?? []) as LoyaltyCategory[]}
       initialStamps={(stamps ?? []) as ClientStamp[]}
       initialRewards={(rewards ?? []) as Reward[]}
+      isLoyaltyProgramEnabled={isLoyaltyProgramEnabled}
     />
   );
 }

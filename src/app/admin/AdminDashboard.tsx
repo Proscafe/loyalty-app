@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -14,12 +16,13 @@ interface Metrics {
   mostActiveCategoryName: string;
 }
 
-type AdminUser = Profile & { is_active?: boolean | null };
+type AdminUser = Profile & { is_active?: boolean | null; gender?: string | null };
 
 type AdminCategory = {
   id: string;
   name: string;
   sort_order?: number | null;
+  average_price?: number | null;
 };
 
 type AdminClientStamp = {
@@ -49,6 +52,9 @@ const GLASS_CARD_LIGHT =
   "linear-gradient(145deg, rgba(255,255,255,0.88), rgba(255,255,255,0.72))";
 const BRAND_YELLOW = "#ffd66b";
 const BRAND_GREEN = "#365665";
+
+const CUSTOMER_TABLE_GRID =
+  "minmax(112px,1fr) minmax(78px,0.54fr) minmax(34px,0.22fr) minmax(72px,0.4fr) minmax(70px,0.46fr) minmax(48px,0.32fr) minmax(40px,0.26fr) minmax(54px,0.34fr) minmax(60px,0.38fr) minmax(42px,0.26fr) minmax(60px,0.36fr) minmax(64px,0.4fr) minmax(54px,0.32fr) minmax(40px,0.24fr)";
 
 function shortName(name?: string | null) {
   return (name || "Admin").trim().split(/\s+/)[0] || "Admin";
@@ -150,7 +156,16 @@ function MobileAdminDashboard({
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
   const [categoryNamesById, setCategoryNamesById] = useState<Record<string, string>>({});
+  const [categoryAveragePriceById, setCategoryAveragePriceById] = useState<Record<string, number>>({});
   const [activityView, setActivityView] = useState<"activity" | "gifts">("activity");
+  const [activityGiftSearch, setActivityGiftSearch] = useState("");
+  const [giftFilter, setGiftFilter] = useState<"all" | "loyalty" | "birthday" | "sent" | "available" | "used" | "expired" | "expiring">("all");
+  const [giftDashboardOpen, setGiftDashboardOpen] = useState(false);
+  const [giftDashboardClientId, setGiftDashboardClientId] = useState("");
+  const [giftDashboardCategoryId, setGiftDashboardCategoryId] = useState("");
+  const [giftDashboardExpiry, setGiftDashboardExpiry] = useState("");
+  const [giftDashboardNote, setGiftDashboardNote] = useState("");
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | UserRole>("staff");
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(15);
@@ -509,7 +524,7 @@ function MobileAdminDashboard({
       const [categoryResult, stampResult, rewardResult] = await Promise.all([
         supabase
           .from("loyalty_categories")
-          .select("id, name, sort_order")
+          .select("id, name, sort_order, average_price")
           .eq("is_active", true)
           .order("sort_order", { ascending: true }),
 
@@ -824,7 +839,7 @@ function MobileAdminDashboard({
                           }}
                           disabled={user.id === profile.id}
                           className={`shrink-0 rounded-full border border-white/30 bg-white/108 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
-                            user.is_active === false ? "text-red-600" : "text-[#365665]"
+                            user.is_active === false ? "text-red-600" : "text-white"
                           }`}
                           title={user.id === profile.id ? "You cannot change your own role" : ""}
                         >
@@ -978,7 +993,7 @@ function MobileAdminDashboard({
                           ? "bg-[#ffd66b] text-[#365665]"
                           : reward.status === "redeemed" || reward.status === "claimed"
                             ? "bg-white/16 text-[#ffd66b]"
-                            : "bg-white/102 text-[#365665]"
+                            : "bg-white/102 text-white"
                       }`}
                     >
                       {reward.status}
@@ -1181,7 +1196,7 @@ function MobileAdminDashboard({
                     href={mobilePredictionLinkFor(game.code)}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex h-11 items-center justify-center rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-[#365665]"
+                    className="flex h-11 items-center justify-center rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-white"
                   >
                     Open Link
                   </a>
@@ -1258,6 +1273,20 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
     setTimeout(() => setMessage(null), 2400);
   }
 
+  async function recordProgramToggleLog(enabled: boolean) {
+    try {
+      await supabase.from("loyalty_program_logs").insert({
+        action: enabled ? "enabled" : "disabled",
+        actor_id: null,
+        metadata: {
+          source: compact ? "mobile_admin" : "desktop_admin",
+        },
+      });
+    } catch {
+      // Logs are best-effort. The toggle should still work if the log table is not installed yet.
+    }
+  }
+
   async function loadLoyaltyProgram() {
     setLoading(true);
 
@@ -1313,29 +1342,42 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
         average_stamp_cost: parseMoneyValue(nextSettings.average_stamp_cost),
         stamps_per_gift: Math.max(1, Number(nextSettings.stamps_per_gift) || 5),
         currency: nextSettings.currency.trim() || "$",
-        updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await supabase
-        .from("loyalty_program_settings")
-        .upsert(payload)
-        .select("*")
-        .limit(1);
+      const statusChanged = nextSettings.is_enabled !== settings.is_enabled;
 
-      if (error) {
-        showMessage("Run the Loyalty Program SQL first, then save again.", "error");
-        console.error(error);
+      const response = await fetch("/api/admin/loyalty-program", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as {
+        settings?: Partial<LoyaltySettings>;
+        error?: string;
+      };
+
+      if (!response.ok || !json.settings) {
+        showMessage(json.error ?? "Could not update loyalty program.", "error");
         return;
       }
 
-      if (data && data.length > 0) {
-        const saved = data[0] as Partial<LoyaltySettings>;
-        setSettings((current) => ({ ...current, ...saved, id: String(saved.id || current.id) }));
-      } else {
-        setSettings(nextSettings);
+      const saved = json.settings;
+      setSettings((current) => ({
+        ...current,
+        ...saved,
+        id: String(saved.id || current.id),
+        is_enabled: saved.is_enabled !== false,
+        average_stamp_cost: parseMoneyValue(saved.average_stamp_cost),
+        stamps_per_gift: Number(saved.stamps_per_gift) || 5,
+        currency: String(saved.currency || current.currency || "$"),
+      }));
+
+      if (statusChanged) {
+        await recordProgramToggleLog(nextSettings.is_enabled);
       }
 
-      showMessage(nextSettings.is_enabled ? "Loyalty program saved." : "Loyalty program disabled.");
+      showMessage(nextSettings.is_enabled ? "Loyalty program enabled." : "Loyalty program disabled.");
     } catch (error) {
       console.error(error);
       showMessage("Could not save loyalty program.", "error");
@@ -1475,6 +1517,95 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
 
   const mainGridClass = compact ? "grid gap-3" : "grid gap-3 lg:grid-cols-[1.2fr_0.75fr_auto]";
 
+  if (compact) {
+    return (
+      <div className="space-y-4">
+        <Panel>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/62">
+                Loyalty Program
+              </div>
+              <h2 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
+                Program Status
+              </h2>
+              <p className="mt-2 max-w-sm text-[12px] font-bold leading-5 text-white/68">
+                Enable or disable the loyalty program for clients.
+              </p>
+            </div>
+
+            <span
+              className={`inline-flex h-10 items-center rounded-full px-4 text-[10px] font-black uppercase tracking-[0.16em] ${
+                settings.is_enabled
+                  ? "bg-emerald-400/18 text-emerald-100"
+                  : "bg-red-500/18 text-red-100"
+              }`}
+            >
+              {loading ? "Loading" : settings.is_enabled ? "Active" : "Disabled"}
+            </span>
+          </div>
+
+          {message ? (
+            <div
+              className={`mt-4 rounded-[16px] px-4 py-3 text-[12px] font-black ${
+                message.tone === "success"
+                  ? "bg-emerald-400/16 text-emerald-100"
+                  : "bg-red-500/16 text-red-100"
+              }`}
+            >
+              {message.text}
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={requestProgramToggle}
+            disabled={savingSettings || loading}
+            className={`mt-5 h-12 w-full rounded-full px-5 text-[11px] font-black uppercase tracking-[0.16em] transition disabled:opacity-55 ${
+              settings.is_enabled
+                ? "bg-red-500/20 text-red-100 hover:bg-red-500/28"
+                : "bg-emerald-400/18 text-emerald-100 hover:bg-emerald-400/24"
+            }`}
+          >
+            {savingSettings ? "Saving..." : settings.is_enabled ? "Disable Program" : "Enable Program"}
+          </button>
+        </Panel>
+
+        {showDisableWarning ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm sm:items-center sm:pb-0">
+            <div className="w-full max-w-md rounded-[28px] border border-white/18 bg-[#5f6f63] p-5 shadow-2xl">
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
+                Warning
+              </div>
+              <h3 className="mt-2 text-[23px] font-black tracking-[-0.04em] text-white">
+                Disable loyalty program?
+              </h3>
+              <p className="mt-3 text-[13px] font-bold leading-6 text-white/72">
+                Client loyalty cards will appear blurred with a disabled message, and staff should not add new stamps while disabled.
+              </p>
+              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDisableWarning(false)}
+                  className="h-12 rounded-full border border-white/20 bg-white/10 text-[11px] font-black uppercase tracking-[0.16em] text-white"
+                >
+                  Keep Active
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDisableProgram}
+                  className="h-12 rounded-full bg-red-500/22 text-[11px] font-black uppercase tracking-[0.16em] text-red-100"
+                >
+                  Disable Program
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <Panel>
@@ -1566,18 +1697,18 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
             </div>
           </div>
 
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row">
             <input
               value={newCategoryName}
               onChange={(event) => setNewCategoryName(event.target.value)}
               placeholder="New category name"
-              className="h-12 flex-1 rounded-[14px] border border-white/25 bg-white px-4 text-[13px] font-bold text-black outline-none focus:border-[#ffd66b]"
+              className="h-10 flex-1 rounded-[12px] border border-white/25 bg-white px-3 text-[12px] font-bold text-black outline-none focus:border-[#ffd66b]"
             />
             <button
               type="button"
               onClick={() => void addCategory()}
               disabled={savingCategoryId === "new"}
-              className="h-12 rounded-[14px] bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.16em] text-[#365665] disabled:opacity-55"
+              className="h-10 rounded-[12px] bg-[#ffd66b] px-4 text-[10px] font-black uppercase tracking-[0.14em] text-[#365665] disabled:opacity-55"
             >
               Add Category
             </button>
@@ -1599,7 +1730,7 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
                   category={category}
                   saving={savingCategoryId === category.id}
                   onSave={(name, averagePrice) => void updateCategory(category, { name, average_price: averagePrice })}
-                  onToggle={() => void updateCategory(category, { is_active: category.is_active === false })}
+                  onToggle={() => void updateCategory(category, { is_active: !(category.is_active !== false) })}
                   onRemove={() => void removeCategory(category)}
                 />
               ))}
@@ -1725,35 +1856,35 @@ function LoyaltyCategoryRow({
     parseMoneyValue(averagePrice) !== parseMoneyValue(category.average_price);
 
   return (
-    <div className="rounded-[18px] border border-white/16 bg-white/10 p-4">
-      <div className="grid gap-3 lg:grid-cols-[1fr_180px_auto] lg:items-center">
+    <div className="rounded-[14px] border border-white/16 bg-white/10 px-3 py-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_160px_auto] lg:items-start">
         <div className="min-w-0">
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="h-11 w-full rounded-[14px] border border-white/18 bg-white px-3 text-[13px] font-black text-[#365665] outline-none focus:border-[#ffd66b]"
+            className="h-10 w-full rounded-[11px] border border-white/18 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
           />
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] font-black uppercase tracking-[0.13em]">
             <span className={isActive ? "text-emerald-100" : "text-red-100"}>
               {isActive ? "Active" : "Disabled"}
             </span>
             <span className="text-white/36">•</span>
-            <span className="text-white/52">Category ID: {category.id.slice(0, 8)}</span>
+            <span className="text-white/52">ID: {category.id.slice(0, 8)}</span>
           </div>
         </div>
 
         <label className="block">
-          <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.18em] text-white/58">
-            Average Price
-          </span>
           <input
             type="number"
             min="0"
             step="0.01"
             value={averagePrice}
             onChange={(event) => setAveragePrice(event.target.value)}
-            className="h-11 w-full rounded-[14px] border border-white/18 bg-white px-3 text-[13px] font-black text-[#365665] outline-none focus:border-[#ffd66b]"
+            className="h-10 w-full rounded-[11px] border border-white/18 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
           />
+          <span className="mt-1.5 block text-[8px] font-black uppercase tracking-[0.16em] text-white/58">
+            Average Price
+          </span>
         </label>
 
         <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -1761,7 +1892,7 @@ function LoyaltyCategoryRow({
             type="button"
             onClick={() => onSave(name, parseMoneyValue(averagePrice))}
             disabled={saving || !isDirty}
-            className="rounded-full bg-[#ffd66b] px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
+            className="h-9 rounded-full bg-[#ffd66b] px-3 text-[9px] font-black uppercase tracking-[0.12em] text-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
           >
             Save
           </button>
@@ -1769,7 +1900,7 @@ function LoyaltyCategoryRow({
             type="button"
             onClick={onToggle}
             disabled={saving}
-            className="rounded-full bg-white/14 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white disabled:opacity-45"
+            className="h-9 rounded-full bg-white/14 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-white disabled:opacity-45"
           >
             {isActive ? "Disable" : "Enable"}
           </button>
@@ -1777,7 +1908,7 @@ function LoyaltyCategoryRow({
             type="button"
             onClick={onRemove}
             disabled={saving}
-            className="rounded-full bg-red-500/16 px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-red-100 disabled:opacity-45"
+            className="h-9 rounded-full bg-red-500/16 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-red-100 disabled:opacity-45"
           >
             Remove
           </button>
@@ -1807,7 +1938,7 @@ function MobileGameInput({
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-[16px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none focus:border-[#ffd66b]"
+        className="h-11 w-full rounded-[16px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
       />
     </label>
   );
@@ -1903,7 +2034,7 @@ function ClientProfilePanel({
             }}
             disabled={user.id === currentUserId}
             className={`shrink-0 rounded-full border border-white/30 bg-white/108 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
-              user.is_active === false ? "text-red-600" : "text-[#365665]"
+              user.is_active === false ? "text-red-600" : "text-white"
             }`}
           >
             <option value="client">Client</option>
@@ -1995,7 +2126,7 @@ function ClientProfilePanel({
                       ? "bg-[#ffd66b] text-[#365665]"
                       : reward.status === "redeemed" || reward.status === "claimed"
                         ? "bg-white/16 text-[#ffd66b]"
-                        : "bg-white/102 text-[#365665]"
+                        : "bg-white/102 text-white"
                   }`}
                 >
                   {reward.status}
@@ -2037,11 +2168,7 @@ function MetricCard({ label, value }: { label: React.ReactNode; value: number | 
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
         {label}
       </div>
-      <div
-        className={`mt-2 font-black leading-tight text-[#ffd66b] ${
-          isLongText ? "text-[20px]" : "text-[32px] tabular-nums"
-        }`}
-      >
+      <div className={`mt-3 font-black leading-none text-white ${isLongText ? "text-[18px]" : "text-[26px]"}`}>
         {value}
       </div>
     </div>
@@ -2049,59 +2176,18 @@ function MetricCard({ label, value }: { label: React.ReactNode; value: number | 
 }
 
 function ActionBadge({ action }: { action: StampTransaction["action_type"] }) {
-  const map: Record<
-    StampTransaction["action_type"],
-    { className: string; icon: React.ReactNode }
-  > = {
-    add_stamp: {
-      className: "bg-[#ffd66b] text-[#365665]",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      ),
-    },
-    reward_earned: {
-      className: "bg-white/106 text-[#365665]",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.35" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 12v8H4v-8" />
-          <path d="M2 7h20v5H2z" />
-          <path d="M12 22V7" />
-          <path d="M12 7H7.5a2.5 2.5 0 1 1 2.2-3.7L12 7Z" />
-          <path d="M12 7h4.5a2.5 2.5 0 1 0-2.2-3.7L12 7Z" />
-        </svg>
-      ),
-    },
-    reward_redeemed: {
-      className: "bg-[#365665] text-white",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
-      ),
-    },
-    manual_adjustment: {
-      className: "bg-white/18 text-[#ffd66b]",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 7h10" />
-          <path d="M4 17h16" />
-          <path d="M17 4v6" />
-          <path d="M14 7h6" />
-          <path d="M9 14v6" />
-          <path d="M6 17h6" />
-        </svg>
-      ),
-    },
+  const styles: Record<string, string> = {
+    add_stamp: "bg-emerald-400/18 text-emerald-100",
+    remove_stamp: "bg-red-500/18 text-red-200",
+    reward_earned: "bg-[#ffd66b]/22 text-[#ffd66b]",
+    reward_redeemed: "bg-slate-400/18 text-slate-100",
+    manual_adjustment: "bg-white/12 text-white/62",
   };
 
-  const item = map[action] ?? map.manual_adjustment;
-
   return (
-    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${item.className}`}>
-      {item.icon}
-    </div>
+    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${styles[action] ?? "bg-white/12 text-white/62"}`}>
+      {String(action || "activity").replace(/_/g, " ")}
+    </span>
   );
 }
 
@@ -2168,6 +2254,15 @@ function desktopFormatTimeOnly(value?: string | null) {
   });
 }
 
+function desktopFormatMoney(value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+
+  return `$${safeValue.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 function desktopVisitDayKey(value?: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -2209,6 +2304,15 @@ function inferPredictionSportType(match: {
   const text = `${match.sport_type ?? ""} ${match.match_label ?? ""} ${match.venue ?? ""}`.toLowerCase();
 
   return text.includes("basket") ? "basketball" : "football";
+}
+
+function tabIcon(tab: Tab) {
+  if (tab === "Overview") return "⌂";
+  if (tab === "Users") return "👤";
+  if (tab === "Activity") return "↯";
+  if (tab === "Gifts") return "🎁";
+  if (tab === "Loyalty Program") return "★";
+  return "⚽";
 }
 
 function desktopRoleLabel(role: UserRole) {
@@ -2375,13 +2479,34 @@ function DesktopAdminDashboard({
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
   const [categoryNamesById, setCategoryNamesById] = useState<Record<string, string>>({});
+  const [categoryAveragePriceById, setCategoryAveragePriceById] = useState<Record<string, number>>({});
+  const [categoryAveragePriceByName, setCategoryAveragePriceByName] = useState<Record<string, number>>({});
+  const [desktopGiftCategories, setDesktopGiftCategories] = useState<AdminCategory[]>([]);
+  const [quickGiftUser, setQuickGiftUser] = useState<AdminUser | null>(null);
+  const [quickGiftType, setQuickGiftType] = useState<"gift" | "discount">("gift");
+  const [quickGiftCategoryId, setQuickGiftCategoryId] = useState("");
+  const [quickDiscountValue, setQuickDiscountValue] = useState("10%");
+  const [quickGiftDescription, setQuickGiftDescription] = useState("");
   const [activityView, setActivityView] = useState<"activity" | "gifts">("activity");
+  const [activityGiftSearch, setActivityGiftSearch] = useState("");
+  const [giftFilter, setGiftFilter] = useState<"all" | "loyalty" | "birthday" | "sent" | "available" | "used" | "expired" | "expiring">("all");
+  const [giftDashboardOpen, setGiftDashboardOpen] = useState(false);
+  const [giftDashboardClientId, setGiftDashboardClientId] = useState("");
+  const [giftDashboardCategoryId, setGiftDashboardCategoryId] = useState("");
+  const [giftDashboardExpiry, setGiftDashboardExpiry] = useState("");
+  const [giftDashboardNote, setGiftDashboardNote] = useState("");
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | UserRole>("client");
   const [timeRange, setTimeRange] = useState<DesktopTimeRange>("today");
   const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const [lastVisitFilter, setLastVisitFilter] = useState<"all" | "active" | "inactive">("all");
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<"all" | "active" | "inactive" | "at_risk" | "vip">("all");
+  const [customerGenderFilter, setCustomerGenderFilter] = useState<"all" | "male" | "female">("all");
+  const [customerAgeRangeFilter, setCustomerAgeRangeFilter] = useState<"all" | "18-24" | "25-34" | "35-44" | "45+">("all");
+  const [customerVisitRangeFilter, setCustomerVisitRangeFilter] = useState<"all" | "0" | "1-3" | "4-10" | "10+">("all");
+  const [customerValueRangeFilter, setCustomerValueRangeFilter] = useState<"all" | "0" | "1-50" | "50-200" | "200+">("all");
   const [customerSort, setCustomerSort] = useState<{
-    key: "name" | "contact" | "age" | "lastVisit" | "visits" | "status";
+    key: "name" | "contact" | "age" | "gender" | "lastVisit" | "visits" | "value" | "lifetime" | "gifts" | "giftValue" | "status";
     direction: "asc" | "desc";
   }>({ key: "name", direction: "asc" });
   const reportFilterRef = useRef<HTMLDivElement | null>(null);
@@ -2433,6 +2558,165 @@ function DesktopAdminDashboard({
     setTone(t);
     setToast(message);
     setTimeout(() => setToast(null), 2200);
+  }
+
+  const quickGiftCategoryOptions = useMemo(
+    () =>
+      desktopGiftCategories.map((category) => ({
+        id: category.id,
+        name: category.name === "Desserts 2" ? "Hooka" : category.name,
+      })),
+    [desktopGiftCategories],
+  );
+
+  const selectedQuickGiftCategoryName =
+    quickGiftCategoryOptions.find((category) => category.id === quickGiftCategoryId)?.name ??
+    quickGiftCategoryOptions[0]?.name ??
+    "";
+
+  const quickGiftLabel =
+    quickGiftType === "discount"
+      ? `Discount ${quickDiscountValue}`
+      : selectedQuickGiftCategoryName
+        ? `Free ${selectedQuickGiftCategoryName}`
+        : "";
+
+  useEffect(() => {
+    if (quickGiftCategoryId || quickGiftCategoryOptions.length === 0) return;
+
+    setQuickGiftCategoryId(quickGiftCategoryOptions[0].id);
+  }, [quickGiftCategoryId, quickGiftCategoryOptions]);
+
+  function openQuickGift(user: AdminUser) {
+    setQuickGiftUser(user);
+    setQuickGiftType("gift");
+    setQuickGiftCategoryId(quickGiftCategoryOptions[0]?.id ?? "");
+    setQuickDiscountValue("10%");
+    setQuickGiftDescription("");
+  }
+
+  function closeQuickGift() {
+    setQuickGiftUser(null);
+    setQuickGiftDescription("");
+  }
+
+  async function sendQuickGift() {
+    if (!quickGiftUser || !quickGiftLabel) return;
+
+    const categoryId =
+      quickGiftType === "gift"
+        ? quickGiftCategoryId || quickGiftCategoryOptions[0]?.id
+        : quickGiftCategoryOptions[0]?.id;
+
+    if (!categoryId) {
+      flash("No loyalty category found for this gift.", "error");
+      return;
+    }
+
+    const rewardType = quickGiftDescription.trim()
+      ? `${quickGiftLabel} · ${quickGiftDescription.trim()}`
+      : quickGiftLabel;
+
+    const { data, error } = await supabase
+      .from("rewards")
+      .insert({
+        client_id: quickGiftUser.id,
+        category_id: categoryId,
+        reward_type: rewardType,
+        status: "available",
+        earned_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      flash(error.message, "error");
+      return;
+    }
+
+    if (data) {
+      setGiftRows((current) => [data as Reward, ...current]);
+    }
+
+    flash("Gift sent.");
+    closeQuickGift();
+  }
+
+  const dashboardGiftClientOptions = useMemo(
+    () => users.filter((user) => user.role === "client" && user.is_active !== false),
+    [users],
+  );
+
+  const dashboardGiftCategoryOptions = useMemo(
+    () =>
+      desktopGiftCategories.map((category) => ({
+        id: category.id,
+        name: category.name === "Desserts 2" ? "Hooka" : category.name,
+      })),
+    [desktopGiftCategories],
+  );
+
+  function defaultGiftExpiryDate() {
+    const date = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function openGiftDashboardModal() {
+    setGiftDashboardClientId(dashboardGiftClientOptions[0]?.id ?? "");
+    setGiftDashboardCategoryId(dashboardGiftCategoryOptions[0]?.id ?? "");
+    setGiftDashboardExpiry(defaultGiftExpiryDate());
+    setGiftDashboardNote("");
+    setGiftDashboardOpen(true);
+  }
+
+  function closeGiftDashboardModal() {
+    setGiftDashboardOpen(false);
+    setGiftDashboardNote("");
+  }
+
+  async function sendDashboardGift() {
+    const clientId = giftDashboardClientId || dashboardGiftClientOptions[0]?.id;
+    const categoryId = giftDashboardCategoryId || dashboardGiftCategoryOptions[0]?.id;
+    const giftName = dashboardGiftCategoryOptions.find((category) => category.id === categoryId)?.name ?? "Gift";
+
+    if (!clientId || !categoryId) {
+      flash("Choose a client and a gift.", "error");
+      return;
+    }
+
+    const sourceName = shortName(profile.full_name || profile.email || "Admin");
+    const note = giftDashboardNote.trim();
+    const rewardType = note
+      ? `Sent Gift - Free ${giftName} - Sent by ${sourceName} - ${note}`
+      : `Sent Gift - Free ${giftName} - Sent by ${sourceName}`;
+    const expiryDate = giftDashboardExpiry
+      ? new Date(`${giftDashboardExpiry}T23:59:59`).toISOString()
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from("rewards")
+      .insert({
+        client_id: clientId,
+        category_id: categoryId,
+        reward_type: rewardType,
+        status: "available",
+        earned_at: new Date().toISOString(),
+        expires_at: expiryDate,
+      })
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      flash(error.message, "error");
+      return;
+    }
+
+    if (data) setGiftRows((current) => [data as Reward, ...current]);
+
+    flash("Gift sent.");
+    closeGiftDashboardModal();
+    setActivityView("gifts");
   }
 
   async function logout() {
@@ -2652,7 +2936,7 @@ function DesktopAdminDashboard({
 
         supabase
           .from("loyalty_categories")
-          .select("id, name"),
+          .select("id, name, average_price"),
       ]);
 
       if (!isMounted) return;
@@ -2670,12 +2954,22 @@ function DesktopAdminDashboard({
       }
 
       const categoryNames: Record<string, string> = {};
+      const categoryPrices: Record<string, number> = {};
+      const categoryPricesByName: Record<string, number> = {};
 
       ((categoryResult.data ?? []) as AdminCategory[]).forEach((category) => {
-        categoryNames[category.id] = category.name === "Desserts 2" ? "Hooka" : category.name;
+        const categoryName = category.name === "Desserts 2" ? "Hooka" : category.name;
+        const categoryPrice = parseMoneyValue(category.average_price);
+
+        categoryNames[category.id] = categoryName;
+        categoryPrices[category.id] = categoryPrice;
+        categoryPricesByName[categoryName.toLowerCase()] = categoryPrice;
       });
 
       setCategoryNamesById(categoryNames);
+      setCategoryAveragePriceById(categoryPrices);
+      setCategoryAveragePriceByName(categoryPricesByName);
+      setDesktopGiftCategories((categoryResult.data ?? []) as AdminCategory[]);
       void refreshDesktopGameLinks();
 
       const ids = Array.from(
@@ -3039,7 +3333,7 @@ function DesktopAdminDashboard({
 
     return users.filter((user) => {
       const matchesFilter = filter === "all" ? true : user.role === filter;
-      const createdAt = (user as AdminUser & { created_at?: string | null }).created_at;
+      const createdAt = (user as unknown as AdminUser & { created_at?: string | null }).created_at;
       const matchesTime = isWithinDesktopTimeRange(createdAt, timeRange);
 
       if (!matchesFilter || !matchesTime) return false;
@@ -3122,12 +3416,12 @@ function DesktopAdminDashboard({
   startOfWeek.setHours(0, 0, 0, 0);
 
   const newUsersThisMonth = users.filter((user) => {
-    const createdAt = new Date(String((user as AdminUser & { created_at?: string | null }).created_at ?? ""));
+    const createdAt = new Date(String((user as unknown as AdminUser & { created_at?: string | null }).created_at ?? ""));
     return !Number.isNaN(createdAt.getTime()) && createdAt >= startOfMonth;
   }).length;
 
   const newUsersThisWeek = users.filter((user) => {
-    const createdAt = new Date(String((user as AdminUser & { created_at?: string | null }).created_at ?? ""));
+    const createdAt = new Date(String((user as unknown as AdminUser & { created_at?: string | null }).created_at ?? ""));
     return !Number.isNaN(createdAt.getTime()) && createdAt >= startOfWeek;
   }).length;
 
@@ -3135,6 +3429,187 @@ function DesktopAdminDashboard({
   const latestActivities = visibleActivityTxns.slice(0, 5);
   const latestGifts = visibleGiftRows.slice(0, 50);
   const recentRewardClients = desktopUniqueCount(visibleGiftRows.map((reward) => reward.client_id));
+
+  function desktopDaysAgo(value?: string | null) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    return Math.max(0, Math.floor((startToday - startDate) / (24 * 60 * 60 * 1000)));
+  }
+
+  function activityDaysBadgeClass(days: number | null) {
+    if (days === null) return "bg-white/12 text-white/46";
+    if (days <= 7) return "bg-emerald-400/18 text-emerald-100";
+    if (days <= 14) return "bg-[#ffd66b]/22 text-[#ffd66b]";
+    if (days <= 30) return "bg-orange-400/20 text-orange-200";
+    return "bg-red-500/18 text-red-200";
+  }
+
+  function activityDaysLabel(days: number | null) {
+    return days === null ? "—" : `${days}d`;
+  }
+
+  function rewardIssueDate(reward: Reward) {
+    return reward.earned_at ?? reward.created_at ?? null;
+  }
+
+  function rewardExpiryDate(reward: Reward) {
+    const record = reward as unknown as Record<string, unknown>;
+    const storedExpiry = typeof record.expires_at === "string" ? record.expires_at : "";
+
+    if (storedExpiry) return storedExpiry;
+
+    const issue = rewardIssueDate(reward);
+    if (!issue) return null;
+
+    const date = new Date(issue);
+    if (Number.isNaN(date.getTime())) return null;
+
+    date.setDate(date.getDate() + 30);
+    return date.toISOString();
+  }
+
+  function rewardTypeInfo(reward: Reward) {
+    const text = String(reward.reward_type || "");
+    const lower = text.toLowerCase();
+
+    if (lower.includes("birthday")) return { type: "Birthday", source: "System" };
+    if (lower.includes("sent gift") || lower.includes("sent by") || lower.includes("discount")) {
+      const match = text.match(/sent by\s+([^·-]+)/i);
+      return { type: "Sent Gift", source: match?.[1]?.trim() || shortName(profile.full_name || "Admin") };
+    }
+
+    return { type: "Loyalty", source: "System" };
+  }
+
+  function giftDisplayName(reward: Reward) {
+    return desktopNormalizeRewardText(
+      String(reward.reward_type || "Gift")
+        .replace(/^Sent Gift\s*-\s*/i, "")
+        .replace(/\s*-\s*Sent by\s+[^-·]+/i, "")
+        .replace(/\s*·\s*Sent by\s+[^-·]+/i, "")
+        .trim(),
+    );
+  }
+
+  function giftLeftInfo(reward: Reward) {
+    const expiry = rewardExpiryDate(reward);
+    if (!expiry) return { leftDays: null, label: "—", status: "Available" };
+    const days = desktopDaysUntil(expiry);
+
+    if (days === null) return { leftDays: null, label: "—", status: "Available" };
+    if (days < 0) return { leftDays: days, label: "Expired", status: "Expired" };
+    if (days === 0) return { leftDays: days, label: "Today", status: "Expires Today" };
+    if (days <= 7) return { leftDays: days, label: `${days}d left`, status: "Expiring Soon" };
+    return { leftDays: days, label: `${days}d left`, status: "Available" };
+  }
+
+  function desktopDaysUntil(value?: string | null) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    return Math.ceil((startDate - startToday) / (24 * 60 * 60 * 1000));
+  }
+
+  function giftStatusInfo(reward: Reward) {
+    const rawStatus = String(reward.status || "").toLowerCase();
+
+    if (rawStatus === "redeemed" || rawStatus === "claimed" || rawStatus === "used") {
+      return { label: "Used", className: "bg-slate-400/18 text-slate-100" };
+    }
+
+    const expiry = giftLeftInfo(reward);
+
+    if (expiry.status === "Expired") return { label: "Expired", className: "bg-red-500/18 text-red-200" };
+    if (expiry.status === "Expires Today") return { label: "Expires Today", className: "bg-orange-400/20 text-orange-200" };
+    if (expiry.status === "Expiring Soon") return { label: "Expiring Soon", className: "bg-[#ffd66b]/22 text-[#ffd66b]" };
+    return { label: "Available", className: "bg-emerald-400/18 text-emerald-100" };
+  }
+
+  function matchesActivityGiftSearch(values: Array<string | null | undefined>) {
+    const search = activityGiftSearch.trim().toLowerCase();
+    if (!search) return true;
+    return values.filter(Boolean).join(" ").toLowerCase().includes(search);
+  }
+
+  const filteredActivityRows = useMemo(() => {
+    return visibleActivityTxns.filter((transaction) => {
+      const clientName = profileNamesById[transaction.client_id ?? ""] ?? "Client";
+      const actorName =
+        profileNamesById[transaction.staff_id ?? ""] ||
+        (transaction.staff_id ? "Staff user" : "System");
+      const categoryName =
+        categoryNamesById[transaction.category_id ?? ""] ||
+        (transaction.action_type === "reward_redeemed" ? "Gift" : "—");
+
+      return matchesActivityGiftSearch([clientName, actorName, categoryName, transaction.action_type]);
+    });
+  }, [activityGiftSearch, categoryNamesById, matchesActivityGiftSearch, profileNamesById, visibleActivityTxns]);
+
+  const filteredGiftDashboardRows = useMemo(() => {
+    return visibleGiftRows.filter((reward) => {
+      const clientName = profileNamesById[reward.client_id] ?? "Client";
+      const info = rewardTypeInfo(reward);
+      const status = giftStatusInfo(reward);
+      const name = giftDisplayName(reward);
+
+      if (!matchesActivityGiftSearch([clientName, name, reward.reward_type, info.source])) return false;
+
+      if (giftFilter === "loyalty" && info.type !== "Loyalty") return false;
+      if (giftFilter === "birthday" && info.type !== "Birthday") return false;
+      if (giftFilter === "sent" && info.type !== "Sent Gift") return false;
+      if (giftFilter === "available" && status.label !== "Available") return false;
+      if (giftFilter === "used" && status.label !== "Used") return false;
+      if (giftFilter === "expired" && status.label !== "Expired") return false;
+      if (giftFilter === "expiring" && status.label !== "Expiring Soon") return false;
+
+      return true;
+    });
+  }, [activityGiftSearch, giftFilter, giftStatusInfo, matchesActivityGiftSearch, profileNamesById, rewardTypeInfo, visibleGiftRows]);
+
+  function giftEstimatedValue(reward: Reward) {
+    const record = reward as unknown as Record<string, unknown>;
+    const categoryId = typeof record.category_id === "string" ? record.category_id : "";
+    const rewardText = String(reward.reward_type ?? "").toLowerCase();
+
+    if (categoryId && categoryAveragePriceById[categoryId] !== undefined) {
+      return categoryAveragePriceById[categoryId] ?? 0;
+    }
+
+    for (const [categoryName, price] of Object.entries(categoryAveragePriceByName)) {
+      if (categoryName && rewardText.includes(categoryName)) return price;
+    }
+
+    return 0;
+  }
+
+  const giftDashboardSummary = useMemo(() => {
+    const giftsSent = filteredGiftDashboardRows.length;
+    const redeemed = filteredGiftDashboardRows.filter((reward) => giftStatusInfo(reward).label === "Used").length;
+    const giftValue = filteredGiftDashboardRows.reduce((sum, reward) => sum + giftEstimatedValue(reward), 0);
+    const expiredRows = filteredGiftDashboardRows.filter((reward) => giftStatusInfo(reward).label === "Expired");
+    const expiredValue = expiredRows.reduce((sum, reward) => sum + giftEstimatedValue(reward), 0);
+    const discountsSent = filteredGiftDashboardRows.filter((reward) =>
+      String(reward.reward_type ?? "").toLowerCase().includes("discount"),
+    ).length;
+    const expiringSoon = filteredGiftDashboardRows.filter((reward) => giftStatusInfo(reward).label === "Expiring Soon").length;
+
+    return {
+      giftsSent,
+      redeemed,
+      giftValue,
+      expiredCount: expiredRows.length,
+      expiredValue,
+      discountsSent,
+      expiringSoon,
+    };
+  }, [categoryAveragePriceById, categoryAveragePriceByName, filteredGiftDashboardRows, giftEstimatedValue, giftStatusInfo]);
 
   const sortedGameLinks = useMemo(() => {
     const direction = gameSort.direction === "asc" ? 1 : -1;
@@ -3187,19 +3662,55 @@ function DesktopAdminDashboard({
     return clientUsersForReports.map((user) => {
       const clientTxns = visibleActivityTxns.filter((txn) => txn.client_id === user.id);
       const allClientTxns = activityTxns.filter((txn) => txn.client_id === user.id);
+      const clientGifts = visibleGiftRows.filter((reward) => reward.client_id === user.id);
       const lastTxn = allClientTxns
         .slice()
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
+      const giftValueFor = (reward: Reward) => {
+        const record = reward as unknown as Record<string, unknown>;
+        const categoryId = typeof record.category_id === "string" ? record.category_id : "";
+        const rewardType = String(record.reward_type ?? "").toLowerCase();
+
+        if (categoryId && categoryAveragePriceById[categoryId] !== undefined) {
+          return categoryAveragePriceById[categoryId] ?? 0;
+        }
+
+        for (const [categoryName, price] of Object.entries(categoryAveragePriceByName)) {
+          if (categoryName && rewardType.includes(categoryName)) return price;
+        }
+
+        return 0;
+      };
+
+      const stampValueFor = (txn: StampTransaction) => {
+        const record = txn as unknown as Record<string, unknown>;
+        const categoryId = typeof record.category_id === "string" ? record.category_id : "";
+        const actionType = String(record.action_type ?? "");
+
+        if (actionType.includes("remove")) return 0;
+
+        return categoryAveragePriceById[categoryId] ?? 0;
+      };
+
       const visits = new Set(clientTxns.map((txn) => desktopVisitDayKey(txn.created_at)).filter(Boolean)).size;
       const totalVisits = new Set(allClientTxns.map((txn) => desktopVisitDayKey(txn.created_at)).filter(Boolean)).size;
+      const value = clientTxns.reduce((sum, txn) => sum + stampValueFor(txn), 0);
+      const lifetimeValue = allClientTxns.reduce((sum, txn) => sum + stampValueFor(txn), 0);
+      const giftsCount = clientGifts.length;
+      const giftsValue = clientGifts.reduce((sum, reward) => sum + giftValueFor(reward), 0);
       const lastVisit = lastTxn?.created_at ?? null;
       const age = getAgeFromBirthday(getBirthdayValue(user));
       const lastVisitMs = lastVisit ? new Date(lastVisit).getTime() : NaN;
+      const daysSinceLastVisit = Number.isFinite(lastVisitMs)
+        ? Math.floor((Date.now() - lastVisitMs) / (24 * 60 * 60 * 1000))
+        : null;
+      const isAtRisk = daysSinceLastVisit !== null && daysSinceLastVisit >= 30 && daysSinceLastVisit <= 60;
       const inactive =
         user.is_active === false ||
         !Number.isFinite(lastVisitMs) ||
         Date.now() - lastVisitMs > 30 * 24 * 60 * 60 * 1000;
+      const isVip = lifetimeValue >= 200 || totalVisits >= 10;
 
       const tier =
         totalVisits >= 15
@@ -3215,20 +3726,63 @@ function DesktopAdminDashboard({
         tier,
         visits,
         totalVisits,
+        value,
+        lifetimeValue,
+        giftsCount,
+        giftsValue,
         lastVisit,
+        daysSinceLastVisit,
         age,
         inactive,
+        isAtRisk,
+        isVip,
       };
     });
-  }, [activityTxns, clientUsersForReports, visibleActivityTxns]);
+  }, [activityTxns, categoryAveragePriceById, categoryAveragePriceByName, clientUsersForReports, visibleActivityTxns, visibleGiftRows]);
 
   const filteredCustomerReportRows = useMemo(() => {
     return customerReportRows.filter((row) => {
-      if (lastVisitFilter === "active") return !row.inactive;
-      if (lastVisitFilter === "inactive") return row.inactive;
+      if (lastVisitFilter === "active" && row.inactive) return false;
+      if (lastVisitFilter === "inactive" && !row.inactive) return false;
+
+      if (customerStatusFilter === "active" && !(row.daysSinceLastVisit !== null && row.daysSinceLastVisit <= 7)) return false;
+      if (customerStatusFilter === "inactive" && !(row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 31)) return false;
+      if (customerStatusFilter === "at_risk" && !(row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 31)) return false;
+      if (customerStatusFilter === "vip" && !row.isVip) return false;
+
+      if (customerGenderFilter !== "all" && String(row.user.gender || "").toLowerCase() !== customerGenderFilter) {
+        return false;
+      }
+
+      if (customerAgeRangeFilter !== "all") {
+        if (row.age === null) return false;
+        if (customerAgeRangeFilter === "18-24" && (row.age < 18 || row.age > 24)) return false;
+        if (customerAgeRangeFilter === "25-34" && (row.age < 25 || row.age > 34)) return false;
+        if (customerAgeRangeFilter === "35-44" && (row.age < 35 || row.age > 44)) return false;
+        if (customerAgeRangeFilter === "45+" && row.age < 45) return false;
+      }
+
+      if (customerVisitRangeFilter === "0" && row.totalVisits !== 0) return false;
+      if (customerVisitRangeFilter === "1-3" && (row.totalVisits < 1 || row.totalVisits > 3)) return false;
+      if (customerVisitRangeFilter === "4-10" && (row.totalVisits < 4 || row.totalVisits > 10)) return false;
+      if (customerVisitRangeFilter === "10+" && row.totalVisits < 10) return false;
+
+      if (customerValueRangeFilter === "0" && row.lifetimeValue !== 0) return false;
+      if (customerValueRangeFilter === "1-50" && (row.lifetimeValue < 1 || row.lifetimeValue > 50)) return false;
+      if (customerValueRangeFilter === "50-200" && (row.lifetimeValue < 50 || row.lifetimeValue > 200)) return false;
+      if (customerValueRangeFilter === "200+" && row.lifetimeValue < 200) return false;
+
       return true;
     });
-  }, [customerReportRows, lastVisitFilter]);
+  }, [
+    customerAgeRangeFilter,
+    customerGenderFilter,
+    customerReportRows,
+    customerStatusFilter,
+    customerValueRangeFilter,
+    customerVisitRangeFilter,
+    lastVisitFilter,
+  ]);
 
   const sortedCustomerReportRows = useMemo(() => {
     const direction = customerSort.direction === "asc" ? 1 : -1;
@@ -3252,6 +3806,10 @@ function DesktopAdminDashboard({
         return (a.age - b.age) * direction;
       }
 
+      if (customerSort.key === "gender") {
+        return textCompare(a.user.gender || "", b.user.gender || "");
+      }
+
       if (customerSort.key === "lastVisit") {
         return ((new Date(a.lastVisit || 0).getTime() || 0) - (new Date(b.lastVisit || 0).getTime() || 0)) * direction;
       }
@@ -3260,15 +3818,77 @@ function DesktopAdminDashboard({
         return (a.totalVisits - b.totalVisits) * direction;
       }
 
+      if (customerSort.key === "value") {
+        return (a.value - b.value) * direction;
+      }
+
+      if (customerSort.key === "lifetime") {
+        return (a.lifetimeValue - b.lifetimeValue) * direction;
+      }
+
+      if (customerSort.key === "gifts") {
+        return (a.giftsCount - b.giftsCount) * direction;
+      }
+
+      if (customerSort.key === "giftValue") {
+        return (a.giftsValue - b.giftsValue) * direction;
+      }
+
       return (Number(a.inactive) - Number(b.inactive)) * direction;
     });
   }, [customerSort, filteredCustomerReportRows]);
 
-  function sortCustomerTable(key: "name" | "contact" | "age" | "lastVisit" | "visits" | "status") {
+  function sortCustomerTable(key: "name" | "contact" | "age" | "gender" | "lastVisit" | "visits" | "value" | "lifetime" | "gifts" | "giftValue" | "status") {
     setCustomerSort((current) => ({
       key,
       direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
     }));
+  }
+
+  function customerHeaderClass(key: "name" | "contact" | "age" | "gender" | "lastVisit" | "visits" | "value" | "lifetime" | "gifts" | "giftValue" | "status") {
+    return `text-left ${customerSort.key === key ? "font-black text-[#ffd66b]" : ""}`;
+  }
+
+  function daysAgoClass(days: number | null) {
+    if (days === null) return "bg-white/12 text-white/48";
+    if (days <= 7) return "bg-emerald-400/18 text-emerald-100";
+    if (days <= 14) return "bg-[#ffd66b]/22 text-[#ffd66b]";
+    if (days <= 30) return "bg-orange-400/20 text-orange-200";
+    return "bg-red-500/18 text-red-200";
+  }
+
+  function daysAgoStatusLabel(days: number | null) {
+    if (days === null) return "No Visit";
+    if (days <= 7) return "Recent";
+    if (days <= 14) return "Normal";
+    if (days <= 30) return "Needs Attention";
+    return "At Risk";
+  }
+
+  function daysAgoStatusClass(days: number | null) {
+    return daysAgoClass(days);
+  }
+
+  async function updateCustomerGender(userId: string, gender: string) {
+    setUsers((current) =>
+      current.map((user) => (user.id === userId ? { ...user, gender } : user)),
+    );
+
+    try {
+      const response = await fetch("/api/admin/client-gender", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, gender }),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+
+      if (!response.ok) {
+        flash(json.error ?? "Could not save gender.", "error");
+      }
+    } catch {
+      flash("Could not save gender.", "error");
+    }
   }
 
   function downloadVisibleCustomerTable() {
@@ -3278,14 +3898,20 @@ function DesktopAdminDashboard({
     };
 
     const visibleRows = sortedCustomerReportRows.slice(0, 80);
-    const headers = ["Name", "Member ID", "Contact", "Age", "Last Visit", "Visits", "Status"];
+    const headers = ["Name", "Member ID", "Contact", "Age", "Gender", "Last Visit", "Days Ago", "Visits", "Value", "Lifetime", "Gifts", "Gift Value", "Status"];
     const rows = visibleRows.map((row) => [
       row.user.full_name || "Client",
       row.user.client_code || "",
       row.user.phone || "",
       row.age ?? "",
+      row.user.gender || "",
       desktopFormatDateOnly(row.lastVisit),
+      row.daysSinceLastVisit ?? "",
       row.totalVisits,
+      row.value,
+      row.lifetimeValue,
+      row.giftsCount,
+      row.giftsValue,
       row.inactive ? "Inactive" : "Active",
     ]);
 
@@ -3309,65 +3935,103 @@ function DesktopAdminDashboard({
   const clientCustomerRows = customerReportRows.filter((row) => row.user.role === "client");
   const inactiveCustomerCount = clientCustomerRows.filter((row) => row.inactive).length;
   const activeReportCustomers = clientCustomerRows.length - inactiveCustomerCount;
+  const atRiskCustomerCount = clientCustomerRows.filter((row) => row.isAtRisk).length;
+  const vipCustomerCount = clientCustomerRows.filter((row) => row.isVip).length;
+  const averageVisitsPerCustomer =
+    clientCustomerRows.length > 0
+      ? (clientCustomerRows.reduce((sum, row) => sum + row.totalVisits, 0) / clientCustomerRows.length).toFixed(1)
+      : "0";
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)] text-white" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
       <Toast message={toast} tone={tone} />
 
-      <div className="mx-auto flex min-h-screen w-full max-w-[1440px] gap-6 overflow-visible bg-transparent p-6 lg:min-h-screen">
-        <aside className="hidden w-[238px] shrink-0 flex-col overflow-hidden rounded-[30px] border border-white/24 bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.24)] backdrop-blur-2xl lg:flex">
-          <div className="flex h-20 items-center gap-3 border-b border-white/14 px-7">
-            <img src="/pros-logo-basic.png" alt="PRO's" className="h-10 w-auto object-contain" />
-            <div>
-              <div className="text-[17px] font-black leading-none text-white">PRO&apos;s</div>
-              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-[#ffd66b]">Admin</div>
-            </div>
+      <div className="flex min-h-screen w-full gap-6 overflow-visible bg-transparent p-6 lg:min-h-screen">
+        <aside
+          className={`hidden min-h-[calc(100vh-48px)] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.24)] backdrop-blur-2xl transition-all duration-300 lg:flex ${
+            isDesktopSidebarOpen ? "w-[238px]" : "w-[76px]"
+          }`}
+        >
+          <div className={`flex h-20 items-center bg-white/5 ${isDesktopSidebarOpen ? "justify-between gap-3 px-5" : "justify-center px-3"}`}>
+            {isDesktopSidebarOpen ? (
+              <div className="min-w-0">
+                <div className="text-[19px] font-black leading-none text-white">Dashboard</div>
+                <div className="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">PRO&apos;s Admin</div>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => setIsDesktopSidebarOpen((current) => !current)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[20px] font-black text-[#365665] shadow-[0_12px_28px_rgba(255,214,107,0.2)] transition hover:scale-105"
+              title={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
+              aria-label={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
+            >
+              {isDesktopSidebarOpen ? "←" : "☰"}
+            </button>
           </div>
 
-          <nav className="flex-1 px-4 py-6">
+          <nav className="flex-1 px-3 py-4">
             {TABS.map((item) => (
               <button
                 key={item}
                 type="button"
+                title={item}
                 onClick={() => {
                   setTab(item);
                   setSelectedUser(null);
                 }}
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] px-4 text-left text-[13px] font-black transition ${
+                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${
+                  isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"
+                } ${
                   tab === item
                     ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]"
                     : "text-white/70 hover:bg-white/12 hover:text-white"
                 }`}
               >
-                <span className={`mr-3 h-2.5 w-2.5 rounded-full ${tab === item ? "bg-[#ffd66b]" : "bg-white/30"}`} />
-                {item}
+                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${
+                  tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"
+                }`}>
+                  {tabIcon(item)}
+                </span>
+                {isDesktopSidebarOpen ? item : null}
               </button>
             ))}
-
           </nav>
 
-          <div className="border-t border-white/14 px-4 py-5">
+          <div className="border-t border-white/8 px-3 py-5">
             <button
               type="button"
               onClick={() => void logout()}
-              className="mb-4 flex w-full items-center justify-start rounded-none bg-transparent px-4 py-2 text-left text-[12px] font-black text-white/86 transition hover:text-white"
+              className={`mb-4 flex w-full items-center rounded-none bg-transparent py-2 text-left text-[12px] font-black text-white/86 transition hover:text-white ${
+                isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"
+              }`}
+              title="Logout"
             >
-              Logout
+              {isDesktopSidebarOpen ? "Logout" : "⎋"}
             </button>
 
-            <a
-              href="https://wissamdesigns.com"
-              target="_blank"
-              rel="noreferrer"
-              className="block text-center text-[11px] font-bold leading-5 text-white/72 transition hover:text-white"
-            >
-              Powered by wissamdesigns.com
-            </a>
+            {isDesktopSidebarOpen ? (
+              <a
+                href="https://wissamdesigns.com"
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center text-[11px] font-bold leading-5 text-white/72 transition hover:text-white"
+              >
+                Powered by wissamdesigns.com
+              </a>
+            ) : null}
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1 overflow-hidden rounded-[30px] border border-white/24 bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl">
-          <div className="px-5 py-6 lg:px-8">
+        <section
+          className={`min-h-[calc(100vh-48px)] min-w-0 flex-1 ${
+            tab === "Users"
+              ? "overflow-visible"
+              : "overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl"
+          }`}
+        >
+          <div className={tab === "Users" ? "px-0 py-0" : "px-5 py-6 lg:px-8"}>
             {tab === "Overview" ? (
               <section className="space-y-5">
                 <div className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
@@ -3445,6 +4109,7 @@ function DesktopAdminDashboard({
                     categories={selectedCategories}
                     stamps={selectedStamps}
                     rewards={selectedRewards}
+                    activities={activityTxns.filter((txn) => txn.client_id === selectedUser.id && txn.action_type !== "manual_adjustment")}
                     loading={selectedLoading}
                     onBack={() => setSelectedUser(null)}
                     onRoleChange={(role) => void setRole(selectedUser.id, role)}
@@ -3456,127 +4121,196 @@ function DesktopAdminDashboard({
                   />
                 ) : (
                   <>
-                    <Panel className="mb-4">
-                      <div className="mb-4">
+                    <div className="mb-4 min-h-[calc(100vh-48px)] w-full rounded-[30px] bg-white/10 p-5 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl">
+                      <div className="mb-4 grid w-full grid-cols-1 gap-3 lg:grid-cols-[190px_minmax(0,1fr)] lg:items-center">
                         <h2 className="mt-1 text-[24px] font-black tracking-[-0.04em] text-white">
                           Customer behavior
                         </h2>
-                      </div>
 
-                      <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
-                        <input
-                          value={searchTerm}
-                          onChange={(event) => {
-                            setSearchTerm(event.target.value);
-                            setVisibleUserCount(15);
-                            setSelectedUser(null);
-                          }}
-                          placeholder="Search by name, phone, member ID..."
-                          onFocus={() => setReportFiltersOpen(false)}
-                          className="h-12 w-full rounded-[14px] border border-white/25 bg-white px-4 text-[13px] font-bold text-black outline-none focus:border-[#ffd66b]"
-                        />
+                        <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                          <input
+                            value={searchTerm}
+                            onChange={(event) => {
+                              setSearchTerm(event.target.value);
+                              setVisibleUserCount(15);
+                              setSelectedUser(null);
+                            }}
+                            placeholder="Search by name, phone, member ID..."
+                            onFocus={() => setReportFiltersOpen(false)}
+                            className="h-9 min-w-0 rounded-[11px] border border-white/25 bg-white px-3 text-[11px] font-bold text-black outline-none focus:border-[#ffd66b] sm:w-[320px] lg:w-[380px]"
+                          />
 
-                        <div ref={reportFilterRef} className="relative">
+                          <div ref={reportFilterRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setReportFiltersOpen((current) => !current)}
+                              className="h-10 rounded-[12px] border border-white/25 bg-white/12 px-5 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/18"
+                            >
+                              Filter
+                            </button>
+
+                            {reportFiltersOpen ? (
+                              <div className="absolute right-0 top-12 z-30 w-[300px] rounded-[22px] bg-[#365665] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+                                <div className="space-y-4">
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+                                      Date Range
+                                    </span>
+                                    <select
+                                      value={timeRange}
+                                      onChange={(event) => {
+                                        setTimeRange(event.target.value as DesktopTimeRange);
+                                        setReportFiltersOpen(false);
+                                      }}
+                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
+                                    >
+                                      <option value="today">Today</option>
+                                      <option value="week">This week</option>
+                                      <option value="month">This month</option>
+                                      <option value="all">Show all</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+                                      Last Visit
+                                    </span>
+                                    <select
+                                      value={lastVisitFilter}
+                                      onChange={(event) => {
+                                        setLastVisitFilter(event.target.value as "all" | "active" | "inactive");
+                                        setReportFiltersOpen(false);
+                                      }}
+                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
+                                    >
+                                      <option value="all">All</option>
+                                      <option value="active">Active recently</option>
+                                      <option value="inactive">Inactive recently</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+                                      Profile Tab
+                                    </span>
+                                    <select
+                                      value={filter}
+                                      onChange={(event) => {
+                                        setFilter(event.target.value as "all" | UserRole);
+                                        setReportFiltersOpen(false);
+                                      }}
+                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
+                                    >
+                                      <option value="all">All profiles</option>
+                                      <option value="client">Clients</option>
+                                      <option value="staff">Staff</option>
+                                      <option value="master_admin">Admin</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">Status</span>
+                                    <select value={customerStatusFilter} onChange={(event) => setCustomerStatusFilter(event.target.value as typeof customerStatusFilter)} className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none">
+                                      <option value="all">All status</option>
+                                      <option value="active">Recent 0–7</option>
+                                      <option value="inactive">Overdue 31+</option>
+                                      <option value="at_risk">At Risk 31+</option>
+                                      <option value="vip">VIP</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">Gender</span>
+                                    <select value={customerGenderFilter} onChange={(event) => setCustomerGenderFilter(event.target.value as typeof customerGenderFilter)} className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none">
+                                      <option value="all">All genders</option>
+                                      <option value="male">Male</option>
+                                      <option value="female">Female</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">Age Range</span>
+                                    <select value={customerAgeRangeFilter} onChange={(event) => setCustomerAgeRangeFilter(event.target.value as typeof customerAgeRangeFilter)} className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none">
+                                      <option value="all">All ages</option>
+                                      <option value="18-24">18–24</option>
+                                      <option value="25-34">25–34</option>
+                                      <option value="35-44">35–44</option>
+                                      <option value="45+">45+</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">Visit Range</span>
+                                    <select value={customerVisitRangeFilter} onChange={(event) => setCustomerVisitRangeFilter(event.target.value as typeof customerVisitRangeFilter)} className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none">
+                                      <option value="all">All visits</option>
+                                      <option value="0">0 visits</option>
+                                      <option value="1-3">1–3 visits</option>
+                                      <option value="4-10">4–10 visits</option>
+                                      <option value="10+">10+</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">Value Range</span>
+                                    <select value={customerValueRangeFilter} onChange={(event) => setCustomerValueRangeFilter(event.target.value as typeof customerValueRangeFilter)} className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none">
+                                      <option value="all">All values</option>
+                                      <option value="0">$0</option>
+                                      <option value="1-50">$1–$50</option>
+                                      <option value="50-200">$50–$200</option>
+                                      <option value="200+">$200+</option>
+                                    </select>
+                                  </label>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+
                           <button
                             type="button"
-                            onClick={() => setReportFiltersOpen((current) => !current)}
-                            className="h-12 rounded-[14px] border border-white/25 bg-white/12 px-5 text-[12px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/18"
+                            onClick={downloadVisibleCustomerTable}
+                            title="Download table"
+                            aria-label="Download table"
+                            className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/25 bg-white/12 text-white transition hover:bg-white/18"
                           >
-                            Filter
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M12 3v11m0 0 4-4m-4 4-4-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M5 17v2.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V17" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                            </svg>
                           </button>
-
-                          {reportFiltersOpen ? (
-                            <div className="absolute right-0 top-14 z-30 w-[280px] rounded-[22px] border border-white/24 bg-[#365665] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
-                              <div className="space-y-4">
-                                <label className="block">
-                                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                    Date Range
-                                  </span>
-                                  <select
-                                    value={timeRange}
-                                    onChange={(event) => {
-                                      setTimeRange(event.target.value as DesktopTimeRange);
-                                      setReportFiltersOpen(false);
-                                    }}
-                                    className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                  >
-                                    <option value="today">Today</option>
-                                    <option value="week">This week</option>
-                                    <option value="month">This month</option>
-                                    <option value="all">Show all</option>
-                                  </select>
-                                </label>
-
-                                <label className="block">
-                                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                    Last Visit
-                                  </span>
-                                  <select
-                                    value={lastVisitFilter}
-                                    onChange={(event) => {
-                                      setLastVisitFilter(event.target.value as "all" | "active" | "inactive");
-                                      setReportFiltersOpen(false);
-                                    }}
-                                    className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                  >
-                                    <option value="all">All</option>
-                                    <option value="active">Active recently</option>
-                                    <option value="inactive">Inactive recently</option>
-                                  </select>
-                                </label>
-
-                                <label className="block">
-                                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                    Profile Tab
-                                  </span>
-                                  <select
-                                    value={filter}
-                                    onChange={(event) => {
-                                      setFilter(event.target.value as "all" | UserRole);
-                                      setReportFiltersOpen(false);
-                                    }}
-                                    className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                  >
-                                    <option value="all">All profiles</option>
-                                    <option value="client">Clients</option>
-                                    <option value="staff">Staff</option>
-                                    <option value="master_admin">Admin</option>
-                                  </select>
-                                </label>
-                              </div>
-                            </div>
-                          ) : null}
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={downloadVisibleCustomerTable}
-                          title="Download table"
-                          aria-label="Download table"
-                          className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/25 bg-white/12 text-white transition hover:bg-white/18"
-                        >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M12 3v11m0 0 4-4m-4 4-4-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M5 17v2.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V17" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-                          </svg>
-                        </button>
                       </div>
 
-                      <div className="mb-4 grid gap-3 lg:grid-cols-4">
+                      <div
+                        className="mb-4 grid w-full gap-2"
+                        style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+                      >
                         <DesktopReportMetric label="New Customers" value={newCustomerCount} />
                         <DesktopReportMetric label="Returning" value={returningCustomerCount} />
                         <DesktopReportMetric label="Active" value={activeReportCustomers} />
                         <DesktopReportMetric label="Inactive" value={inactiveCustomerCount} />
+                        <DesktopReportMetric label="At Risk" value={atRiskCustomerCount} />
+                        <DesktopReportMetric label="VIP" value={vipCustomerCount} />
+                        <DesktopReportMetric label="Avg. Visits" value={averageVisitsPerCustomer} />
                       </div>
 
-                      <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/10">
-                        <div className="grid grid-cols-[1.15fr_0.9fr_0.35fr_0.85fr_0.6fr_0.55fr_0.55fr] gap-6 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
-                          <button type="button" onClick={() => sortCustomerTable("name")} className="text-left">Names</button>
-                          <button type="button" onClick={() => sortCustomerTable("contact")} className="text-left">Contact</button>
-                          <button type="button" onClick={() => sortCustomerTable("age")} className="text-left">Age</button>
-                          <button type="button" onClick={() => sortCustomerTable("lastVisit")} className="text-left">Last Visit</button>
-                          <button type="button" onClick={() => sortCustomerTable("visits")} className="pl-5 text-left">Visits</button>
-                          <button type="button" onClick={() => sortCustomerTable("status")} className="text-left">Status</button>
+                      <div className="w-full overflow-hidden rounded-[22px] bg-white/10">
+                        <div
+                          className="grid gap-4 bg-white/6 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58"
+                          style={{ gridTemplateColumns: CUSTOMER_TABLE_GRID, width: "100%" }}
+                        >
+                          <button type="button" onClick={() => sortCustomerTable("name")} className={customerHeaderClass("name")}>Names</button>
+                          <button type="button" onClick={() => sortCustomerTable("contact")} className={customerHeaderClass("contact")}>Contact</button>
+                          <button type="button" onClick={() => sortCustomerTable("age")} className={customerHeaderClass("age")}>Age</button>
+                          <button type="button" onClick={() => sortCustomerTable("gender")} className={customerHeaderClass("gender")}>Gender</button>
+                          <button type="button" onClick={() => sortCustomerTable("lastVisit")} className={customerHeaderClass("lastVisit")}>Last Visit</button>
+                          <div>Days Ago</div>
+                          <button type="button" onClick={() => sortCustomerTable("visits")} className={customerHeaderClass("visits")}>Visits</button>
+                          <button type="button" onClick={() => sortCustomerTable("value")} className={customerHeaderClass("value")}>Value</button>
+                          <button type="button" onClick={() => sortCustomerTable("lifetime")} className={customerHeaderClass("lifetime")}>Lifetime</button>
+                          <button type="button" onClick={() => sortCustomerTable("gifts")} className={customerHeaderClass("gifts")}>Gifts</button>
+                          <button type="button" onClick={() => sortCustomerTable("giftValue")} className={customerHeaderClass("giftValue")}>Gift Value</button>
+                          <button type="button" onClick={() => sortCustomerTable("status")} className={customerHeaderClass("status")}>Status</button>
+                          <div>Gift</div>
                           <div>WA</div>
                         </div>
 
@@ -3588,7 +4322,8 @@ function DesktopAdminDashboard({
                             return (
                               <div
                                 key={row.user.id}
-                                className="grid grid-cols-[1.15fr_0.9fr_0.35fr_0.85fr_0.6fr_0.55fr_0.55fr] gap-6 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
+                                className="grid gap-4 px-4 py-3 text-[12px] font-bold text-white/78 transition hover:bg-white/10"
+                                style={{ gridTemplateColumns: CUSTOMER_TABLE_GRID, width: "100%" }}
                               >
                                 <button
                                   type="button"
@@ -3606,14 +4341,49 @@ function DesktopAdminDashboard({
                                 </div>
 
                                 <div>{row.age ?? "—"}</div>
-                                <div>{desktopFormatDateOnly(row.lastVisit)}</div>
-                                <div className="pl-5 font-black text-white">{row.totalVisits}</div>
                                 <div>
-                                  <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
-                                    row.inactive ? "bg-red-500/16 text-red-200" : "bg-emerald-400/16 text-emerald-100"
-                                  }`}>
-                                    {row.inactive ? "Inactive" : "Active"}
+                                  <select
+                                    value={row.user.gender || ""}
+                                    onChange={(event) => void updateCustomerGender(row.user.id, event.target.value)}
+                                    className="h-8 w-full rounded-[10px] border-0 bg-white px-2 text-[11px] font-black text-[#365665] outline-none"
+                                  >
+                                    <option value="">—</option>
+                                    <option value="female">Female</option>
+                                    <option value="male">Male</option>
+                                  </select>
+                                </div>
+                                <div>{desktopFormatDateOnly(row.lastVisit)}</div>
+                                <div>
+                                  <span className={`inline-flex min-w-[34px] justify-center rounded-full px-2 py-1 text-[10px] font-black ${daysAgoClass(row.daysSinceLastVisit)}`}>
+                                    {row.daysSinceLastVisit ?? "—"}
                                   </span>
+                                </div>
+                                <div className="font-black text-white">{row.totalVisits}</div>
+                                <div className="font-black text-white">{desktopFormatMoney(row.value)}</div>
+                                <div className="font-black text-white">{desktopFormatMoney(row.lifetimeValue)}</div>
+                                <div className="font-black text-white">{row.giftsCount}</div>
+                                <div className="font-black text-white">{desktopFormatMoney(row.giftsValue)}</div>
+                                <div>
+                                  <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoStatusClass(row.daysSinceLastVisit)}`}>
+                                    {daysAgoStatusLabel(row.daysSinceLastVisit)}
+                                  </span>
+                                </div>
+                                <div>
+                                  {row.user.role === "client" ? (
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        openQuickGift(row.user);
+                                      }}
+                                      className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                                    >
+                                      Gift
+                                    </button>
+                                  ) : (
+                                    <span className="text-white/36">—</span>
+                                  )}
                                 </div>
                                 <div>
                                   {whatsappUrl ? (
@@ -3640,7 +4410,7 @@ function DesktopAdminDashboard({
                           ) : null}
                         </div>
                       </div>
-                    </Panel>
+                    </div>
 
                   </>
                 )}
@@ -3649,56 +4419,69 @@ function DesktopAdminDashboard({
 
             {tab === "Activity" || tab === "Gifts" ? (
               <section className="space-y-4">
-                <div className="flex flex-col gap-3 rounded-[20px] border border-white/22 bg-white/12 p-4 shadow-[0_18px_46px_rgba(0,0,0,0.10)] backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-[18px] font-black text-white">Activity</h2>
-                    <p className="mt-1 text-[12px] font-bold text-white/70">Showing {desktopTimeRangeLabel(timeRange)}</p>
+                    <h2 className="text-[24px] font-black tracking-[-0.04em] text-white">
+                      {tab === "Activity" ? "Activity" : "Gifts"}
+                    </h2>
+                    <p className="mt-1 text-[12px] font-bold text-white/65">
+                      {tab === "Activity"
+                        ? "Track daily loyalty activity and stamp history."
+                        : "Track rewards, sent gifts, expiry, and usage."}
+                    </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex rounded-full bg-white/12 p-1">
-                      <button
-                        type="button"
-                        onClick={() => setActivityView("activity")}
-                        className={`rounded-full px-5 py-2 text-[11px] font-black uppercase tracking-[0.12em] transition ${
-                          activityView === "activity" ? "bg-[#365665] text-white" : "text-white/70"
-                        }`}
-                      >
-                        Activity
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActivityView("gifts")}
-                        className={`rounded-full px-5 py-2 text-[11px] font-black uppercase tracking-[0.12em] transition ${
-                          activityView === "gifts" ? "bg-[#365665] text-white" : "text-white/70"
-                        }`}
-                      >
-                        Gifts
-                      </button>
-                    </div>
+                    <input
+                      value={activityGiftSearch}
+                      onChange={(event) => setActivityGiftSearch(event.target.value)}
+                      placeholder="Search client name..."
+                      className="h-10 w-[280px] rounded-[13px] border-0 bg-white px-4 text-[12px] font-bold text-[#365665] outline-none placeholder:text-[#365665]/45"
+                    />
 
                     <DesktopTimeRangeFilter value={timeRange} onChange={setTimeRange} />
                   </div>
                 </div>
 
-                {activityView === "activity" ? (
-                  <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/10">
-                    <div className="grid grid-cols-[1.2fr_1fr_1fr_0.7fr_0.65fr] gap-6 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+                {tab === "Gifts" ? (
+                  <div
+                    className="grid w-full gap-2"
+                    style={{ gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}
+                  >
+                    <DesktopGiftSummaryCard label="Gifts sent" value={giftDashboardSummary.giftsSent} />
+                    <DesktopGiftSummaryCard label="Redeemed" value={giftDashboardSummary.redeemed} />
+                    <DesktopGiftSummaryCard label="Gift value" value={desktopFormatMoney(giftDashboardSummary.giftValue)} />
+                    <DesktopGiftSummaryCard
+                      label="Expired"
+                      value={`${giftDashboardSummary.expiredCount} / ${desktopFormatMoney(giftDashboardSummary.expiredValue)}`}
+                    />
+                    <DesktopGiftSummaryCard label="Discounts sent" value={giftDashboardSummary.discountsSent} />
+                    <DesktopGiftSummaryCard label="Expiring soon" value={giftDashboardSummary.expiringSoon} />
+                  </div>
+                ) : null}
+
+                {tab === "Activity" ? (
+                  <div className="w-full overflow-hidden rounded-[24px] bg-white/10 shadow-[0_22px_60px_rgba(0,0,0,0.10)]">
+                    <div
+                      className="grid gap-4 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58"
+                      style={{ gridTemplateColumns: "1.15fr 1fr 1fr 0.7fr 0.55fr 0.55fr" }}
+                    >
                       <div>Client Name</div>
-                      <div>Category of the stamp</div>
-                      <div>Issue by</div>
+                      <div>Category</div>
+                      <div>Issue By</div>
                       <div>Date</div>
+                      <div>Days Ago</div>
                       <div>Time</div>
                     </div>
 
                     <div className="max-h-[560px] overflow-auto">
-                      {visibleActivityTxns.length === 0 ? (
-                        <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">
+                      {filteredActivityRows.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-[13px] font-bold text-white/60">
                           No activity for this time range.
                         </div>
                       ) : null}
 
-                      {visibleActivityTxns.map((transaction) => {
+                      {filteredActivityRows.map((transaction) => {
                         const clientName = profileNamesById[transaction.client_id ?? ""] ?? "Client";
                         const actorName =
                           profileNamesById[transaction.staff_id ?? ""] ||
@@ -3706,16 +4489,23 @@ function DesktopAdminDashboard({
                         const categoryName =
                           categoryNamesById[transaction.category_id ?? ""] ||
                           (transaction.action_type === "reward_redeemed" ? "Gift" : "—");
+                        const days = desktopDaysAgo(transaction.created_at);
 
                         return (
                           <div
                             key={transaction.id}
-                            className="grid grid-cols-[1.2fr_1fr_1fr_0.7fr_0.65fr] gap-6 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 last:border-b-0 hover:bg-white/10"
+                            className="grid gap-4 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
+                            style={{ gridTemplateColumns: "1.15fr 1fr 1fr 0.7fr 0.55fr 0.55fr" }}
                           >
                             <div className="truncate font-black text-white">{clientName}</div>
                             <div className="truncate">{categoryName}</div>
                             <div className="truncate">{actorName}</div>
                             <div>{desktopFormatDateOnly(transaction.created_at)}</div>
+                            <div>
+                              <span className={`inline-flex min-w-[42px] justify-center rounded-full px-2 py-1 text-[10px] font-black ${activityDaysBadgeClass(days)}`}>
+                                {activityDaysLabel(days)}
+                              </span>
+                            </div>
                             <div>{desktopFormatTimeOnly(transaction.created_at)}</div>
                           </div>
                         );
@@ -3723,56 +4513,187 @@ function DesktopAdminDashboard({
                     </div>
                   </div>
                 ) : (
-                  <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/10">
-                    <div className="grid grid-cols-[1.1fr_1.15fr_1fr_0.7fr_0.65fr_0.65fr] gap-6 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
-                      <div>Client Name</div>
-                      <div>Gift</div>
-                      <div>Category</div>
-                      <div>Date</div>
-                      <div>Time</div>
-                      <div>Status</div>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ["all", "All"],
+                        ["loyalty", "Loyalty Rewards"],
+                        ["birthday", "Birthday Gifts"],
+                        ["sent", "Sent Gifts"],
+                        ["available", "Available"],
+                        ["used", "Used"],
+                        ["expired", "Expired"],
+                        ["expiring", "Expiring Soon"],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setGiftFilter(value as typeof giftFilter)}
+                          className={`rounded-full px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
+                            giftFilter === value ? "bg-[#ffd66b] text-[#365665]" : "bg-white/10 text-white/70 hover:bg-white/16"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
 
-                    <div className="max-h-[560px] overflow-auto">
-                      {latestGifts.length === 0 ? (
-                        <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">
-                          No gifts for this time range.
-                        </div>
-                      ) : null}
+                    <div className="w-full overflow-hidden rounded-[24px] bg-white/10 shadow-[0_22px_60px_rgba(0,0,0,0.10)]">
+                      <div
+                        className="grid gap-4 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58"
+                        style={{ gridTemplateColumns: "1fr 0.65fr 1.2fr 0.85fr 0.75fr 0.7fr 0.75fr 0.75fr" }}
+                      >
+                        <div>Client Name</div>
+                        <div>Type</div>
+                        <div>Gift / Reward</div>
+                        <div>Status</div>
+                        <div>Expiry</div>
+                        <div>Left</div>
+                        <div>Source</div>
+                        <div>Date</div>
+                      </div>
 
-                      {latestGifts.map((reward) => {
-                        const clientName = profileNamesById[reward.client_id] ?? "Client";
-                        const categoryName = categoryNamesById[reward.category_id ?? ""] || "—";
-
-                        return (
-                          <div
-                            key={reward.id}
-                            className="grid grid-cols-[1.1fr_1.15fr_1fr_0.7fr_0.65fr_0.65fr] gap-6 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 last:border-b-0 hover:bg-white/10"
-                          >
-                            <div className="truncate font-black text-white">{clientName}</div>
-                            <div className="truncate">{desktopNormalizeRewardText(reward.reward_type)}</div>
-                            <div className="truncate">{categoryName}</div>
-                            <div>{desktopFormatDateOnly(reward.earned_at ?? reward.created_at)}</div>
-                            <div>{desktopFormatTimeOnly(reward.earned_at ?? reward.created_at)}</div>
-                            <div>
-                              <span
-                                className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
-                                  reward.status === "available"
-                                    ? "bg-[#ffd66b] text-[#365665]"
-                                    : reward.status === "redeemed" || reward.status === "claimed"
-                                      ? "bg-[#365665] text-white"
-                                      : "bg-white/28 text-white/72"
-                                }`}
-                              >
-                                {String(reward.status)}
-                              </span>
-                            </div>
+                      <div className="max-h-[560px] overflow-auto">
+                        {filteredGiftDashboardRows.length === 0 ? (
+                          <div className="px-4 py-8 text-center text-[13px] font-bold text-white/60">
+                            No gifts for this view.
                           </div>
-                        );
-                      })}
+                        ) : null}
+
+                        {filteredGiftDashboardRows.map((reward) => {
+                          const clientName = profileNamesById[reward.client_id] ?? "Client";
+                          const typeInfo = rewardTypeInfo(reward);
+                          const statusInfo = giftStatusInfo(reward);
+                          const leftInfo = giftLeftInfo(reward);
+                          const issueDate = rewardIssueDate(reward);
+                          const expiry = rewardExpiryDate(reward);
+
+                          return (
+                            <div
+                              key={reward.id}
+                              className="grid gap-4 border-b border-white/10 px-4 py-3 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
+                              style={{ gridTemplateColumns: "1fr 0.65fr 1.2fr 0.85fr 0.75fr 0.7fr 0.75fr 0.75fr" }}
+                            >
+                              <div className="truncate font-black text-white">{clientName}</div>
+                              <div className="truncate">{typeInfo.type}</div>
+                              <div className="truncate">{giftDisplayName(reward)}</div>
+                              <div>
+                                <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${statusInfo.className}`}>
+                                  {statusInfo.label}
+                                </span>
+                              </div>
+                              <div>{desktopFormatDateOnly(expiry)}</div>
+                              <div className="font-black text-white">{leftInfo.label}</div>
+                              <div className="truncate">{typeInfo.source}</div>
+                              <div>{desktopFormatDateOnly(issueDate)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
+
+                {giftDashboardOpen ? (
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm"
+                    onClick={closeGiftDashboardModal}
+                  >
+                    <div
+                      className="w-full max-w-[480px] rounded-[28px] bg-[#365665]/88 p-5 text-white shadow-[0_30px_90px_rgba(0,0,0,0.34)] backdrop-blur-2xl"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="mb-5 flex items-start gap-4">
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#ffd66b] p-3">
+                          <img src="/gift.png" alt="Gift" className="h-full w-full object-contain" />
+                        </div>
+
+                        <div className="min-w-0">
+                          <h3 className="text-[22px] font-black tracking-[-0.03em] text-white">Send Gift</h3>
+                          <p className="mt-1 text-[12px] font-bold leading-5 text-white/66">
+                            Send a gift to any loyalty client.
+                          </p>
+                        </div>
+                      </div>
+
+                      <label className="mb-4 block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
+                          Client
+                        </span>
+                        <select
+                          value={giftDashboardClientId}
+                          onChange={(event) => setGiftDashboardClientId(event.target.value)}
+                          className="h-12 w-full rounded-[16px] border-0 bg-white/12 px-4 text-[13px] font-black text-white outline-none"
+                        >
+                          {dashboardGiftClientOptions.map((client) => (
+                            <option key={client.id} value={client.id}>
+                              {client.full_name || client.email || client.client_code || "Client"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="mb-4 block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
+                          Gift / Reward
+                        </span>
+                        <select
+                          value={giftDashboardCategoryId}
+                          onChange={(event) => setGiftDashboardCategoryId(event.target.value)}
+                          className="h-12 w-full rounded-[16px] border-0 bg-white/12 px-4 text-[13px] font-black text-white outline-none"
+                        >
+                          {dashboardGiftCategoryOptions.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              Free {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="mb-4 block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
+                          Expiry Date
+                        </span>
+                        <input
+                          type="date"
+                          value={giftDashboardExpiry}
+                          onChange={(event) => setGiftDashboardExpiry(event.target.value)}
+                          className="h-12 w-full rounded-[16px] border-0 bg-white/12 px-4 text-[13px] font-black text-white outline-none"
+                        />
+                      </label>
+
+                      <label className="mb-5 block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
+                          Optional Note
+                        </span>
+                        <textarea
+                          value={giftDashboardNote}
+                          onChange={(event) => setGiftDashboardNote(event.target.value)}
+                          rows={2}
+                          placeholder="Optional note..."
+                          className="w-full rounded-[16px] border-0 bg-white/12 px-4 py-3 text-[13px] font-semibold text-white placeholder:text-white/45 outline-none"
+                        />
+                      </label>
+
+                      <div className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={closeGiftDashboardModal}
+                          className="rounded-full bg-white/10 px-5 py-3 text-[12px] font-black text-white transition hover:bg-white/16"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void sendDashboardGift()}
+                          className="rounded-full bg-[#ffd66b] px-6 py-3 text-[12px] font-black text-[#365665] transition hover:bg-[#f0cf61]"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -3811,7 +4732,7 @@ function DesktopAdminDashboard({
                     </p>
                   ) : (
                     <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/8">
-                      <div className="grid grid-cols-[0.75fr_1.45fr_0.95fr_0.75fr_0.55fr_0.52fr_0.52fr_0.52fr] gap-3 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+                      <div className="grid grid-cols-[0.75fr_1.45fr_0.95fr_0.75fr_0.55fr_0.52fr_0.52fr_0.52fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
                         <button type="button" onClick={() => sortGames("sport")} className="text-left">Sport</button>
                         <button type="button" onClick={() => sortGames("match")} className="text-left">Match Name</button>
                         <button type="button" onClick={() => sortGames("date")} className="text-left">Date</button>
@@ -4027,11 +4948,20 @@ function DesktopTimeRangeFilter({
   );
 }
 
+function DesktopGiftSummaryCard({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="h-[66px] min-w-0 rounded-[14px] bg-white/10 px-3 py-2.5">
+      <div className="truncate text-[11px] font-normal normal-case tracking-normal text-white/66">{label}</div>
+      <div className="mt-1.5 text-[18px] font-black tracking-[-0.04em] text-white">{value}</div>
+    </div>
+  );
+}
+
 function DesktopReportMetric({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-[18px] border border-white/16 bg-white/10 p-4">
-      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">{label}</div>
-      <div className="mt-2 text-[22px] font-black tracking-[-0.04em] text-white">{value}</div>
+    <div className="h-[64px] min-w-0 rounded-[14px] bg-white/10 px-2.5 py-2.5">
+      <div className="truncate text-[11px] font-normal normal-case tracking-normal text-white/66">{label}</div>
+      <div className="mt-1.5 text-[18px] font-black tracking-[-0.04em] text-white">{value}</div>
     </div>
   );
 }
@@ -4048,7 +4978,7 @@ function AdminUserMetricRow({
   negative?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-white/18 px-4 py-3 last:border-b-0">
+    <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-white/10 px-4 py-3 last:border-b-0">
       <div className="text-[12px] font-semibold text-[#4c574f]">{label}</div>
       {trend ? (
         <div className={`text-[10px] font-black ${negative ? "text-red-500" : "text-emerald-600"}`}>
@@ -4064,7 +4994,7 @@ function AdminUserMetricRow({
 
 function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-[28px] border border-white/24 bg-white/10 p-5 text-white shadow-[0_24px_70px_rgba(35,54,47,0.20)] backdrop-blur-2xl ${className}`}>
+    <div className={`rounded-[28px] bg-white/10 p-5 text-white shadow-[0_24px_70px_rgba(35,54,47,0.20)] backdrop-blur-2xl ${className}`}>
       {children}
     </div>
   );
@@ -4101,7 +5031,7 @@ function MiniStat({ label, value }: { label: string; value: number | string }) {
 
 function InsightRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-white/18 py-3 last:border-0">
+    <div className="flex items-center justify-between gap-4 border-b border-white/10 py-3 last:border-0">
       <div className="text-[13px] font-bold text-white/72">{label}</div>
       <div className="text-right text-[13px] font-black text-white">{value}</div>
     </div>
@@ -4188,12 +5118,22 @@ function ActivityRow({ action, title, meta }: { action: StampTransaction["action
   );
 }
 
+function DesktopProfileMetric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="h-[64px] min-w-0 rounded-[14px] bg-white/10 px-2.5 py-2.5">
+      <div className="truncate text-[11px] font-normal normal-case tracking-normal text-white/66">{label}</div>
+      <div className="mt-1.5 text-[18px] font-black tracking-[-0.04em] text-white">{value}</div>
+    </div>
+  );
+}
+
 function DesktopClientProfilePanel({
   user,
   currentUserId,
   categories,
   stamps,
   rewards,
+  activities,
   loading,
   onBack,
   onRoleChange,
@@ -4208,6 +5148,7 @@ function DesktopClientProfilePanel({
   categories: AdminCategory[];
   stamps: AdminClientStamp[];
   rewards: Reward[];
+  activities: StampTransaction[];
   loading: boolean;
   onBack: () => void;
   onRoleChange: (role: UserRole) => void;
@@ -4219,8 +5160,15 @@ function DesktopClientProfilePanel({
 }) {
   const [giftPopupOpen, setGiftPopupOpen] = useState(false);
   const [giftsOpen, setGiftsOpen] = useState(false);
-  const [giftName, setGiftName] = useState("");
+  const [stampsOpen, setStampsOpen] = useState(false);
+  const [visitsLogOpen, setVisitsLogOpen] = useState(false);
+  const [profileTimeRange, setProfileTimeRange] = useState<"week" | "month" | "all">("week");
+  const [giftType, setGiftType] = useState<"gift" | "discount">("gift");
+  const [selectedGiftCategoryId, setSelectedGiftCategoryId] = useState("");
+  const [discountValue, setDiscountValue] = useState("10%");
   const [giftDescription, setGiftDescription] = useState("");
+
+  const age = getAgeFromBirthday(getBirthdayValue(user));
 
   const stampByCategory = useMemo(() => {
     const map = new Map<string, number>();
@@ -4232,12 +5180,132 @@ function DesktopClientProfilePanel({
     return map;
   }, [stamps]);
 
+  const priceByCategoryId = useMemo(() => {
+    const map = new Map<string, number>();
+
+    categories.forEach((category) => {
+      map.set(category.id, parseMoneyValue(category.average_price));
+    });
+
+    return map;
+  }, [categories]);
+
+  const priceByCategoryName = useMemo(() => {
+    const map = new Map<string, number>();
+
+    categories.forEach((category) => {
+      const name = (category.name === "Desserts 2" ? "Hooka" : category.name).toLowerCase();
+      map.set(name, parseMoneyValue(category.average_price));
+    });
+
+    return map;
+  }, [categories]);
+
+  const availableGiftCategories = useMemo(
+    () =>
+      categories.map((category) => ({
+        id: category.id,
+        name: category.name === "Desserts 2" ? "Hooka" : category.name,
+      })),
+    [categories],
+  );
+
+  useEffect(() => {
+    if (selectedGiftCategoryId || availableGiftCategories.length === 0) return;
+
+    setSelectedGiftCategoryId(availableGiftCategories[0].id);
+  }, [availableGiftCategories, selectedGiftCategoryId]);
+
+  const selectedGiftCategoryName =
+    availableGiftCategories.find((category) => category.id === selectedGiftCategoryId)?.name ??
+    availableGiftCategories[0]?.name ??
+    "";
+
+  const sendGiftLabel =
+    giftType === "discount" ? `Discount ${discountValue}` : selectedGiftCategoryName ? `Free ${selectedGiftCategoryName}` : "";
+
+  const filteredActivities = useMemo(() => {
+    return activities.filter((txn) => isWithinDesktopTimeRange(txn.created_at, profileTimeRange));
+  }, [activities, profileTimeRange]);
+
+  const filteredRewards = useMemo(() => {
+    return rewards.filter((reward) =>
+      isWithinDesktopTimeRange(reward.earned_at ?? reward.created_at, profileTimeRange),
+    );
+  }, [profileTimeRange, rewards]);
+
+  const stampValueFor = (txn: StampTransaction) => {
+    const record = txn as unknown as Record<string, unknown>;
+    const categoryId = typeof record.category_id === "string" ? record.category_id : "";
+    const actionType = String(record.action_type ?? "");
+
+    if (actionType.includes("remove")) return 0;
+
+    return priceByCategoryId.get(categoryId) ?? 0;
+  };
+
+  const giftValueFor = (reward: Reward) => {
+    const record = reward as unknown as Record<string, unknown>;
+    const categoryId = typeof record.category_id === "string" ? record.category_id : "";
+    const rewardType = String(reward.reward_type ?? "").toLowerCase();
+
+    if (categoryId && priceByCategoryId.has(categoryId)) {
+      return priceByCategoryId.get(categoryId) ?? 0;
+    }
+
+    for (const [categoryName, price] of priceByCategoryName.entries()) {
+      if (categoryName && rewardType.includes(categoryName)) return price;
+    }
+
+    return 0;
+  };
+
+  const visits = useMemo(
+    () => new Set(filteredActivities.map((txn) => desktopVisitDayKey(txn.created_at)).filter(Boolean)).size,
+    [filteredActivities],
+  );
+
+  const value = useMemo(
+    () => filteredActivities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
+    [filteredActivities, priceByCategoryId],
+  );
+
+  const lifetime = useMemo(
+    () => activities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
+    [activities, priceByCategoryId],
+  );
+
+  const giftsValue = useMemo(
+    () => filteredRewards.reduce((sum, reward) => sum + giftValueFor(reward), 0),
+    [filteredRewards, priceByCategoryId, priceByCategoryName],
+  );
+
+  const visitLogRows = useMemo(() => {
+    const byDay = new Map<string, string>();
+
+    activities.forEach((txn) => {
+      if (!isWithinDesktopTimeRange(txn.created_at, profileTimeRange)) return;
+
+      const key = desktopVisitDayKey(txn.created_at);
+      if (!key) return;
+
+      const existing = byDay.get(key);
+      if (!existing || new Date(txn.created_at).getTime() > new Date(existing).getTime()) {
+        byDay.set(key, txn.created_at);
+      }
+    });
+
+    return Array.from(byDay.entries())
+      .map(([day, date]) => ({ day, date }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [activities, profileTimeRange]);
+
   return (
     <div className="space-y-4">
       <button
         type="button"
         onClick={onBack}
-        className="rounded-full bg-[#365665] px-4 py-2 text-[12px] font-black text-white"
+        className="px-0 py-2 text-[12px] font-black text-white transition hover:text-[#ffd66b]"
       >
         ← Back to users
       </button>
@@ -4257,12 +5325,40 @@ function DesktopClientProfilePanel({
                 <>
                   <br />
                   {user.phone}
+                  {age !== null ? <span className="text-white/52"> · Age {age}</span> : null}
+                </>
+              ) : age !== null ? (
+                <>
+                  <br />
+                  Age {age}
                 </>
               ) : null}
             </div>
             {user.client_code ? (
-              <div className="mt-2 text-[10px] font-black uppercase tracking-[0.18em] text-white">
-                {user.client_code}
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white">
+                  {user.client_code}
+                </div>
+
+                {user.role === "client" ? (
+                  <button
+                    type="button"
+                    onClick={() => setGiftPopupOpen(true)}
+                    className="rounded-full bg-[#ffd66b] px-4 py-2 text-[11px] font-black text-[#365665] transition hover:bg-[#f0cf61]"
+                  >
+                    Send Gift
+                  </button>
+                ) : null}
+              </div>
+            ) : user.role === "client" ? (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setGiftPopupOpen(true)}
+                  className="rounded-full bg-[#ffd66b] px-4 py-2 text-[11px] font-black text-[#365665] transition hover:bg-[#f0cf61]"
+                >
+                  Send Gift
+                </button>
               </div>
             ) : null}
           </div>
@@ -4286,7 +5382,7 @@ function DesktopClientProfilePanel({
                 onRoleChange(value as UserRole);
               }}
               disabled={user.id === currentUserId}
-              className={`shrink-0 rounded-full border border-white/25 bg-white px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
+              className={`shrink-0 rounded-full border-0 bg-white px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
                 user.is_active === false ? "text-red-600" : "text-[#365665]"
               }`}
             >
@@ -4296,15 +5392,15 @@ function DesktopClientProfilePanel({
               <option value="deactivated">Deactivate</option>
             </select>
 
-            {user.role === "client" ? (
-              <button
-                type="button"
-                onClick={() => setGiftPopupOpen(true)}
-                className="rounded-full bg-[#ffd66b] px-4 py-2 text-[11px] font-black text-[#365665] transition hover:bg-[#f0cf61]"
-              >
-                Send Gift
-              </button>
-            ) : null}
+            <select
+              value={profileTimeRange}
+              onChange={(event) => setProfileTimeRange(event.target.value as "week" | "month" | "all")}
+              className="rounded-full border-0 bg-white px-3 py-2 text-[11px] font-black text-white outline-none"
+            >
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="all">All Time</option>
+            </select>
           </div>
         </div>
 
@@ -4313,70 +5409,134 @@ function DesktopClientProfilePanel({
             This account is deactivated.
           </div>
         ) : null}
+
+        {user.role === "client" ? (
+          <div
+            className="mt-5 grid w-full gap-2"
+            style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+          >
+            <DesktopProfileMetric label="Visits" value={visits} />
+            <DesktopProfileMetric label="Value" value={desktopFormatMoney(value)} />
+            <DesktopProfileMetric label="Lifetime" value={desktopFormatMoney(lifetime)} />
+            <DesktopProfileMetric label="Gifts" value={filteredRewards.length} />
+            <DesktopProfileMetric label="Gift value" value={desktopFormatMoney(giftsValue)} />
+          </div>
+        ) : null}
       </Panel>
 
       <Panel>
-        <h2 className="mb-4 text-[18px] font-black text-white">Stamps</h2>
+        <button
+          type="button"
+          onClick={() => setStampsOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <div>
+            <h2 className="text-[18px] font-black text-white">Stamps</h2>
+            <p className="mt-1 text-[11px] font-bold text-white/72">
+              {stampsOpen ? "Visible" : "Closed by default"}
+            </p>
+          </div>
 
-        {loading ? <DesktopEmptyState text="Loading profile..." /> : null}
+          <span className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-white">
+            {stampsOpen ? "Hide" : "Show"}
+          </span>
+        </button>
 
-        {!loading && user.role !== "client" ? (
-          <DesktopEmptyState text="This account is not a client, so there are no loyalty stamps." />
+        {stampsOpen ? (
+          <div className="mt-4">
+            {loading ? <DesktopEmptyState text="Loading profile..." /> : null}
+
+            {!loading && user.role !== "client" ? (
+              <DesktopEmptyState text="This account is not a client, so there are no loyalty stamps." />
+            ) : null}
+
+            {!loading && user.role === "client" ? (
+              <div className="space-y-3">
+                {categories.length === 0 ? <DesktopEmptyState text="No stamp categories found." /> : null}
+
+                {categories.map((category) => {
+                  const count = Math.max(0, Math.min(5, stampByCategory.get(category.id) ?? 0));
+
+                  return (
+                    <div key={category.id} className="rounded-[16px] bg-white/10 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[15px] font-black text-white">
+                            {category.name === "Desserts 2" ? "Hooka" : category.name}
+                          </div>
+                          <div className="mt-1 text-[11px] font-bold text-white/70">
+                            {count}/5 stamps
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onRemoveStamp(category.id)}
+                            disabled={loading || count <= 0}
+                            className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-[#365665] transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            Remove
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => onAddStamp(category.id)}
+                            disabled={loading || count >= 5}
+                            className="rounded-full bg-[#365665] px-4 py-2 text-[11px] font-black text-white transition hover:bg-[#27464f] disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            Stamp It!
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-5 gap-2">
+                        {Array.from({ length: 5 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className={`h-2 rounded-full ${
+                              index < count ? "bg-[#ffd66b]" : "bg-white/25"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
         ) : null}
+      </Panel>
 
-        {!loading && user.role === "client" ? (
-          <div className="space-y-3">
-            {categories.length === 0 ? <DesktopEmptyState text="No stamp categories found." /> : null}
+      <Panel>
+        <button
+          type="button"
+          onClick={() => setVisitsLogOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <div>
+            <h2 className="text-[18px] font-black text-white">Visits Log</h2>
+            <p className="mt-1 text-[11px] font-bold text-white/72">
+              {visitLogRows.length} visit date{visitLogRows.length === 1 ? "" : "s"}
+            </p>
+          </div>
 
-            {categories.map((category) => {
-              const count = Math.max(0, Math.min(5, stampByCategory.get(category.id) ?? 0));
+          <span className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-white">
+            {visitsLogOpen ? "Hide" : "Show"}
+          </span>
+        </button>
 
-              return (
-                <div key={category.id} className="rounded-[16px] bg-white/10 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-[15px] font-black text-white">
-                        {category.name === "Desserts 2" ? "Hooka" : category.name}
-                      </div>
-                      <div className="mt-1 text-[11px] font-bold text-white/70">
-                        {count}/5 stamps
-                      </div>
-                    </div>
+        {visitsLogOpen ? (
+          <div className="mt-4 space-y-2">
+            {visitLogRows.length === 0 ? <DesktopEmptyState text="No visits found for this time range." /> : null}
 
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onRemoveStamp(category.id)}
-                        disabled={loading || count <= 0}
-                        className="rounded-full border border-white/25 bg-white px-4 py-2 text-[11px] font-black text-[#365665] transition hover:border-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        Remove
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => onAddStamp(category.id)}
-                        disabled={loading || count >= 5}
-                        className="rounded-full bg-[#365665] px-4 py-2 text-[11px] font-black text-white transition hover:bg-[#27464f] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        Stamp It!
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-5 gap-2">
-                    {Array.from({ length: 5 }).map((_, index) => (
-                      <div
-                        key={index}
-                        className={`h-2 rounded-full ${
-                          index < count ? "bg-[#ffd66b]" : "bg-white/25"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+            {visitLogRows.map((visit) => (
+              <div key={visit.day} className="flex items-center justify-between rounded-[14px] bg-white/10 px-4 py-3">
+                <div className="text-[13px] font-black text-white">{desktopFormatDateOnly(visit.date)}</div>
+                <div className="text-[11px] font-bold text-white/60">{desktopFormatTimeOnly(visit.date)}</div>
+              </div>
+            ))}
           </div>
         ) : null}
       </Panel>
@@ -4394,7 +5554,7 @@ function DesktopClientProfilePanel({
             </p>
           </div>
 
-          <span className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-[#365665]">
+          <span className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-white">
             {giftsOpen ? "Hide" : "Show"}
           </span>
         </button>
@@ -4438,54 +5598,98 @@ function DesktopClientProfilePanel({
 
       {giftPopupOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm"
           onClick={() => setGiftPopupOpen(false)}
         >
           <div
-            className="w-full max-w-[440px] rounded-[26px] bg-white p-6 shadow-[0_30px_90px_rgba(0,0,0,0.25)]"
+            className="h-[480px] max-h-[86vh] w-full max-w-[480px] overflow-y-auto rounded-[28px] bg-[#365665]/88 p-5 text-white shadow-[0_30px_90px_rgba(0,0,0,0.34)] backdrop-blur-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-5 flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#ffd66b] text-[#365665]">
-                <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 12v8H4v-8" />
-                  <path d="M2 7h20v5H2z" />
-                  <path d="M12 22V7" />
-                  <path d="M12 7H7.5a2.5 2.5 0 1 1 2.2-3.7L12 7Z" />
-                  <path d="M12 7h4.5a2.5 2.5 0 1 0-2.2-3.7L12 7Z" />
-                </svg>
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#ffd66b] p-3">
+                <img src="/gift.png" alt="Gift" className="h-full w-full object-contain" />
               </div>
 
               <div className="min-w-0">
-                <h3 className="text-[22px] font-black tracking-[-0.03em] text-[#365665]">Send Gift</h3>
-                <p className="mt-1 text-[12px] font-bold leading-5 text-[#365665]/70">
-                  Send a manual gift to {user.full_name || "this client"}.
+                <h3 className="text-[22px] font-black tracking-[-0.03em] text-white">Send Gift</h3>
+                <p className="mt-1 text-[12px] font-bold leading-5 text-white/66">
+                  Send a gift to {user.full_name || "this client"}.
                 </p>
               </div>
             </div>
 
-            <label className="mb-4 block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#365665]/70">
+            <div className="mb-4">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
+                Type
+              </span>
+              <div className="grid grid-cols-2 gap-2 rounded-[18px] bg-white/12 p-1">
+                {(["gift", "discount"] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setGiftType(type)}
+                    className={`h-11 rounded-[14px] text-[12px] font-black uppercase tracking-[0.12em] transition ${
+                      giftType === type
+                        ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.2)]"
+                        : "text-white/58"
+                    }`}
+                  >
+                    {type === "gift" ? "Gift" : "Discount"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {giftType === "gift" ? (
+              <label className="mb-4 block">
+                <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
+                  Gift
+                </span>
+                <select
+                  value={selectedGiftCategoryId}
+                  onChange={(event) => setSelectedGiftCategoryId(event.target.value)}
+                  className="h-12 w-full rounded-[16px] border-0 bg-white/12 px-4 text-[13px] font-black text-white outline-none"
+                >
+                  {availableGiftCategories.length === 0 ? (
+                    <option value="">No categories found</option>
+                  ) : null}
+
+                  {availableGiftCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      Free {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="mb-4 block">
+                <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
+                  Discount
+                </span>
+                <select
+                  value={discountValue}
+                  onChange={(event) => setDiscountValue(event.target.value)}
+                  className="h-12 w-full rounded-[16px] border-0 bg-white/12 px-4 text-[13px] font-black text-white outline-none"
+                >
+                  {["10%", "15%", "20%", "25%", "30%"].map((discount) => (
+                    <option key={discount} value={discount}>
+                      {discount}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label className="mb-5 block">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/66">
                 Description
               </span>
               <textarea
                 value={giftDescription}
                 onChange={(event) => setGiftDescription(event.target.value)}
-                rows={3}
-                placeholder="Example: Birthday gift, VIP compensation..."
-                className="w-full rounded-[16px] border border-[#365665]/20 bg-[#f4f1e9] px-4 py-3 text-[13px] font-semibold text-[#365665] outline-none focus:border-[#ffd66b]"
-              />
-            </label>
-
-            <label className="mb-5 block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#365665]/70">
-                Gift
-              </span>
-              <input
-                value={giftName}
-                onChange={(event) => setGiftName(event.target.value)}
-                placeholder="Example: Free Dessert"
-                className="h-12 w-full rounded-[16px] border border-[#365665]/20 bg-[#f4f1e9] px-4 text-[13px] font-semibold text-[#365665] outline-none focus:border-[#ffd66b]"
+                rows={2}
+                placeholder="Optional note..."
+                className="w-full rounded-[16px] border-0 bg-white/12 px-4 py-3 text-[13px] font-semibold text-white placeholder:text-white/45 outline-none"
               />
             </label>
 
@@ -4493,19 +5697,24 @@ function DesktopClientProfilePanel({
               <button
                 type="button"
                 onClick={() => setGiftPopupOpen(false)}
-                className="rounded-full border border-[#365665]/20 px-5 py-3 text-[12px] font-black text-[#365665]"
+                className="rounded-full bg-white/10 px-5 py-3 text-[12px] font-black text-white transition hover:bg-white/16"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  onSendGift(giftName, giftDescription);
-                  setGiftName("");
+                  if (!sendGiftLabel) return;
+
+                  onSendGift(sendGiftLabel, giftDescription);
+                  setGiftType("gift");
+                  setSelectedGiftCategoryId(availableGiftCategories[0]?.id ?? "");
+                  setDiscountValue("10%");
                   setGiftDescription("");
                   setGiftPopupOpen(false);
                 }}
-                className="rounded-full bg-[#365665] px-6 py-3 text-[12px] font-black text-white transition hover:bg-[#27464f]"
+                disabled={!sendGiftLabel}
+                className="rounded-full bg-[#ffd66b] px-6 py-3 text-[12px] font-black text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Send
               </button>
@@ -4518,59 +5727,18 @@ function DesktopClientProfilePanel({
 }
 
 function DesktopActionBadge({ action }: { action: StampTransaction["action_type"] }) {
-  const map: Record<
-    StampTransaction["action_type"],
-    { className: string; icon: ReactNode }
-  > = {
-    add_stamp: {
-      className: "bg-[#ffd66b] text-[#365665]",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      ),
-    },
-    reward_earned: {
-      className: "bg-[#365665] text-white",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.35" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 12v8H4v-8" />
-          <path d="M2 7h20v5H2z" />
-          <path d="M12 22V7" />
-          <path d="M12 7H7.5a2.5 2.5 0 1 1 2.2-3.7L12 7Z" />
-          <path d="M12 7h4.5a2.5 2.5 0 1 0-2.2-3.7L12 7Z" />
-        </svg>
-      ),
-    },
-    reward_redeemed: {
-      className: "bg-[#798673] text-white",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
-      ),
-    },
-    manual_adjustment: {
-      className: "bg-white/10 text-white",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 7h10" />
-          <path d="M4 17h16" />
-          <path d="M17 4v6" />
-          <path d="M14 7h6" />
-          <path d="M9 14v6" />
-          <path d="M6 17h6" />
-        </svg>
-      ),
-    },
+  const styles: Record<string, string> = {
+    add_stamp: "bg-emerald-400/18 text-emerald-100",
+    remove_stamp: "bg-red-500/18 text-red-200",
+    reward_earned: "bg-[#ffd66b]/22 text-[#ffd66b]",
+    reward_redeemed: "bg-slate-400/18 text-slate-100",
+    manual_adjustment: "bg-white/12 text-white/62",
   };
 
-  const item = map[action] ?? map.manual_adjustment;
-
   return (
-    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${item.className}`}>
-      {item.icon}
-    </div>
+    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${styles[action] ?? "bg-white/12 text-white/62"}`}>
+      {String(action || "activity").replace(/_/g, " ")}
+    </span>
   );
 }
 

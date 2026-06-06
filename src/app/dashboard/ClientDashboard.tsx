@@ -17,6 +17,9 @@ type Profile = {
 type LoyaltyCategory = {
   id?: string;
   name?: string;
+  is_active?: boolean | null;
+  sort_order?: number | null;
+  average_price?: number | null;
 };
 
 type ClientStamp = {
@@ -49,6 +52,7 @@ type ClientDashboardProps = {
   initialRewards?: unknown[];
   stamps?: unknown[];
   rewards?: unknown[];
+  isLoyaltyProgramEnabled?: boolean;
 };
 
 const PAGE_BG =
@@ -523,26 +527,47 @@ function GiftCarouselCard({
   );
 }
 
-function StampRow({ item, index, categoryMap }: { item: ClientStamp; index: number; categoryMap: Map<string, string> }) {
+function StampRow({
+  item,
+  index,
+  categoryMap,
+  isLoyaltyProgramEnabled,
+}: {
+  item: ClientStamp & { category_name?: string; is_active?: boolean | null };
+  index: number;
+  categoryMap: Map<string, string>;
+  isLoyaltyProgramEnabled: boolean;
+}) {
   const count = Math.max(0, Math.min(5, Number((item as AnyRecord).stamp_count ?? 0)));
   const categoryName = extractCategoryName(item, categoryMap, index);
+  const isDisabled = item.is_active === false;
 
   return (
-    <div>
-      <h3 className="text-[18px] font-semibold text-white">{categoryName}</h3>
+    <div className="relative overflow-hidden rounded-[14px]">
+      <div className={isDisabled ? "pointer-events-none blur-[2px] opacity-45" : ""}>
+        <h3 className="text-[18px] font-semibold text-white">{categoryName}</h3>
 
-      <div className="mt-4 flex w-full items-center justify-between gap-2">
-        {Array.from({ length: 5 }).map((_, stampIndex) => {
-          const filled = stampIndex < count;
-          return (
-            <StampStar
-              key={stampIndex}
-              filled={filled}
-              categoryName={categoryName}
-            />
-          );
-        })}
+        <div className="mt-4 flex w-full items-center justify-between gap-2">
+          {Array.from({ length: 5 }).map((_, stampIndex) => {
+            const filled = stampIndex < count;
+            return (
+              <StampStar
+                key={stampIndex}
+                filled={filled}
+                categoryName={categoryName}
+              />
+            );
+          })}
+        </div>
       </div>
+
+      {isDisabled ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-[14px] bg-[#92534C]/55 px-4 text-center backdrop-blur-[2px]">
+          <p className="text-[13px] font-black leading-5 text-white drop-shadow">
+            Sorry, Our Loyalty Card Is Currently Disabled.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -714,6 +739,7 @@ export function ClientDashboard({
   initialRewards,
   stamps,
   rewards,
+  isLoyaltyProgramEnabled = true,
 }: ClientDashboardProps) {
   const router = useRouter();
   const [localRewards, setLocalRewards] = useState<ClientReward[]>((rewards ?? initialRewards ?? []) as ClientReward[]);
@@ -789,7 +815,8 @@ export function ClientDashboard({
             category_id: categoryId || null,
             category_name: categoryName || DEFAULT_CATEGORY_ORDER[index] || "Reward",
             stamp_count: 0,
-          } as ClientStamp & { category_name: string };
+            is_active: record.is_active !== false,
+          } as ClientStamp & { category_name: string; is_active?: boolean | null };
         })
         .filter((row) => normalizeCategoryName((row as AnyRecord).category_name) !== "Reward");
 
@@ -799,7 +826,8 @@ export function ClientDashboard({
       category_name: name,
       stamp_count: 0,
       sort_order: index,
-    })) as Array<ClientStamp & { category_name: string }>;
+      is_active: true,
+    })) as Array<ClientStamp & { category_name: string; is_active?: boolean | null }>;
 
     const baseRows = categoryRows.length > 0 ? categoryRows : fallbackRows;
 
@@ -815,14 +843,16 @@ export function ClientDashboard({
           ...row,
           ...existingRow,
           category_name: categoryName,
-        } as ClientStamp & { category_name: string };
+          is_active: record.is_active !== false,
+        } as ClientStamp & { category_name: string; is_active?: boolean | null };
       }
 
       return {
         ...row,
         category_name: categoryName || DEFAULT_CATEGORY_ORDER[index] || "Reward",
         stamp_count: 0,
-      } as ClientStamp & { category_name: string };
+        is_active: record.is_active !== false,
+      } as ClientStamp & { category_name: string; is_active?: boolean | null };
     });
 
     rawStampRows.forEach((stamp, index) => {
@@ -842,7 +872,7 @@ export function ClientDashboard({
         mergedRows.push({
           ...(stamp as ClientStamp),
           category_name: normalizedName || DEFAULT_CATEGORY_ORDER[index] || "Reward",
-        } as ClientStamp & { category_name: string });
+        } as ClientStamp & { category_name: string; is_active?: boolean | null });
       }
     });
 
@@ -1229,18 +1259,32 @@ export function ClientDashboard({
             <h2 className="text-[22px] font-black leading-none text-white">
               My Stamps
             </h2>
+
+            {!isLoyaltyProgramEnabled ? (
+              <p className="mt-3 text-[14px] font-black leading-5 text-[#f0cf61]">
+                Sorry, Our Loyalty Card Is Currently Disabled.
+              </p>
+            ) : null}
           </div>
 
-          <div
-            className="border border-white/15 px-5 py-5 shadow-[0_22px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl"
-            style={{ borderRadius: 18, background: GLASS_CARD }}
-          >
-            <div className="space-y-6">
-              {stampRows.map((item, index) => (
-                <StampRow key={(item as AnyRecord).category_id || (item as AnyRecord).category_name || (item as AnyRecord).id || index} item={item} index={index} categoryMap={categoryMap} />
-              ))}
+          {isLoyaltyProgramEnabled ? (
+            <div
+              className="border border-white/15 px-5 py-5 shadow-[0_22px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl"
+              style={{ borderRadius: 18, background: GLASS_CARD }}
+            >
+              <div className="space-y-6">
+                {stampRows.map((item, index) => (
+                  <StampRow
+                    key={(item as AnyRecord).category_id || (item as AnyRecord).category_name || (item as AnyRecord).id || index}
+                    item={item}
+                    index={index}
+                    categoryMap={categoryMap}
+                    isLoyaltyProgramEnabled={isLoyaltyProgramEnabled}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
         </section>
         {celebrationReward ? (
           <RewardCelebrationModal
