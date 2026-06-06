@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
-import { QrScanner } from "@/components/QrScanner";
 import { Toast } from "@/components/Toast";
 import { createClient } from "@/lib/supabase/client";
 import type { AddStampResult, ClientStamp, LoyaltyCategory, Profile, Reward } from "@/types";
@@ -22,6 +21,26 @@ type ClaimedReward = Reward & {
 const pageGradient =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
+type Html5QrcodeInstance = {
+  start: (
+    cameraConfig: { facingMode: "environment" } | string,
+    config: {
+      fps?: number;
+      qrbox?: { width: number; height: number };
+      aspectRatio?: number;
+      disableFlip?: boolean;
+    },
+    onSuccess: (decodedText: string) => void,
+    onError?: () => void,
+  ) => Promise<void>;
+  stop: () => Promise<void>;
+  clear: () => Promise<void>;
+};
+
+type WindowWithHtml5Qrcode = Window & {
+  Html5Qrcode?: new (elementId: string, verbose?: boolean) => Html5QrcodeInstance;
+};
+
 type NativeBarcodeDetector = {
   detect: (source: CanvasImageSource) => Promise<Array<{ rawValue?: string }>>;
 };
@@ -34,7 +53,35 @@ type WindowWithBarcodeDetector = Window & {
   BarcodeDetector?: NativeBarcodeDetectorConstructor;
 };
 
-function FastQrScanner({
+const HTML5_QR_SCRIPT_ID = "pros-html5-qrcode-script";
+const HTML5_QR_REGION_ID = "pros-stable-qr-reader";
+
+function loadHtml5QrScript() {
+  return new Promise<void>((resolve, reject) => {
+    if ((window as WindowWithHtml5Qrcode).Html5Qrcode) {
+      resolve();
+      return;
+    }
+
+    const existingScript = document.getElementById(HTML5_QR_SCRIPT_ID) as HTMLScriptElement | null;
+
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(), { once: true });
+      existingScript.addEventListener("error", () => reject(new Error("QR scanner could not load.")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = HTML5_QR_SCRIPT_ID;
+    script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("QR scanner could not load."));
+    document.head.appendChild(script);
+  });
+}
+
+function StableQrScanner({
   onResult,
   onClose,
 }: {
@@ -43,126 +90,257 @@ function FastQrScanner({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const frameRef = useRef<number | null>(null);
+  const nativeFrameRef = useRef<number | null>(null);
+  const html5Ref = useRef<Html5QrcodeInstance | null>(null);
   const lockedRef = useRef(false);
-  const [nativeSupported, setNativeSupported] = useState(true);
+  const nativeActiveRef = useRef(false);
+  const [mode, setMode] = useState<"loading" | "stable" | "native" | "error">("loading");
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
 
-  useEffect(() => {
+  const stopNativeCamera = useCallback(() => {
+    if (nativeFrameRef.current) {
+      cancelAnimationFrame(nativeFrameRef.current);
+      nativeFrameRef.current = null;
+    }
+
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    nativeActiveRef.current = false;
+  }, []);
+
+  const stopHtml5Scanner = useCallback(async () => {
+    const scanner = html5Ref.current;
+    html5Ref.current = null;
+
+    if (!scanner) return;
+
+    try {
+      await scanner.stop();
+    } catch {
+      // Scanner may already be stopped.
+    }
+
+    try {
+      await scanner.clear();
+    } catch {
+      // Some browsers clear automatically after stop.
+    }
+  }, []);
+
+  const finishWithResult = useCallback(
+    async (value: string) => {
+      const cleanValue = value.trim();
+
+      if (!cleanValue || lockedRef.current) return;
+
+      lockedRef.current = true;
+      await stopHtml5Scanner();
+      stopNativeCamera();
+      await onResult(cleanValue);
+    },
+    [onResult, stopHtml5Scanner, stopNativeCamera],
+  );
+
+  const startNativeScanner = useCallback(async () => {
     const BarcodeDetector = (window as WindowWithBarcodeDetector).BarcodeDetector;
 
     if (!BarcodeDetector) {
-      setNativeSupported(false);
+      throw new Error("Native QR scanner is not available on this phone.");
+    }
+
+    const detector = new BarcodeDetector({ formats: ["qr_code"] });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    });
+
+    if (lockedRef.current) {
+      stream.getTracks().forEach((track) => track.stop());
       return;
     }
 
-    let cancelled = false;
-    const detector = new BarcodeDetector({ formats: ["qr_code"] });
+    streamRef.current = stream;
+    nativeActiveRef.current = true;
 
-    function stopCamera() {
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.setAttribute("playsinline", "true");
+      await videoRef.current.play();
     }
 
-    async function scanFrame() {
-      if (cancelled || lockedRef.current) return;
+    setMode("native");
+    setCameraError(null);
 
-      const video = videoRef.current;
+    let lastScanAt = 0;
 
-      if (video && video.readyState >= 2) {
-        try {
-          const codes = await detector.detect(video);
-          const rawValue = codes[0]?.rawValue?.trim();
+    async function scanFrame(now = performance.now()) {
+      if (lockedRef.current || !nativeActiveRef.current) return;
 
-          if (rawValue) {
-            lockedRef.current = true;
-            stopCamera();
-            await onResult(rawValue);
-            return;
+      if (now - lastScanAt >= 280) {
+        lastScanAt = now;
+        const video = videoRef.current;
+
+        if (video && video.readyState >= 2) {
+          try {
+            const codes = await detector.detect(video);
+            const rawValue = codes[0]?.rawValue?.trim();
+
+            if (rawValue) {
+              await finishWithResult(rawValue);
+              return;
+            }
+          } catch {
+            // Keep scanning while the camera focuses.
           }
-        } catch {
-          // Keep scanning while the phone camera is focusing.
         }
       }
 
-      frameRef.current = requestAnimationFrame(() => {
-        void scanFrame();
-      });
+      nativeFrameRef.current = requestAnimationFrame(scanFrame);
     }
 
-    async function openCamera() {
+    nativeFrameRef.current = requestAnimationFrame(scanFrame);
+  }, [finishWithResult]);
+
+  const startStableScanner = useCallback(async () => {
+    stopNativeCamera();
+
+    await loadHtml5QrScript();
+
+    const Html5Qrcode = (window as WindowWithHtml5Qrcode).Html5Qrcode;
+
+    if (!Html5Qrcode) {
+      throw new Error("QR scanner could not start.");
+    }
+
+    const scanner = new Html5Qrcode(HTML5_QR_REGION_ID, false);
+    html5Ref.current = scanner;
+
+    setMode("stable");
+    setCameraError(null);
+
+    await scanner.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: { width: 260, height: 260 },
+        aspectRatio: 1.7777778,
+        disableFlip: true,
+      },
+      (decodedText) => {
+        void finishWithResult(decodedText);
+      },
+      () => {
+        // Ignore decode misses. This keeps the preview stable instead of blinking.
+      },
+    );
+  }, [finishWithResult, stopNativeCamera]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function start() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        });
-
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.setAttribute("playsinline", "true");
-          await videoRef.current.play();
-          setReady(true);
-          void scanFrame();
-        }
+        await startStableScanner();
       } catch (error) {
-        setCameraError(error instanceof Error ? error.message : "Camera could not open.");
+        if (cancelled) return;
+
+        try {
+          await startNativeScanner();
+        } catch (nativeError) {
+          if (cancelled) return;
+
+          const message =
+            nativeError instanceof Error
+              ? nativeError.message
+              : error instanceof Error
+                ? error.message
+                : "Camera could not open.";
+
+          setCameraError(message);
+          setMode("error");
+        }
       }
     }
 
-    void openCamera();
+    void start();
 
     return () => {
       cancelled = true;
-      stopCamera();
+      lockedRef.current = true;
+      void stopHtml5Scanner();
+      stopNativeCamera();
     };
-  }, [onResult]);
+  }, [startNativeScanner, startStableScanner, stopHtml5Scanner, stopNativeCamera]);
 
-  if (!nativeSupported) {
-    return <QrScanner onResult={onResult} onClose={onClose} />;
+  async function switchToNativeMode() {
+    try {
+      setMode("loading");
+      setCameraError(null);
+      await stopHtml5Scanner();
+      await startNativeScanner();
+    } catch (error) {
+      setCameraError(error instanceof Error ? error.message : "Native scanner could not open.");
+      setMode("error");
+    }
+  }
+
+  async function switchToStableMode() {
+    try {
+      setMode("loading");
+      setCameraError(null);
+      stopNativeCamera();
+      await startStableScanner();
+    } catch (error) {
+      setCameraError(error instanceof Error ? error.message : "Stable scanner could not open.");
+      setMode("error");
+    }
   }
 
   return (
     <div className="fixed inset-0 z-[80] bg-black text-white">
-      <video
-        ref={videoRef}
-        muted
-        playsInline
-        className="absolute inset-0 h-full w-full object-cover"
-      />
+      <div className={`absolute inset-0 ${mode === "native" ? "block" : "hidden"}`}>
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          className="h-full w-full object-cover"
+        />
+      </div>
 
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_34%,rgba(0,0,0,0.62)_35%,rgba(0,0,0,0.84)_100%)]" />
+      <div className={`absolute inset-0 ${mode === "stable" || mode === "loading" ? "block" : "hidden"}`}>
+        <div id={HTML5_QR_REGION_ID} className="h-full w-full overflow-hidden bg-black" />
+      </div>
 
-      <div className="absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-[32px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.10)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_34%,rgba(0,0,0,0.56)_35%,rgba(0,0,0,0.84)_100%)]" />
+
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-[32px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.08)]">
         <div className="absolute -left-1 -top-1 h-12 w-12 rounded-tl-[32px] border-l-4 border-t-4 border-white" />
         <div className="absolute -right-1 -top-1 h-12 w-12 rounded-tr-[32px] border-r-4 border-t-4 border-white" />
         <div className="absolute -bottom-1 -left-1 h-12 w-12 rounded-bl-[32px] border-b-4 border-l-4 border-white" />
         <div className="absolute -bottom-1 -right-1 h-12 w-12 rounded-br-[32px] border-b-4 border-r-4 border-white" />
       </div>
 
-      <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-5">
+      <div className="absolute left-0 right-0 top-0 flex items-start justify-between gap-4 p-5">
         <div>
-          <div className="text-[11px] font-black uppercase tracking-[0.28em] text-[#ffd66b]">
-            Fast Scanner
+          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.28em] text-[#ffd66b]">
+            <span className={`h-2.5 w-2.5 rounded-full ${mode === "stable" || mode === "native" ? "bg-emerald-300" : "bg-[#ffd66b]"}`} />
+            QR Scanner
           </div>
           <div className="mt-1 text-[14px] font-black text-white">
-            Point the phone camera at the QR
+            Hold the QR inside the yellow square
+          </div>
+          <div className="mt-1 text-[11px] font-bold text-white/58">
+            {mode === "stable"
+              ? "Stable mode active"
+              : mode === "native"
+                ? "Fast mode active"
+                : mode === "error"
+                  ? "Camera error"
+                  : "Opening camera..."}
           </div>
         </div>
 
@@ -175,22 +353,63 @@ function FastQrScanner({
         </button>
       </div>
 
-      <div className="absolute bottom-8 left-5 right-5 rounded-[24px] border border-white/18 bg-black/38 p-4 text-center backdrop-blur-2xl">
+      <div className="absolute bottom-8 left-5 right-5 rounded-[24px] border border-white/18 bg-black/46 p-4 text-center backdrop-blur-2xl">
         {cameraError ? (
-          <div className="text-[13px] font-bold leading-5 text-red-200">
-            {cameraError}
+          <div className="space-y-3">
+            <div className="text-[13px] font-bold leading-5 text-red-200">
+              {cameraError}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => void switchToStableMode()}
+                className="rounded-full bg-[#ffd66b] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#365665]"
+              >
+                Stable Mode
+              </button>
+              <button
+                type="button"
+                onClick={() => void switchToNativeMode()}
+                className="rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
+              >
+                Fast Mode
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="text-[13px] font-bold leading-5 text-white/82">
-            {ready
-              ? "Scanning with the phone camera. It stops automatically when the QR is found."
-              : "Opening camera..."}
+          <div className="space-y-3">
+            <div className="text-[13px] font-bold leading-5 text-white/82">
+              {mode === "loading"
+                ? "Opening camera..."
+                : "The scanner stays active until it finds a QR code."}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => void switchToStableMode()}
+                className={`rounded-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${
+                  mode === "stable" ? "bg-[#ffd66b] text-[#365665]" : "bg-white/14 text-white"
+                }`}
+              >
+                Stable
+              </button>
+              <button
+                type="button"
+                onClick={() => void switchToNativeMode()}
+                className={`rounded-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${
+                  mode === "native" ? "bg-[#ffd66b] text-[#365665]" : "bg-white/14 text-white"
+                }`}
+              >
+                Fast
+              </button>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
 }
+
 
 function StaffConsole({ profile, categories }: Props) {
   const router = useRouter();
@@ -688,7 +907,7 @@ function StaffConsole({ profile, categories }: Props) {
   return (
     <AppShell title="Staff Console" role={profile.role} pageBackground={pageGradient}>
       <Toast message={toast} tone={toastTone} />
-      {scanning && <FastQrScanner onResult={onScanResult} onClose={() => setScanning(false)} />}
+      {scanning && <StableQrScanner onResult={onScanResult} onClose={() => setScanning(false)} />}
 
       <div className="mx-auto w-full max-w-md px-4 pb-12 pt-5 font-raleway text-white">
         {!client && (
