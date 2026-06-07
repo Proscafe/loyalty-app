@@ -45,6 +45,15 @@ type ClientReward = {
 
 type AnyRecord = Record<string, any>;
 
+type OpenPredictionGame = {
+  id?: string | null;
+  code?: string | null;
+  title?: string | null;
+  label?: string | null;
+  opens_at?: string | null;
+  closes_at?: string | null;
+};
+
 type ClientDashboardProps = {
   profile: Profile;
   categories?: unknown[];
@@ -783,6 +792,7 @@ export function ClientDashboard({
   const qrFrameRef = useRef<number | null>(null);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
+  const [openPredictionGame, setOpenPredictionGame] = useState<OpenPredictionGame | null>(null);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(((rewards ?? initialRewards ?? []) as ClientReward[]).map((reward) => reward.id))
@@ -934,6 +944,47 @@ export function ClientDashboard({
 
   useEffect(() => {
     return () => stopQrScanner();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOpenPredictionGame() {
+      try {
+        const response = await fetch("/api/predictions/open-game", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (isMounted) setOpenPredictionGame(null);
+          return;
+        }
+
+        const payload = (await response.json()) as { match?: OpenPredictionGame | null };
+        const match = payload?.match ?? null;
+        const code = cleanText(match?.code);
+
+        if (isMounted) {
+          setOpenPredictionGame(code ? { ...match, code } : null);
+        }
+      } catch {
+        if (isMounted) setOpenPredictionGame(null);
+      }
+    }
+
+    void loadOpenPredictionGame();
+
+    const interval = window.setInterval(() => {
+      void loadOpenPredictionGame();
+    }, 30000);
+
+    window.addEventListener("focus", loadOpenPredictionGame);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadOpenPredictionGame);
+    };
   }, []);
 
   const categoryMap = useMemo(
@@ -1328,6 +1379,7 @@ export function ClientDashboard({
           </div>
         </section>
 
+        {openPredictionGame ? (
         <section
           className="relative mt-6 overflow-hidden px-4 py-4 shadow-[0_18px_46px_rgba(0,0,0,0.16)]"
           style={{
@@ -1381,6 +1433,8 @@ export function ClientDashboard({
             </button>
           </div>
         </section>
+
+        ) : null}
 
         <section
           role="button"
