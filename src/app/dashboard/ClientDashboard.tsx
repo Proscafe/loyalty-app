@@ -781,7 +781,6 @@ export function ClientDashboard({
   const qrVideoRef = useRef<HTMLVideoElement | null>(null);
   const qrStreamRef = useRef<MediaStream | null>(null);
   const qrFrameRef = useRef<number | null>(null);
-  const qrImageInputRef = useRef<HTMLInputElement | null>(null);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -861,40 +860,76 @@ export function ClientDashboard({
     return false;
   }
 
-  async function handleQrImageCapture(file?: File | null) {
-    if (!file || typeof window === "undefined") return;
+  async function openQrScanner() {
+    if (typeof window === "undefined") return;
+
+    setIsQrScannerOpen(true);
+    setQrScannerStatus("Opening camera...");
 
     const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
 
-    if (!BarcodeDetectorConstructor) {
-      setIsQrScannerOpen(true);
-      setQrScannerStatus(
-        "Your browser opened the camera, but QR reading is not supported here. Please scan with your phone camera app.",
-      );
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setQrScannerStatus("Camera scanning is not supported on this browser. Please use your phone camera app.");
       return;
     }
 
-    setIsQrScannerOpen(true);
-    setQrScannerStatus("Reading QR code...");
-
     try {
+      stopQrScanner();
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      qrStreamRef.current = stream;
+      const video = qrVideoRef.current;
+
+      if (!video) {
+        setQrScannerStatus("Camera is open, but the scanner view is not ready. Please try again.");
+        return;
+      }
+
+      video.srcObject = stream;
+      await video.play();
+
+      if (!BarcodeDetectorConstructor) {
+        setQrScannerStatus(
+          "Camera is open. This browser cannot read QR codes inside the app, so use your phone camera app if scanning does not continue.",
+        );
+        return;
+      }
+
       const detector = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
-      const imageBitmap = await createImageBitmap(file);
-      const barcodes = await detector.detect(imageBitmap);
-      const value = cleanText(barcodes?.[0]?.rawValue);
+      setQrScannerStatus("Point your camera at the QR code.");
 
-      imageBitmap.close?.();
+      const scanFrame = async () => {
+        const activeVideo = qrVideoRef.current;
 
-      if (value && openPredictionLinkFromQr(value)) return;
+        if (!activeVideo || activeVideo.readyState < 2) {
+          qrFrameRef.current = window.requestAnimationFrame(scanFrame);
+          return;
+        }
 
-      setQrScannerStatus("No QR code found. Please try again.");
+        try {
+          const barcodes = await detector.detect(activeVideo);
+          const value = cleanText(barcodes?.[0]?.rawValue);
+
+          if (value && openPredictionLinkFromQr(value)) return;
+        } catch {
+          // Keep scanning; some frames can fail while the camera is adjusting.
+        }
+
+        qrFrameRef.current = window.requestAnimationFrame(scanFrame);
+      };
+
+      qrFrameRef.current = window.requestAnimationFrame(scanFrame);
     } catch {
-      setQrScannerStatus("Could not read the QR code. Please try again.");
+      setQrScannerStatus("Camera permission was blocked. Please allow camera access and try again.");
     }
-  }
-
-  async function openQrScanner() {
-    qrImageInputRef.current?.click();
   }
 
   useEffect(() => {
@@ -1466,19 +1501,6 @@ export function ClientDashboard({
           />
         ) : null}
 
-
-        <input
-          ref={qrImageInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0] ?? null;
-            event.currentTarget.value = "";
-            void handleQrImageCapture(file);
-          }}
-        />
 
         {isQrScannerOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-5 backdrop-blur-sm">
