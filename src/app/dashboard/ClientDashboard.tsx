@@ -527,6 +527,36 @@ function GiftCarouselCard({
   );
 }
 
+
+function DisabledLoyaltyProgramCard() {
+  return (
+    <div
+      className="relative overflow-hidden rounded-[10px] bg-[#626262] px-4 py-4 shadow-[0_18px_42px_rgba(0,0,0,0.16)]"
+      style={{ minHeight: 246 }}
+    >
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: "url('/Disabled.gif')",
+          backgroundSize: "cover",
+          backgroundPosition: "center bottom",
+          backgroundRepeat: "no-repeat",
+          opacity: 0.3,
+        }}
+        aria-hidden="true"
+      />
+
+      <div className="relative z-10 max-w-[300px] pt-1">
+        <h3 className="font-raleway text-[22px] font-black leading-[1.18] text-white drop-shadow-sm">
+          Sorry, the loyalty program
+          <br />
+          <span className="text-[#f0cf61]">is currently disabled.</span>
+        </h3>
+      </div>
+    </div>
+  );
+}
+
 function StampRow({
   item,
   index,
@@ -748,6 +778,12 @@ export function ClientDashboard({
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState<string | null>(null);
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+  const qrVideoRef = useRef<HTMLVideoElement | null>(null);
+  const qrStreamRef = useRef<MediaStream | null>(null);
+  const qrFrameRef = useRef<number | null>(null);
+  const qrImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(((rewards ?? initialRewards ?? []) as ClientReward[]).map((reward) => reward.id))
@@ -779,6 +815,91 @@ export function ClientDashboard({
       document.removeEventListener("visibilitychange", refreshWhenActive);
     };
   }, [router]);
+
+  function stopQrScanner() {
+    if (qrFrameRef.current !== null) {
+      window.cancelAnimationFrame(qrFrameRef.current);
+      qrFrameRef.current = null;
+    }
+
+    qrStreamRef.current?.getTracks().forEach((track) => track.stop());
+    qrStreamRef.current = null;
+  }
+
+  function closeQrScanner() {
+    stopQrScanner();
+    setIsQrScannerOpen(false);
+    setQrScannerStatus(null);
+  }
+
+  function openPredictionLinkFromQr(value: string) {
+    const scanned = cleanText(value);
+    if (!scanned) return false;
+
+    try {
+      const url = new URL(scanned, window.location.origin);
+      const path = `${url.pathname}${url.search}${url.hash}`;
+
+      if (url.pathname.startsWith("/predict/")) {
+        closeQrScanner();
+        router.push(path);
+        return true;
+      }
+    } catch {
+      // Continue with plain-text parsing below.
+    }
+
+    const predictMatch = scanned.match(/(?:^|\/)predict\/([A-Za-z0-9_-]+)/);
+    const code = predictMatch?.[1] || (scanned.length <= 64 ? scanned : "");
+
+    if (code) {
+      closeQrScanner();
+      router.push(`/predict/${encodeURIComponent(code)}`);
+      return true;
+    }
+
+    return false;
+  }
+
+  async function handleQrImageCapture(file?: File | null) {
+    if (!file || typeof window === "undefined") return;
+
+    const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
+
+    if (!BarcodeDetectorConstructor) {
+      setIsQrScannerOpen(true);
+      setQrScannerStatus(
+        "Your browser opened the camera, but QR reading is not supported here. Please scan with your phone camera app.",
+      );
+      return;
+    }
+
+    setIsQrScannerOpen(true);
+    setQrScannerStatus("Reading QR code...");
+
+    try {
+      const detector = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
+      const imageBitmap = await createImageBitmap(file);
+      const barcodes = await detector.detect(imageBitmap);
+      const value = cleanText(barcodes?.[0]?.rawValue);
+
+      imageBitmap.close?.();
+
+      if (value && openPredictionLinkFromQr(value)) return;
+
+      setQrScannerStatus("No QR code found. Please try again.");
+    } catch {
+      setQrScannerStatus("Could not read the QR code. Please try again.");
+    }
+  }
+
+  async function openQrScanner() {
+    qrImageInputRef.current?.click();
+  }
+
+  useEffect(() => {
+    return () => stopQrScanner();
+  }, []);
 
   const categoryMap = useMemo(
     () => makeCategoryMap((categories ?? []) as LoyaltyCategory[]),
@@ -1173,6 +1294,60 @@ export function ClientDashboard({
         </section>
 
         <section
+          className="relative mt-6 overflow-hidden px-4 py-4 shadow-[0_18px_46px_rgba(0,0,0,0.16)]"
+          style={{
+            borderRadius: 24,
+            background: "#e8cb5f",
+            minHeight: 136,
+          }}
+        >
+          <div className="relative z-10 flex items-center justify-between gap-3">
+            <div className="min-w-0 pl-1 pr-1">
+              <h2 className="font-raleway text-[25px] font-black leading-[1.05] tracking-[-0.03em] text-black">
+                Look up. Scan. Play.
+              </h2>
+              <p className="mt-2 max-w-[205px] font-raleway text-[15px] font-medium leading-[1.25] tracking-[-0.01em] text-black/95">
+                Scan the QR code on the screens to join the game.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void openQrScanner()}
+              className="flex h-[104px] w-[104px] shrink-0 flex-col items-center justify-center rounded-[12px] bg-white px-2 text-black shadow-[0_10px_24px_rgba(0,0,0,0.10)] active:scale-[0.98]"
+              aria-label="Scan QR"
+            >
+              <svg
+                viewBox="0 0 64 64"
+                aria-hidden="true"
+                className="h-[50px] w-[50px] text-[#263746]"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M8 22V10h12" />
+                <path d="M44 10h12v12" />
+                <path d="M56 42v12H44" />
+                <path d="M20 54H8V42" />
+                <path d="M18 18h8v8h-8z" />
+                <path d="M38 18h8v8h-8z" />
+                <path d="M18 38h8v8h-8z" />
+                <path d="M36 38h4" />
+                <path d="M46 38h2" />
+                <path d="M38 46h10" />
+                <path d="M32 18v10" />
+                <path d="M32 38v8" />
+              </svg>
+              <span className="mt-1 whitespace-nowrap font-raleway text-[14px] font-black leading-none tracking-[-0.02em]">
+                Scan QR
+              </span>
+            </button>
+          </div>
+        </section>
+
+        <section
           role="button"
           tabIndex={0}
           onClick={() => router.push("/world-cup")}
@@ -1259,12 +1434,6 @@ export function ClientDashboard({
             <h2 className="text-[22px] font-black leading-none text-white">
               My Stamps
             </h2>
-
-            {!isLoyaltyProgramEnabled ? (
-              <p className="mt-3 text-[14px] font-black leading-5 text-[#f0cf61]">
-                Sorry, Our Loyalty Card Is Currently Disabled.
-              </p>
-            ) : null}
           </div>
 
           {isLoyaltyProgramEnabled ? (
@@ -1284,7 +1453,9 @@ export function ClientDashboard({
                 ))}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <DisabledLoyaltyProgramCard />
+          )}
         </section>
         {celebrationReward ? (
           <RewardCelebrationModal
@@ -1293,6 +1464,60 @@ export function ClientDashboard({
             onClose={() => setCelebrationReward(null)}
             onClaim={handleClaim}
           />
+        ) : null}
+
+
+        <input
+          ref={qrImageInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0] ?? null;
+            event.currentTarget.value = "";
+            void handleQrImageCapture(file);
+          }}
+        />
+
+        {isQrScannerOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-5 backdrop-blur-sm">
+            <div className="w-full max-w-sm overflow-hidden rounded-[24px] border border-white/15 bg-[#1c2530] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[12px] font-black uppercase tracking-[0.18em] text-[#f0cf61]">
+                    Scan QR
+                  </div>
+                  <div className="mt-1 text-[18px] font-black text-white">
+                    Join the game
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeQrScanner}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-[20px] font-black text-white"
+                  aria-label="Close QR scanner"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="overflow-hidden rounded-[18px] bg-black">
+                <video
+                  ref={qrVideoRef}
+                  className="h-[320px] w-full object-cover"
+                  muted
+                  playsInline
+                />
+              </div>
+
+              {qrScannerStatus ? (
+                <p className="mt-3 text-center text-[13px] font-bold leading-5 text-white/75">
+                  {qrScannerStatus}
+                </p>
+              ) : null}
+            </div>
+          </div>
         ) : null}
 
         {isFeedbackOpen ? (
