@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import tls from "tls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,20 @@ type BirthdayCategory = {
 
 type BirthdayProfile = {
   id: string;
-  birthday: string | null;
+  birthday?: string | null;
+  birth_date?: string | null;
+  date_of_birth?: string | null;
+  dob?: string | null;
+  name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+};
+
+type BirthdayEmailResult = {
+  attempted: boolean;
+  sent: boolean;
+  to: string | null;
+  error: string | null;
 };
 
 function isBirthdayToday(birthday?: string | null) {
@@ -41,6 +55,23 @@ function isBirthdayToday(birthday?: string | null) {
   return today.getMonth() === parsed.getMonth() && today.getDate() === parsed.getDate();
 }
 
+function getBirthdayValue(profile: BirthdayProfile | null) {
+  if (!profile) return null;
+  return profile.birthday ?? profile.birth_date ?? profile.date_of_birth ?? profile.dob ?? null;
+}
+
+function getProfileName(profile: BirthdayProfile | null, fallbackEmail?: string | null) {
+  const name = String(profile?.name ?? profile?.full_name ?? "").trim();
+  if (name) return name;
+
+  const emailName = String(fallbackEmail ?? "").split("@")[0]?.trim();
+  return emailName || "Customer";
+}
+
+function getProfileEmail(profile: BirthdayProfile | null, fallbackEmail?: string | null) {
+  return String(profile?.email ?? fallbackEmail ?? "").trim().toLowerCase() || null;
+}
+
 function getAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -59,6 +90,183 @@ function startOfTodayIso() {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
   return date.toISOString();
+}
+
+function encodeHeader(value: string) {
+  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+}
+
+function encodeBody(value: string) {
+  return Buffer.from(value, "utf8")
+    .toString("base64")
+    .replace(/.{1,76}/g, "$&\r\n")
+    .trim();
+}
+
+function escapeSmtpData(value: string) {
+  return value.replace(/\r?\n\./g, "\r\n..");
+}
+
+function readSmtpResponse(socket: tls.TLSSocket) {
+  return new Promise<string>((resolve, reject) => {
+    let buffer = "";
+
+    const cleanup = () => {
+      socket.off("data", onData);
+      socket.off("error", onError);
+    };
+
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const onData = (chunk: Buffer) => {
+      buffer += chunk.toString("utf8");
+      const lines = buffer.split(/\r?\n/).filter(Boolean);
+      const lastLine = lines[lines.length - 1] ?? "";
+
+      if (/^\d{3}\s/.test(lastLine)) {
+        cleanup();
+        resolve(buffer);
+      }
+    };
+
+    socket.on("data", onData);
+    socket.on("error", onError);
+  });
+}
+
+async function sendSmtpCommand(socket: tls.TLSSocket, command: string, expectedCodes: number[]) {
+  socket.write(`${command}\r\n`);
+  const response = await readSmtpResponse(socket);
+  const code = Number(response.slice(0, 3));
+
+  if (!expectedCodes.includes(code)) {
+    throw new Error(response.trim());
+  }
+
+  return response;
+}
+
+async function sendGmailEmail({
+  to,
+  subject,
+  text,
+}: {
+  to: string;
+  subject: string;
+  text: string;
+}) {
+  const gmailUser =
+    process.env.GMAIL_SMTP_USER?.trim() || process.env.GMAIL_USER?.trim() || "";
+  const gmailPassword =
+    process.env.GMAIL_SMTP_APP_PASSWORD?.trim() ||
+    process.env.GMAIL_APP_PASSWORD?.trim() ||
+    "";
+
+  if (!gmailUser || !gmailPassword) {
+    throw new Error(
+      "Birthday email is not configured. Add GMAIL_SMTP_USER/GMAIL_SMTP_APP_PASSWORD or GMAIL_USER/GMAIL_APP_PASSWORD.",
+    );
+  }
+
+  const socket = tls.connect({
+    host: "smtp.gmail.com",
+    port: 465,
+    servername: "smtp.gmail.com",
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    socket.once("secureConnect", () => resolve());
+    socket.once("error", reject);
+  });
+
+  try {
+    await readSmtpResponse(socket);
+    await sendSmtpCommand(socket, "EHLO proscafe.net", [250]);
+    await sendSmtpCommand(socket, "AUTH LOGIN", [334]);
+    await sendSmtpCommand(socket, Buffer.from(gmailUser).toString("base64"), [334]);
+    await sendSmtpCommand(socket, Buffer.from(gmailPassword).toString("base64"), [235]);
+    await sendSmtpCommand(socket, `MAIL FROM:<${gmailUser}>`, [250]);
+    await sendSmtpCommand(socket, `RCPT TO:<${to}>`, [250, 251]);
+    await sendSmtpCommand(socket, "DATA", [354]);
+
+    const message = [
+      `From: Pro's Cafe <${gmailUser}>`,
+      `To: ${to}`,
+      `Subject: ${encodeHeader(subject)}`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      encodeBody(text),
+    ].join("\r\n");
+
+    socket.write(`${escapeSmtpData(message)}\r\n.\r\n`);
+    const dataResponse = await readSmtpResponse(socket);
+    const dataCode = Number(dataResponse.slice(0, 3));
+
+    if (dataCode !== 250) {
+      throw new Error(dataResponse.trim());
+    }
+
+    await sendSmtpCommand(socket, "QUIT", [221]);
+  } finally {
+    socket.end();
+  }
+}
+
+function getBirthdayEmailText(customerName: string, giftName: string) {
+  return `Happy Birthday ${customerName} 🎉
+
+Pro's Cafe has a special gift for you: ${giftName}.
+
+Login to proscafe.net to claim it.
+
+Claim it on your next visit.
+Valid for 30 days.`;
+}
+
+async function sendBirthdayGiftEmail({
+  to,
+  customerName,
+  giftName,
+}: {
+  to: string | null;
+  customerName: string;
+  giftName: string;
+}): Promise<BirthdayEmailResult> {
+  if (!to) {
+    return {
+      attempted: false,
+      sent: false,
+      to: null,
+      error: "No email found for this customer.",
+    };
+  }
+
+  try {
+    await sendGmailEmail({
+      to,
+      subject: "Happy Birthday from Pro's Cafe",
+      text: getBirthdayEmailText(customerName, giftName),
+    });
+
+    return {
+      attempted: true,
+      sent: true,
+      to,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      attempted: true,
+      sent: false,
+      to,
+      error: error instanceof Error ? error.message : "Birthday email failed.",
+    };
+  }
 }
 
 async function findBirthdayCategoryId(db: any) {
@@ -112,7 +320,7 @@ export async function POST(req: Request) {
 
   const { data: profile, error: profileError } = await db
     .from("profiles")
-    .select("id, birthday")
+    .select("*")
     .eq("id", user.id)
     .single();
 
@@ -122,10 +330,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "profile_not_found" }, { status: 404 });
   }
 
-  if (!isBirthdayToday(birthdayProfile.birthday)) {
+  if (!isBirthdayToday(getBirthdayValue(birthdayProfile))) {
     return NextResponse.json({ error: "birthday_not_today" }, { status: 403 });
   }
 
+  const customerEmail = getProfileEmail(birthdayProfile, user.email);
+  const customerName = getProfileName(birthdayProfile, customerEmail);
   const todayStart = startOfTodayIso();
 
   const { data: existing } = await db
@@ -149,10 +359,24 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: updateError.message }, { status: 400 });
       }
 
-      return NextResponse.json({ reward: updated });
+      const email = await sendBirthdayGiftEmail({
+        to: customerEmail,
+        customerName,
+        giftName: rewardType,
+      });
+
+      return NextResponse.json({ reward: updated, email });
     }
 
-    return NextResponse.json({ reward: existing });
+    return NextResponse.json({
+      reward: existing,
+      email: {
+        attempted: false,
+        sent: false,
+        to: customerEmail,
+        error: "Birthday gift was already claimed today, so no duplicate email was sent.",
+      },
+    });
   }
 
   const categoryId = await findBirthdayCategoryId(db);
@@ -179,5 +403,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: insertError.message }, { status: 400 });
   }
 
-  return NextResponse.json({ reward });
+  const email = await sendBirthdayGiftEmail({
+    to: customerEmail,
+    customerName,
+    giftName: rewardType,
+  });
+
+  return NextResponse.json({ reward, email });
 }

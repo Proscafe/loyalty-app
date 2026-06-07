@@ -411,8 +411,6 @@ export function GameLinkDetailsClient({
       : correctPredictionEntries.slice(0, 3);
   }, [correctPredictionEntries, selectedWinnerIds]);
 
-  const visibleFeaturedWinners = savedWinnersLoaded ? featuredWinners : [];
-
   useEffect(() => {
     const validClientIds = new Set(
       correctPredictionEntries.map((entry) => entry.client_id),
@@ -761,16 +759,15 @@ export function GameLinkDetailsClient({
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={randomizeThreeGiftWinners}
                     disabled={correctPredictionEntries.length === 0}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#ffd66b]/70 bg-white/10 text-[18px] font-black text-[#ffd66b] transition hover:bg-[#ffd66b] hover:text-[#365665] disabled:opacity-45"
-                    title="Shuffle and save 3 winners"
-                    aria-label="Shuffle and save 3 winners"
+                    className="rounded-full border border-[#ffd66b]/70 bg-white/10 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#ffd66b] disabled:opacity-45"
+                    title="Randomly select 3 users from right-team predictions"
                   >
-                    ⇄
+                    Randomize 3
                   </button>
                   <button
                     type="button"
@@ -794,7 +791,7 @@ export function GameLinkDetailsClient({
               </div>
 
               <div className="mt-3 grid gap-3 lg:grid-cols-3">
-                {visibleFeaturedWinners.map((entry, index) => {
+                {featuredWinners.map((entry, index) => {
                   const profile = profileNames[entry.client_id];
                   const selected = selectedWinnerIds.includes(entry.client_id);
                   const colors = [
@@ -825,11 +822,7 @@ export function GameLinkDetailsClient({
                   );
                 })}
 
-                {!savedWinnersLoaded ? (
-                  <div className="rounded-[22px] border border-white/16 bg-white/10 p-4 text-[13px] font-bold text-white/60 lg:col-span-3">
-                    Loading saved winners...
-                  </div>
-                ) : visibleFeaturedWinners.length === 0 ? (
+                {featuredWinners.length === 0 ? (
                   <div className="rounded-[22px] border border-white/16 bg-white/10 p-4 text-[13px] font-bold text-white/60 lg:col-span-3">
                     No correct predictions yet.
                   </div>
