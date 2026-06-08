@@ -79,18 +79,26 @@ function UniversalStableQrScanner({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const frameRef = useRef<number | null>(null);
+  const scanTimerRef = useRef<number | null>(null);
   const lockedRef = useRef(false);
+  const detectorRef = useRef<any>(null);
   const [status, setStatus] = useState("Opening camera...");
 
   const stopCamera = useCallback(() => {
-    if (frameRef.current !== null) {
-      window.cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
+    if (scanTimerRef.current !== null) {
+      window.clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.srcObject = null;
     }
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    detectorRef.current = null;
   }, []);
 
   const closeScanner = useCallback(() => {
@@ -104,11 +112,17 @@ function UniversalStableQrScanner({
       if (!cleanValue || lockedRef.current) return;
 
       lockedRef.current = true;
+      setStatus("QR found. Opening customer...");
       stopCamera();
       await onResult(cleanValue);
     },
     [onResult, stopCamera],
   );
+
+  const scheduleNextScan = useCallback((callback: () => void) => {
+    if (lockedRef.current) return;
+    scanTimerRef.current = window.setTimeout(callback, 450);
+  }, []);
 
   const startCamera = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -126,8 +140,8 @@ function UniversalStableQrScanner({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 960 },
+          height: { ideal: 540 },
         },
         audio: false,
       });
@@ -141,6 +155,8 @@ function UniversalStableQrScanner({
       }
 
       video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      video.muted = true;
       await video.play();
 
       const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
@@ -150,14 +166,17 @@ function UniversalStableQrScanner({
         return;
       }
 
-      const detector = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
+      detectorRef.current = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
       setStatus("Point your camera at the QR code.");
 
       const scanFrame = async () => {
         const activeVideo = videoRef.current;
+        const detector = detectorRef.current;
 
-        if (!activeVideo || activeVideo.readyState < 2) {
-          frameRef.current = window.requestAnimationFrame(scanFrame);
+        if (lockedRef.current || !activeVideo || !detector) return;
+
+        if (activeVideo.readyState < 2) {
+          scheduleNextScan(scanFrame);
           return;
         }
 
@@ -170,17 +189,17 @@ function UniversalStableQrScanner({
             return;
           }
         } catch {
-          // Some frames fail while the camera is focusing. Keep scanning.
+          // Keep the live camera open. Some frames fail while the phone is focusing.
         }
 
-        frameRef.current = window.requestAnimationFrame(scanFrame);
+        scheduleNextScan(scanFrame);
       };
 
-      frameRef.current = window.requestAnimationFrame(scanFrame);
+      scheduleNextScan(scanFrame);
     } catch {
       setStatus("Camera permission was blocked. Please allow camera access and try again.");
     }
-  }, [finishWithResult, stopCamera]);
+  }, [finishWithResult, scheduleNextScan, stopCamera]);
 
   useEffect(() => {
     void startCamera();
@@ -216,6 +235,7 @@ function UniversalStableQrScanner({
             className="h-[320px] w-full object-cover"
             muted
             playsInline
+            autoPlay
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="h-[210px] w-[210px] rounded-[28px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.18)]">
