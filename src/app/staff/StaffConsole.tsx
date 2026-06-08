@@ -81,6 +81,7 @@ function UniversalStableQrScanner({
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const lockedRef = useRef(false);
+  const startedRef = useRef(false);
   const detectorRef = useRef<any>(null);
   const [status, setStatus] = useState("Opening camera...");
 
@@ -99,6 +100,7 @@ function UniversalStableQrScanner({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     detectorRef.current = null;
+    startedRef.current = false;
   }, []);
 
   const closeScanner = useCallback(() => {
@@ -126,10 +128,11 @@ function UniversalStableQrScanner({
 
   const startCamera = useCallback(async () => {
     if (typeof window === "undefined") return;
+    if (startedRef.current) return;
 
+    startedRef.current = true;
     lockedRef.current = false;
     setStatus("Opening camera...");
-    stopCamera();
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("Camera scanning is not supported on this browser.");
@@ -197,9 +200,10 @@ function UniversalStableQrScanner({
 
       scheduleNextScan(scanFrame);
     } catch {
+      startedRef.current = false;
       setStatus("Camera permission was blocked. Please allow camera access and try again.");
     }
-  }, [finishWithResult, scheduleNextScan, stopCamera]);
+  }, [finishWithResult, scheduleNextScan]);
 
   useEffect(() => {
     void startCamera();
