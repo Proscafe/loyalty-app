@@ -199,7 +199,7 @@ const TABS = [
   "Birthdays",
   "Comment Cards",
   "Loyalty Program",
-  "Game Links",
+  "Create Game",
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -432,6 +432,7 @@ function MobileAdminDashboard({
     away_team: "",
     venue: "",
     match_label: "",
+    tournament_id: "",
     kickoff_at: "",
     opens_at: "",
     closes_at: "",
@@ -494,6 +495,9 @@ function MobileAdminDashboard({
             matches?: Array<{
               id: string;
               sport_type?: string | null;
+              tournament_id?: string | null;
+              tournament_name?: string | null;
+              prediction_tournaments?: { id?: string | null; name?: string | null } | null;
               home_team: string | null;
               away_team: string | null;
               secret_code: string;
@@ -604,6 +608,7 @@ function MobileAdminDashboard({
         away_team: "",
         venue: "",
         match_label: "",
+        tournament_id: "",
         kickoff_at: "",
         opens_at: "",
         closes_at: "",
@@ -1369,7 +1374,7 @@ function MobileAdminDashboard({
           </section>
         )}
 
-        {tab === "Game Links" && (
+        {tab === "Create Game" && (
           <section className="mb-12 space-y-4">
             <div
               className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
@@ -3531,6 +3536,7 @@ function DesktopAdminDashboard({
     away_team: "",
     venue: "",
     match_label: "",
+    tournament_id: "",
     kickoff_at: "",
     opens_at: "",
     closes_at: "",
@@ -3541,6 +3547,16 @@ function DesktopAdminDashboard({
   });
   const [gameSaving, setGameSaving] = useState(false);
   const [gameCreateOpen, setGameCreateOpen] = useState(false);
+  const [tournamentPopupOpen, setTournamentPopupOpen] = useState(false);
+  const [tournamentDeleteId, setTournamentDeleteId] = useState<string | null>(null);
+  const [tournamentSaving, setTournamentSaving] = useState(false);
+  const [tournamentForm, setTournamentForm] = useState({ name: "", sport_type: "basketball" as "football" | "basketball" });
+  const [predictionTournaments, setPredictionTournaments] = useState<
+    Array<{ id: string; name: string; sport_type: "football" | "basketball"; created_at?: string | null }>
+  >([]);
+  const [gameDateFilter, setGameDateFilter] = useState<"all" | "today" | "week" | "month">("all");
+  const [gameSportFilter, setGameSportFilter] = useState<"all" | "football" | "basketball">("all");
+  const [gameTournamentFilter, setGameTournamentFilter] = useState("all");
   const [gameSort, setGameSort] = useState<{
     key: "sport" | "match" | "date" | "status" | "players";
     direction: "asc" | "desc";
@@ -3557,6 +3573,8 @@ function DesktopAdminDashboard({
       closesAt: string | null;
       status: string;
       players: number;
+      tournamentId?: string | null;
+      tournamentName?: string | null;
     }>
   >([]);
 
@@ -4219,6 +4237,18 @@ function DesktopAdminDashboard({
     });
   }
 
+  const gameTournamentOptions = useMemo(
+    () => predictionTournaments.filter((tournament) => tournament.sport_type === gameKind),
+    [gameKind, predictionTournaments],
+  );
+
+  useEffect(() => {
+    if (!gameForm.tournament_id) return;
+    const selected = predictionTournaments.find((tournament) => tournament.id === gameForm.tournament_id);
+    if (selected && selected.sport_type === gameKind) return;
+    setGameForm((current) => ({ ...current, tournament_id: "" }));
+  }, [gameForm.tournament_id, gameKind, predictionTournaments]);
+
   async function copyGamePredictionLink(code: string) {
     await navigator.clipboard.writeText(predictionLinkFor(code));
     flash("Game link copied.");
@@ -4250,6 +4280,82 @@ function DesktopAdminDashboard({
     }
   }
 
+  async function refreshPredictionTournaments() {
+    try {
+      const response = await fetch("/api/admin/prediction-tournaments", { method: "GET" });
+      const text = await response.text();
+      const json = text
+        ? (JSON.parse(text) as {
+            tournaments?: Array<{ id: string; name: string; sport_type: "football" | "basketball"; created_at?: string | null }>;
+            error?: string;
+          })
+        : {};
+
+      if (!response.ok) {
+        flash(json.error ?? "Could not load tournaments.", "error");
+        return;
+      }
+
+      setPredictionTournaments(json.tournaments ?? []);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not load tournaments.", "error");
+    }
+  }
+
+  async function createPredictionTournament() {
+    const name = tournamentForm.name.trim();
+    if (!name) {
+      flash("Tournament name is required.", "error");
+      return;
+    }
+
+    setTournamentSaving(true);
+    try {
+      const response = await fetch("/api/admin/prediction-tournaments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, sport_type: tournamentForm.sport_type }),
+      });
+      const text = await response.text();
+      const json = text ? (JSON.parse(text) as { tournament?: { id: string; name: string; sport_type: "football" | "basketball" }; error?: string }) : {};
+
+      if (!response.ok || !json.tournament) {
+        flash(json.error ?? "Could not create tournament.", "error");
+        return;
+      }
+
+      setPredictionTournaments((current) => [json.tournament!, ...current]);
+      setTournamentForm({ name: "", sport_type: tournamentForm.sport_type });
+      flash("Tournament created.");
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not create tournament.", "error");
+    } finally {
+      setTournamentSaving(false);
+    }
+  }
+
+  async function deletePredictionTournament(id: string) {
+    try {
+      const response = await fetch(`/api/admin/prediction-tournaments?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const text = await response.text();
+      const json = text ? (JSON.parse(text) as { success?: boolean; error?: string }) : {};
+
+      if (!response.ok || !json.success) {
+        flash(json.error ?? "Could not delete tournament.", "error");
+        return;
+      }
+
+      setPredictionTournaments((current) => current.filter((tournament) => tournament.id !== id));
+      setTournamentDeleteId(null);
+      setGameForm((current) => current.tournament_id === id ? { ...current, tournament_id: "" } : current);
+      setGameTournamentFilter((current) => current === id ? "all" : current);
+      await refreshDesktopGameLinks();
+      flash("Tournament deleted.");
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not delete tournament.", "error");
+    }
+  }
+
   async function refreshDesktopGameLinks() {
     try {
       const response = await fetch("/api/admin/prediction-matches", {
@@ -4261,6 +4367,9 @@ function DesktopAdminDashboard({
             matches?: Array<{
               id: string;
               sport_type?: string | null;
+              tournament_id?: string | null;
+              tournament_name?: string | null;
+              prediction_tournaments?: { id?: string | null; name?: string | null } | null;
               home_team: string | null;
               away_team: string | null;
               secret_code: string;
@@ -4312,6 +4421,8 @@ function DesktopAdminDashboard({
             closesAt: match.closes_at ?? null,
             status,
             players: Number(match.entries_count ?? 0),
+            tournamentId: match.tournament_id ?? match.prediction_tournaments?.id ?? null,
+            tournamentName: match.tournament_name ?? match.prediction_tournaments?.name ?? null,
           };
         }),
       );
@@ -4335,6 +4446,7 @@ function DesktopAdminDashboard({
       gameKind === "basketball"
         ? {
             ...gameForm,
+            tournament_id: gameForm.tournament_id || null,
             sport_type: "basketball",
             match_label: gameForm.match_label.trim() || "Basket",
             venue:
@@ -4345,6 +4457,7 @@ function DesktopAdminDashboard({
           }
         : {
             ...gameForm,
+            tournament_id: gameForm.tournament_id || null,
             sport_type: "football",
             match_label: gameForm.match_label.trim() || "World Cup",
             home_score: "",
@@ -4382,6 +4495,7 @@ function DesktopAdminDashboard({
         away_team: "",
         venue: "",
         match_label: "",
+        tournament_id: "",
         kickoff_at: "",
         opens_at: "",
         closes_at: "",
@@ -4535,6 +4649,7 @@ function DesktopAdminDashboard({
       }
 
       void refreshDesktopGameLinks();
+      void refreshPredictionTournaments();
 
       const ids = Array.from(
         new Set(
@@ -5825,8 +5940,33 @@ function DesktopAdminDashboard({
 
   const sortedGameLinks = useMemo(() => {
     const direction = gameSort.direction === "asc" ? 1 : -1;
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfTomorrow = startOfToday + 24 * 60 * 60 * 1000;
+    const startOfWeekDate = new Date(now);
+    const day = startOfWeekDate.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    startOfWeekDate.setDate(startOfWeekDate.getDate() + mondayOffset);
+    startOfWeekDate.setHours(0, 0, 0, 0);
+    const startOfWeek = startOfWeekDate.getTime();
+    const endOfWeek = startOfWeek + 7 * 24 * 60 * 60 * 1000;
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
 
-    return createdGameLinks.slice().sort((a, b) => {
+    const filtered = createdGameLinks.filter((game) => {
+      if (gameSportFilter !== "all" && game.sport.toLowerCase() !== gameSportFilter) return false;
+      if (gameTournamentFilter !== "all" && game.tournamentId !== gameTournamentFilter) return false;
+
+      if (gameDateFilter === "all") return true;
+      const time = new Date(game.kickoff ?? "").getTime();
+      if (!Number.isFinite(time)) return false;
+      if (gameDateFilter === "today") return time >= startOfToday && time < startOfTomorrow;
+      if (gameDateFilter === "week") return time >= startOfWeek && time < endOfWeek;
+      if (gameDateFilter === "month") return time >= startOfMonth && time < endOfMonth;
+      return true;
+    });
+
+    return filtered.slice().sort((a, b) => {
       const compareText = (first: string, second: string) =>
         first.localeCompare(second) * direction;
 
@@ -5842,7 +5982,7 @@ function DesktopAdminDashboard({
         direction
       );
     });
-  }, [createdGameLinks, gameSort]);
+  }, [createdGameLinks, gameDateFilter, gameSort, gameSportFilter, gameTournamentFilter]);
 
   function sortGames(key: "sport" | "match" | "date" | "status" | "players") {
     setGameSort((current) => ({
@@ -9635,35 +9775,90 @@ function DesktopAdminDashboard({
               </section>
             ) : null}
 
-            {tab === "Game Links" ? (
+            {tab === "Create Game" ? (
               <section className="space-y-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="text-[26px] font-black tracking-[-0.04em] text-white">
-                      Created Games
+                      Create Game
                     </h2>
                     <p className="mt-1 text-[12px] font-bold text-white/65">
                       Manage links, QR codes, players, scores, and leaderboards.
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setGameCreateOpen(true)}
-                    className="rounded-full bg-[#ffd66b] px-6 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]"
-                  >
-                    Create Link
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTournamentPopupOpen(true)}
+                      className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20"
+                    >
+                      Add Tournament
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGameCreateOpen(true)}
+                      className="rounded-full bg-[#ffd66b] px-6 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]"
+                    >
+                      Create Link
+                    </button>
+                  </div>
                 </div>
 
                 <Panel className="!p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {([
+                        ["all", "Show all"],
+                        ["today", "Today"],
+                        ["week", "This week"],
+                        ["month", "This month"],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setGameDateFilter(value)}
+                          className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${
+                            gameDateFilter === value
+                              ? "bg-[#ffd66b] text-[#365665]"
+                              : "bg-white/10 text-white/70 hover:bg-white/16 hover:text-[#ffd66b]"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={gameSportFilter}
+                        onChange={(event) => setGameSportFilter(event.target.value as "all" | "football" | "basketball")}
+                        className="h-10 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none"
+                      >
+                        <option value="all">All sports</option>
+                        <option value="football">Football</option>
+                        <option value="basketball">Basketball</option>
+                      </select>
+                      <select
+                        value={gameTournamentFilter}
+                        onChange={(event) => setGameTournamentFilter(event.target.value)}
+                        className="h-10 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none"
+                      >
+                        <option value="all">All tournaments</option>
+                        {predictionTournaments.map((tournament) => (
+                          <option key={tournament.id} value={tournament.id}>
+                            {tournament.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   {sortedGameLinks.length === 0 ? (
                     <p className="rounded-[18px] border border-white/18 bg-white/10 p-4 text-[13px] font-bold text-white/70">
                       No created games yet.
                     </p>
                   ) : (
                     <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/8">
-                      <div className="grid grid-cols-[0.75fr_1.45fr_0.95fr_0.75fr_0.55fr_0.52fr_0.52fr_0.52fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+                      <div className="grid grid-cols-[0.7fr_1fr_1.35fr_0.9fr_0.7fr_0.5fr_0.48fr_0.48fr_0.48fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
                         <button
                           type="button"
                           onClick={() => sortGames("sport")}
@@ -9671,6 +9866,7 @@ function DesktopAdminDashboard({
                         >
                           Sport
                         </button>
+                        <div className="text-left">Tournament</div>
                         <button
                           type="button"
                           onClick={() => sortGames("match")}
@@ -9719,10 +9915,13 @@ function DesktopAdminDashboard({
                                 window.location.href = `/admin/game-links/${game.id}`;
                               }
                             }}
-                            className="grid cursor-pointer grid-cols-[0.75fr_1.45fr_0.95fr_0.75fr_0.55fr_0.52fr_0.52fr_0.52fr] items-center gap-3 border-b border-white/10 px-4 py-4 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
+                            className="grid cursor-pointer grid-cols-[0.7fr_1fr_1.35fr_0.9fr_0.7fr_0.5fr_0.48fr_0.48fr_0.48fr] items-center gap-3 border-b border-white/10 px-4 py-4 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
                           >
                             <div className="font-black text-[#ffd66b]">
                               {game.sport}
+                            </div>
+                            <div className="truncate text-white/70">
+                              {game.tournamentName ?? "—"}
                             </div>
                             <div className="min-w-0">
                               <div className="truncate text-[14px] font-black text-white">
@@ -9789,6 +9988,110 @@ function DesktopAdminDashboard({
                   )}
                 </Panel>
 
+                {tournamentPopupOpen ? (
+                  <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm lg:items-center lg:pb-0">
+                    <div className="w-full max-w-xl rounded-[30px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
+                      <div className="mb-4 flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">Tournament</div>
+                          <h3 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">Add Tournament</h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTournamentPopupOpen(false)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">Tournament name</span>
+                        <input
+                          value={tournamentForm.name}
+                          onChange={(event) => setTournamentForm((current) => ({ ...current, name: event.target.value }))}
+                          className="h-11 w-full rounded-[14px] border border-white/20 bg-white px-4 text-[13px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
+                          placeholder="World Cup 2026"
+                        />
+                      </label>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2 rounded-[16px] bg-white/10 p-1">
+                        {(["football", "basketball"] as const).map((sport) => (
+                          <button
+                            key={sport}
+                            type="button"
+                            onClick={() => setTournamentForm((current) => ({ ...current, sport_type: sport }))}
+                            className={`h-9 rounded-[13px] text-[10px] font-black uppercase tracking-[0.18em] transition ${
+                              tournamentForm.sport_type === sport
+                                ? "bg-[#ffd66b] text-[#365665]"
+                                : "text-white/72 hover:bg-white/10"
+                            }`}
+                          >
+                            {sport === "football" ? "Football" : "Basketball"}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => void createPredictionTournament()}
+                        disabled={tournamentSaving}
+                        className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
+                      >
+                        {tournamentSaving ? "Creating..." : "Create Tournament"}
+                      </button>
+
+                      <div className="mt-5 max-h-[260px] space-y-2 overflow-auto">
+                        {predictionTournaments.length === 0 ? (
+                          <div className="rounded-[16px] bg-white/10 p-4 text-[12px] font-bold text-white/70">No tournaments yet.</div>
+                        ) : null}
+                        {predictionTournaments.map((tournament) => (
+                          <div key={tournament.id} className="flex items-center justify-between gap-3 rounded-[16px] bg-white/10 px-4 py-3">
+                            <div className="min-w-0">
+                              <div className="truncate text-[13px] font-black text-white">{tournament.name}</div>
+                              <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#ffd66b]">{tournament.sport_type}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setTournamentDeleteId(tournament.id)}
+                              className="rounded-full bg-red-400/18 px-3 py-2 text-[11px] font-black text-red-100 transition hover:bg-red-400/26"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {tournamentDeleteId ? (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm">
+                    <div className="w-full max-w-sm rounded-[26px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
+                      <h3 className="text-[20px] font-black text-white">Delete tournament?</h3>
+                      <p className="mt-2 text-[13px] font-bold leading-relaxed text-white/68">
+                        This will delete the tournament and remove it from linked games. This action cannot be undone.
+                      </p>
+                      <div className="mt-5 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setTournamentDeleteId(null)}
+                          className="rounded-full bg-white/12 px-5 py-3 text-[11px] font-black text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deletePredictionTournament(tournamentDeleteId)}
+                          className="rounded-full bg-red-300 px-5 py-3 text-[11px] font-black text-red-950"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {gameCreateOpen ? (
                   <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm lg:items-center lg:pb-0">
                     <div className="w-full max-w-2xl rounded-[30px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
@@ -9799,7 +10102,7 @@ function DesktopAdminDashboard({
                           </div>
                           <h3 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
                             Create{" "}
-                            <span className="text-[#ffd66b]">Game Link</span>
+                            <span className="text-[#ffd66b]">Game</span>
                           </h3>
                         </div>
 
@@ -9830,6 +10133,23 @@ function DesktopAdminDashboard({
                       </div>
 
                       <div className="grid gap-3 lg:grid-cols-2">
+                        <label className="block lg:col-span-2">
+                          <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">
+                            Tournament
+                          </span>
+                          <select
+                            value={gameForm.tournament_id}
+                            onChange={(event) => setGameForm((current) => ({ ...current, tournament_id: event.target.value }))}
+                            className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
+                          >
+                            <option value="">No tournament</option>
+                            {gameTournamentOptions.map((tournament) => (
+                              <option key={tournament.id} value={tournament.id}>
+                                {tournament.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                         <AdminGameInput
                           label={
                             gameKind === "basketball" ? "Team 1" : "Home Team"
@@ -9855,7 +10175,7 @@ function DesktopAdminDashboard({
                           }
                         />
                         <AdminGameInput
-                          label="Tournament"
+                          label="Game Label"
                           value={gameForm.match_label}
                           onChange={(value) =>
                             setGameForm((current) => ({
@@ -9910,7 +10230,7 @@ function DesktopAdminDashboard({
                         disabled={gameSaving}
                         className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
                       >
-                        {gameSaving ? "Creating..." : "Create Game Link"}
+                        {gameSaving ? "Creating..." : "Create Game"}
                       </button>
                     </div>
                   </div>
