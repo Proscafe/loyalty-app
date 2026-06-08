@@ -21,52 +21,25 @@ type ClaimedReward = Reward & {
 const pageGradient =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
-type Html5QrcodeInstance = {
-  start: (
-    cameraConfig: { facingMode: "environment" } | string,
-    config: {
-      fps?: number;
-      qrbox?: { width: number; height: number };
-      aspectRatio?: number;
-      disableFlip?: boolean;
-      experimentalFeatures?: { useBarCodeDetectorIfSupported?: boolean };
-    },
-    onSuccess: (decodedText: string) => void,
-    onError?: () => void,
-  ) => Promise<void>;
-  stop: () => Promise<void>;
-  clear: () => Promise<void>;
-};
 
-type WindowWithHtml5Qrcode = Window & {
-  Html5Qrcode?: new (elementId: string, verbose?: boolean) => Html5QrcodeInstance;
-};
 
-const HTML5_QR_SCRIPT_ID = "pros-html5-qrcode-script";
-const HTML5_QR_REGION_ID = "pros-stable-qr-reader";
-
-function loadHtml5QrScript() {
+// Loads jsQR as a fallback for browsers without BarcodeDetector (Safari, Firefox)
+function loadJsQrScript(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    if ((window as WindowWithHtml5Qrcode).Html5Qrcode) {
-      resolve();
+    if ((window as any).jsQR) { resolve(); return; }
+    const existing = document.getElementById("pros-jsqr-script") as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(), { once: true });
       return;
     }
-
-    const existingScript = document.getElementById(HTML5_QR_SCRIPT_ID) as HTMLScriptElement | null;
-
-    if (existingScript) {
-      existingScript.addEventListener("load", () => resolve(), { once: true });
-      existingScript.addEventListener("error", () => reject(new Error("QR scanner could not load.")), { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = HTML5_QR_SCRIPT_ID;
-    script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("QR scanner could not load."));
-    document.head.appendChild(script);
+    const s = document.createElement("script");
+    s.id = "pros-jsqr-script";
+    s.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject();
+    document.head.appendChild(s);
   });
 }
 
@@ -78,140 +51,162 @@ function UniversalStableQrScanner({
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const scanTimerRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
   const lockedRef = useRef(false);
-  const startedRef = useRef(false);
+  const runningRef = useRef(false);
   const detectorRef = useRef<any>(null);
+  const useNativeRef = useRef(false);
   const [status, setStatus] = useState("Opening camera...");
 
-  const stopCamera = useCallback(() => {
-    if (scanTimerRef.current !== null) {
-      window.clearTimeout(scanTimerRef.current);
-      scanTimerRef.current = null;
+  // ── Tear-down: stop stream + cancel any pending animation frame ──
+  const stopEverything = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
-
     const video = videoRef.current;
     if (video) {
       video.pause();
       video.srcObject = null;
     }
-
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     detectorRef.current = null;
-    startedRef.current = false;
+    runningRef.current = false;
   }, []);
 
   const closeScanner = useCallback(() => {
-    stopCamera();
+    stopEverything();
     onClose();
-  }, [onClose, stopCamera]);
+  }, [onClose, stopEverything]);
 
   const finishWithResult = useCallback(
     async (value: string) => {
-      const cleanValue = value.trim();
-      if (!cleanValue || lockedRef.current) return;
-
+      const clean = value.trim();
+      if (!clean || lockedRef.current) return;
       lockedRef.current = true;
-      setStatus("QR found. Opening customer...");
-      stopCamera();
-      await onResult(cleanValue);
+      setStatus("QR found — opening customer…");
+      stopEverything();
+      await onResult(clean);
     },
-    [onResult, stopCamera],
+    [onResult, stopEverything],
   );
 
-  const scheduleNextScan = useCallback((callback: () => void) => {
-    if (lockedRef.current) return;
-    scanTimerRef.current = window.setTimeout(callback, 450);
-  }, []);
+  // ── Core scan loop — uses requestAnimationFrame, no blinking ──
+  const scanLoop = useCallback(() => {
+    if (lockedRef.current || !runningRef.current) return;
 
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || video.paused) {
+      rafRef.current = requestAnimationFrame(scanLoop);
+      return;
+    }
+
+    const doNextFrame = () => {
+      if (!lockedRef.current && runningRef.current) {
+        rafRef.current = requestAnimationFrame(scanLoop);
+      }
+    };
+
+    if (useNativeRef.current && detectorRef.current) {
+      // Path A: native BarcodeDetector (Chrome / Android WebView)
+      (detectorRef.current.detect(video) as Promise<any[]>)
+        .then((barcodes) => {
+          const val = String(barcodes?.[0]?.rawValue ?? "").trim();
+          if (val) { void finishWithResult(val); } else { doNextFrame(); }
+        })
+        .catch(doNextFrame);
+    } else {
+      // Path B: jsQR canvas decode (Safari / Firefox fallback)
+      const canvas = canvasRef.current;
+      if (!canvas) { doNextFrame(); return; }
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) { doNextFrame(); return; }
+      canvas.width = vw;
+      canvas.height = vh;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) { doNextFrame(); return; }
+      ctx.drawImage(video, 0, 0, vw, vh);
+      const imageData = ctx.getImageData(0, 0, vw, vh);
+      const result = (window as any).jsQR?.(imageData.data, vw, vh, {
+        inversionAttempts: "dontInvert",
+      });
+      if (result?.data) {
+        void finishWithResult(result.data);
+      } else {
+        doNextFrame();
+      }
+    }
+  }, [finishWithResult]);
+
+  // ── Camera start — resets everything first so restart always works ──
   const startCamera = useCallback(async () => {
     if (typeof window === "undefined") return;
-    if (startedRef.current) return;
 
-    startedRef.current = true;
+    // Full reset so calling startCamera() again always works
+    stopEverything();
     lockedRef.current = false;
-    setStatus("Opening camera...");
+    setStatus("Opening camera…");
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      setStatus("Camera scanning is not supported on this browser.");
+      setStatus("Camera not supported on this browser.");
       return;
     }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 960 },
-          height: { ideal: 540 },
-        },
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
 
       streamRef.current = stream;
-
       const video = videoRef.current;
-      if (!video) {
-        setStatus("Camera is open, but the scanner view is not ready. Please try again.");
-        return;
-      }
+      if (!video) { setStatus("Scanner view not ready — please try again."); return; }
 
       video.srcObject = stream;
       video.setAttribute("playsinline", "true");
       video.muted = true;
       await video.play();
 
-      const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
-
-      if (!BarcodeDetectorConstructor) {
-        setStatus("Camera is open. This browser cannot read QR codes inside the app.");
-        return;
-      }
-
-      detectorRef.current = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
-      setStatus("Point your camera at the QR code.");
-
-      const scanFrame = async () => {
-        const activeVideo = videoRef.current;
-        const detector = detectorRef.current;
-
-        if (lockedRef.current || !activeVideo || !detector) return;
-
-        if (activeVideo.readyState < 2) {
-          scheduleNextScan(scanFrame);
-          return;
-        }
-
+      // Try native BarcodeDetector first, fall back to jsQR
+      const NativeBD = (window as any).BarcodeDetector;
+      if (NativeBD) {
+        detectorRef.current = new NativeBD({ formats: ["qr_code"] });
+        useNativeRef.current = true;
+        setStatus("Point your camera at the QR code.");
+        runningRef.current = true;
+        rafRef.current = requestAnimationFrame(scanLoop);
+      } else {
+        setStatus("Loading QR engine…");
         try {
-          const barcodes = await detector.detect(activeVideo);
-          const value = String(barcodes?.[0]?.rawValue ?? "").trim();
-
-          if (value) {
-            await finishWithResult(value);
-            return;
-          }
+          await loadJsQrScript();
+          useNativeRef.current = false;
+          setStatus("Point your camera at the QR code.");
+          runningRef.current = true;
+          rafRef.current = requestAnimationFrame(scanLoop);
         } catch {
-          // Keep the live camera open. Some frames fail while the phone is focusing.
+          setStatus("QR engine failed to load. Try refreshing the page.");
         }
-
-        scheduleNextScan(scanFrame);
-      };
-
-      scheduleNextScan(scanFrame);
+      }
     } catch {
-      startedRef.current = false;
-      setStatus("Camera permission was blocked. Please allow camera access and try again.");
+      setStatus("Camera permission blocked. Allow camera access and tap Restart.");
     }
-  }, [finishWithResult, scheduleNextScan]);
+  }, [scanLoop, stopEverything]);
 
   useEffect(() => {
     void startCamera();
-    return () => stopCamera();
-  }, [startCamera, stopCamera]);
+    return () => stopEverything();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 px-5 text-white backdrop-blur-sm">
+      {/* Hidden canvas used by jsQR path — never visible */}
+      <canvas ref={canvasRef} className="hidden" aria-hidden="true" />
+
       <div className="w-full max-w-sm overflow-hidden rounded-[24px] border border-white/15 bg-[#1c2530] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -241,14 +236,16 @@ function UniversalStableQrScanner({
             playsInline
             autoPlay
           />
+          {/* Viewfinder overlay — purely decorative, no blinking */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="h-[210px] w-[210px] rounded-[28px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.18)]">
-              <div className="absolute left-1/2 top-1/2 h-[210px] w-[210px] -translate-x-1/2 -translate-y-1/2 rounded-[28px]">
-                <div className="absolute -left-1 -top-1 h-10 w-10 rounded-tl-[28px] border-l-4 border-t-4 border-white" />
-                <div className="absolute -right-1 -top-1 h-10 w-10 rounded-tr-[28px] border-r-4 border-t-4 border-white" />
-                <div className="absolute -bottom-1 -left-1 h-10 w-10 rounded-bl-[28px] border-b-4 border-l-4 border-white" />
-                <div className="absolute -bottom-1 -right-1 h-10 w-10 rounded-br-[28px] border-b-4 border-r-4 border-white" />
-              </div>
+            <div className="relative h-[210px] w-[210px]">
+              {/* Dimming outside the box */}
+              <div className="absolute inset-0 rounded-[28px] shadow-[0_0_0_999px_rgba(0,0,0,0.32)]" />
+              {/* Corner brackets */}
+              <div className="absolute -left-0.5 -top-0.5 h-10 w-10 rounded-tl-[28px] border-l-[3px] border-t-[3px] border-[#ffd66b]" />
+              <div className="absolute -right-0.5 -top-0.5 h-10 w-10 rounded-tr-[28px] border-r-[3px] border-t-[3px] border-[#ffd66b]" />
+              <div className="absolute -bottom-0.5 -left-0.5 h-10 w-10 rounded-bl-[28px] border-b-[3px] border-l-[3px] border-[#ffd66b]" />
+              <div className="absolute -bottom-0.5 -right-0.5 h-10 w-10 rounded-br-[28px] border-b-[3px] border-r-[3px] border-[#ffd66b]" />
             </div>
           </div>
         </div>
@@ -260,7 +257,7 @@ function UniversalStableQrScanner({
         <button
           type="button"
           onClick={() => void startCamera()}
-          className="mt-3 w-full rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
+          className="mt-3 w-full rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white active:scale-95"
         >
           Restart Camera
         </button>
