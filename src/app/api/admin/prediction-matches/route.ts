@@ -22,28 +22,17 @@ function makeSecretCode(homeTeam: string, awayTeam: string) {
 
 function toIso(value: unknown) {
   const raw = String(value ?? "").trim();
-
   if (!raw) return null;
-
-  // datetime-local gives YYYY-MM-DDTHH:mm.
-  // Parse it as the admin browser's local time, then store UTC.
-  // This keeps the same displayed time after reload.
   const date = new Date(raw);
-
   if (Number.isNaN(date.getTime())) return null;
-
   return date.toISOString();
 }
 
 function toNullableScore(value: unknown) {
   const raw = String(value ?? "").trim();
-
   if (!raw) return null;
-
   const score = Number(raw);
-
   if (!Number.isInteger(score) || score < 0 || score > 99) return undefined;
-
   return score;
 }
 
@@ -61,37 +50,18 @@ function getAdminClient() {
   });
 }
 
-async function getAuthorizedDb(): Promise<
-  | { error: Response; db: null; userId: null }
-  | { error: null; db: any; userId: string }
-> {
+async function requireAdmin() {
   const supabase = await createClient();
+  const admin = getAdminClient();
+
+  if (!admin) return { admin: null as any, error: jsonError("Supabase admin client is not configured.", 500) };
 
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
 
-  if (userError || !user) {
-    return {
-      error: jsonError("Please sign in as admin first.", 401),
-      db: null,
-      userId: null,
-    };
-  }
-
-  const admin = getAdminClient();
-
-  if (!admin) {
-    return {
-      error: jsonError(
-        "SUPABASE_SERVICE_ROLE_KEY is missing. Add it to .env.local and Vercel Environment Variables.",
-        500,
-      ),
-      db: null,
-      userId: null,
-    };
-  }
+  if (userError || !user) return { admin: null as any, error: jsonError("Please sign in as admin first.", 401) };
 
   const { data: profile, error: profileError } = await admin
     .from("profiles")
@@ -99,292 +69,114 @@ async function getAuthorizedDb(): Promise<
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profileError) {
-    return {
-      error: jsonError(profileError.message, 400),
-      db: null,
-      userId: null,
-    };
-  }
+  if (profileError) return { admin: null as any, error: jsonError(profileError.message, 400) };
+  if (!profile || profile.role !== "master_admin") return { admin: null as any, error: jsonError("Admin access required.", 403) };
 
-  if (!profile || profile.role !== "master_admin") {
-    return {
-      error: jsonError("Admin access required.", 403),
-      db: null,
-      userId: null,
-    };
-  }
-
-  return { error: null, db: admin, userId: user.id };
+  return { admin, error: null as Response | null };
 }
 
-function buildMatchPayload(body: {
-  home_team?: string;
-  away_team?: string;
-  sport_type?: string;
-  match_label?: string;
-  venue?: string;
-  kickoff_at?: string;
-  opens_at?: string;
-  closes_at?: string;
-  home_score?: string;
-  away_score?: string;
-}) {
-  const sportType = body.sport_type === "basketball" ? "basketball" : "football";
+export async function GET() {
+  const { admin, error } = await requireAdmin();
+  if (error) return error;
+
+  const { data: matches, error: matchesError } = await admin
+    .from("prediction_matches")
+    .select(
+      "id, sport_type, tournament_id, home_team, away_team, secret_code, match_label, venue, kickoff_at, opens_at, closes_at, is_active, home_score, away_score, created_at, prediction_tournaments(id, name)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(250);
+
+  if (matchesError) return jsonError(matchesError.message, 400);
+
+  const ids = (matches ?? []).map((match: any) => match.id).filter(Boolean);
+  const entriesByMatch = new Map<string, number>();
+
+  if (ids.length > 0) {
+    const { data: entries } = await admin.from("prediction_entries").select("match_id").in("match_id", ids);
+
+    (entries ?? []).forEach((entry: any) => {
+      if (!entry.match_id) return;
+      entriesByMatch.set(entry.match_id, (entriesByMatch.get(entry.match_id) ?? 0) + 1);
+    });
+  }
+
+  const normalized = (matches ?? []).map((match: any) => ({
+    ...match,
+    tournament_name: match.prediction_tournaments?.name ?? null,
+    entries_count: entriesByMatch.get(match.id) ?? 0,
+  }));
+
+  return NextResponse.json({ matches: normalized });
+}
+
+export async function POST(req: Request) {
+  const { admin, error } = await requireAdmin();
+  if (error) return error;
+
+  const body = (await req.json().catch(() => ({}))) as {
+    sport_type?: string;
+    tournament_id?: string | null;
+    home_team?: string;
+    away_team?: string;
+    match_label?: string;
+    venue?: string;
+    kickoff_at?: string;
+    opens_at?: string;
+    closes_at?: string;
+    home_score?: string;
+    away_score?: string;
+  };
+
+  const sportType = body.sport_type === "football" ? "football" : body.sport_type === "basketball" ? "basketball" : "football";
   const homeTeam = String(body.home_team ?? "").trim();
   const awayTeam = String(body.away_team ?? "").trim();
-  const matchLabel =
-    String(body.match_label ?? (sportType === "basketball" ? "Basket" : "World Cup")).trim() ||
-    (sportType === "basketball" ? "Basket" : "World Cup");
+  const matchLabel = String(body.match_label ?? "").trim() || (sportType === "basketball" ? "Basket" : "World Cup");
   const venue = String(body.venue ?? "").trim() || null;
+  const tournamentId = String(body.tournament_id ?? "").trim() || null;
   const kickoffAt = toIso(body.kickoff_at);
   const opensAt = toIso(body.opens_at);
   const closesAt = toIso(body.closes_at);
   const homeScore = toNullableScore(body.home_score);
   const awayScore = toNullableScore(body.away_score);
 
-  if (!homeTeam || !awayTeam) {
-    return { error: "Home team and away team are required.", payload: null };
+  if (!homeTeam || !awayTeam) return jsonError("Both teams are required.", 400);
+  if (!kickoffAt || !opensAt || !closesAt) return jsonError("Match timing, open time, and close time are required.", 400);
+  if (homeScore === undefined || awayScore === undefined) return jsonError("Scores must be whole numbers from 0 to 99.", 400);
+  if (new Date(opensAt).getTime() >= new Date(closesAt).getTime()) return jsonError("Open time must be before close time.", 400);
+
+  if (tournamentId) {
+    const { data: tournament, error: tournamentError } = await admin
+      .from("prediction_tournaments")
+      .select("id, sport_type, is_active")
+      .eq("id", tournamentId)
+      .maybeSingle();
+
+    if (tournamentError) return jsonError(tournamentError.message, 400);
+    if (!tournament || tournament.is_active === false) return jsonError("Selected tournament was not found.", 400);
+    if (tournament.sport_type !== sportType) return jsonError("Selected tournament does not match this sport.", 400);
   }
 
-  if (!kickoffAt || !opensAt || !closesAt) {
-    return { error: "Kickoff, open, and close times are required.", payload: null };
-  }
-
-  if (new Date(opensAt).getTime() >= new Date(closesAt).getTime()) {
-    return { error: "Open time must be before close time.", payload: null };
-  }
-
-  if (homeScore === undefined || awayScore === undefined) {
-    return { error: "Scores must be whole numbers between 0 and 99.", payload: null };
-  }
-
-  return {
-    error: null,
-    payload: {
-      sport_type: sportType,
-      home_team: homeTeam,
-      away_team: awayTeam,
-      match_label: matchLabel,
-      venue,
-      kickoff_at: kickoffAt,
-      opens_at: opensAt,
-      closes_at: closesAt,
-      home_score: homeScore,
-      away_score: awayScore,
-    },
+  const payload: Record<string, unknown> = {
+    sport_type: sportType,
+    tournament_id: tournamentId,
+    home_team: homeTeam,
+    away_team: awayTeam,
+    secret_code: makeSecretCode(homeTeam, awayTeam),
+    match_label: matchLabel,
+    venue,
+    kickoff_at: kickoffAt,
+    opens_at: opensAt,
+    closes_at: closesAt,
+    is_active: true,
   };
-}
 
-export async function GET() {
-  try {
-    const { error: authError, db } = await getAuthorizedDb();
+  if (homeScore !== null) payload.home_score = homeScore;
+  if (awayScore !== null) payload.away_score = awayScore;
 
-    if (authError) return authError;
-    if (!db) return jsonError("Admin connection failed.", 500);
+  const { data, error: insertError } = await admin.from("prediction_matches").insert(payload).select("*").maybeSingle();
 
-    const { data, error } = await db
-      .from("prediction_matches")
-      .select(
-        "id, sport_type, home_team, away_team, match_label, venue, kickoff_at, opens_at, closes_at, home_score, away_score, secret_code, is_active, created_at",
-      )
-      .order("created_at", { ascending: false })
-      .limit(100);
+  if (insertError) return jsonError(insertError.message, 400);
 
-    if (error) {
-      return jsonError(error.message, 400);
-    }
-
-    const matchIds = (data ?? []).map((match: { id: string }) => match.id);
-    const entryCounts = new Map<string, number>();
-
-    if (matchIds.length > 0) {
-      const { data: entries, error: entriesError } = await db
-        .from("prediction_entries")
-        .select("match_id")
-        .in("match_id", matchIds);
-
-      if (entriesError) {
-        return jsonError(entriesError.message, 400);
-      }
-
-      (entries ?? []).forEach((entry: { match_id: string }) => {
-        entryCounts.set(entry.match_id, (entryCounts.get(entry.match_id) ?? 0) + 1);
-      });
-    }
-
-    return NextResponse.json({
-      matches: (data ?? []).map((match: { id: string }) => ({
-        ...match,
-        entries_count: entryCounts.get(match.id) ?? 0,
-      })),
-    });
-  } catch (error) {
-    return jsonError(
-      error instanceof Error ? error.message : "Unexpected server error while loading matches.",
-      500,
-    );
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const { error: authError, db, userId } = await getAuthorizedDb();
-
-    if (authError) return authError;
-    if (!db || !userId) return jsonError("Admin connection failed.", 500);
-
-    let body: {
-      sport_type?: string;
-      home_team?: string;
-      away_team?: string;
-      match_label?: string;
-      venue?: string;
-      kickoff_at?: string;
-      opens_at?: string;
-      closes_at?: string;
-      home_score?: string;
-      away_score?: string;
-    };
-
-    try {
-      body = await req.json();
-    } catch {
-      return jsonError("Invalid request.", 400);
-    }
-
-    const { error: validationError, payload } = buildMatchPayload(body);
-
-    if (validationError || !payload) {
-      return jsonError(validationError ?? "Invalid match details.", 400);
-    }
-
-    const { data, error } = await db
-      .from("prediction_matches")
-      .insert({
-        ...payload,
-        secret_code: makeSecretCode(payload.home_team, payload.away_team),
-        created_by: userId,
-        is_active: true,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      return jsonError(error.message, 400);
-    }
-
-    return NextResponse.json({ match: data });
-  } catch (error) {
-    return jsonError(
-      error instanceof Error ? error.message : "Unexpected server error while creating match.",
-      500,
-    );
-  }
-}
-
-export async function PATCH(req: Request) {
-  try {
-    const { error: authError, db } = await getAuthorizedDb();
-
-    if (authError) return authError;
-    if (!db) return jsonError("Admin connection failed.", 500);
-
-    let body: {
-      id?: string;
-      sport_type?: string;
-      home_team?: string;
-      away_team?: string;
-      match_label?: string;
-      venue?: string;
-      kickoff_at?: string;
-      opens_at?: string;
-      closes_at?: string;
-      home_score?: string;
-      away_score?: string;
-    };
-
-    try {
-      body = await req.json();
-    } catch {
-      return jsonError("Invalid request.", 400);
-    }
-
-    const matchId = String(body.id ?? "").trim();
-
-    if (!matchId) {
-      return jsonError("Match ID is required.", 400);
-    }
-
-    const { error: validationError, payload } = buildMatchPayload(body);
-
-    if (validationError || !payload) {
-      return jsonError(validationError ?? "Invalid match details.", 400);
-    }
-
-    const { data, error } = await db
-      .from("prediction_matches")
-      .update(payload)
-      .eq("id", matchId)
-      .select("*")
-      .single();
-
-    if (error) {
-      return jsonError(error.message, 400);
-    }
-
-    return NextResponse.json({ match: data });
-  } catch (error) {
-    return jsonError(
-      error instanceof Error ? error.message : "Unexpected server error while saving match.",
-      500,
-    );
-  }
-}
-
-export async function DELETE(req: Request) {
-  try {
-    const { error: authError, db } = await getAuthorizedDb();
-
-    if (authError) return authError;
-    if (!db) return jsonError("Admin connection failed.", 500);
-
-    let body: {
-      id?: string;
-    };
-
-    try {
-      body = await req.json();
-    } catch {
-      return jsonError("Invalid request.", 400);
-    }
-
-    const matchId = String(body.id ?? "").trim();
-
-    if (!matchId) {
-      return jsonError("Match ID is required.", 400);
-    }
-
-    const { error: entriesError } = await db
-      .from("prediction_entries")
-      .delete()
-      .eq("match_id", matchId);
-
-    if (entriesError) {
-      return jsonError(entriesError.message, 400);
-    }
-
-    const { error } = await db.from("prediction_matches").delete().eq("id", matchId);
-
-    if (error) {
-      return jsonError(error.message, 400);
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    return jsonError(
-      error instanceof Error ? error.message : "Unexpected server error while deleting match.",
-      500,
-    );
-  }
+  return NextResponse.json({ match: data });
 }

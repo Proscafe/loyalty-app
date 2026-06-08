@@ -4297,6 +4297,47 @@ function DesktopAdminDashboard({
     }
   }
 
+  async function downloadTournamentQrs() {
+    const games = sortedGameLinks.filter((game) => game.code);
+    if (games.length === 0) { flash("No games to download.", "error"); return; }
+
+    const tournamentName =
+      gameTournamentFilter !== "all"
+        ? (predictionTournaments.find((t) => t.id === gameTournamentFilter)?.name ?? "tournament")
+        : "all-games";
+
+    flash(`Downloading ${games.length} QR codes…`);
+
+    for (let i = 0; i < games.length; i++) {
+      const game = games[i];
+      const link = predictionLinkFor(game.code);
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=900x900&data=${encodeURIComponent(link)}`;
+      const filename = `${String(i + 1).padStart(2, "0")}-${game.title}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") + "-qr.png";
+
+      try {
+        const response = await fetch(qrUrl);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+        // Small delay so the browser doesn't block multiple downloads
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      } catch {
+        window.open(qrUrl, "_blank", "noopener,noreferrer");
+      }
+    }
+
+    flash(`${games.length} QR codes downloaded for ${tournamentName}.`);
+  }
+
   async function refreshPredictionTournaments() {
     try {
       const response = await fetch("/api/admin/prediction-tournaments", { method: "GET" });
@@ -4593,7 +4634,13 @@ function DesktopAdminDashboard({
       const sport_type: "football" | "basketball" = sportRaw.includes("basket") ? "basketball" : "football";
       const match_label = get(cols, ["match_label", "label", "round", "stage"]) || (sport_type === "basketball" ? "Basket" : "World Cup");
       const venue = get(cols, ["venue", "description", "desc"]);
-      const tournament_id = get(cols, ["tournament_id"]);
+      const rawTournamentId = get(cols, ["tournament_id"]);
+      // Only pass tournament_id if it looks like a UUID — otherwise the API rejects it
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const tournament_id = UUID_RE.test(rawTournamentId) ? rawTournamentId : "";
+      if (rawTournamentId && !UUID_RE.test(rawTournamentId)) {
+        errors.push(`Row ${index + 2}: tournament_id "${rawTournamentId}" is not a valid UUID and will be ignored.`);
+      }
 
       let opens_at = get(cols, ["opens_at", "open_at"]);
       let closes_at = get(cols, ["closes_at", "close_at"]);
@@ -4674,15 +4721,33 @@ function DesktopAdminDashboard({
                 closes_at: row.closes_at,
               };
 
+        // Build the body directly — do NOT go through withPredictionDatePayload
+        // which can strip or mis-convert already-correct ISO strings with timezone offsets
+        const body = {
+          home_team:     row.home_team,
+          away_team:     row.away_team,
+          sport_type:    row.sport_type,
+          match_label:   row.match_label,
+          venue:         row.venue || null,
+          tournament_id: row.tournament_id || null,
+          kickoff_at:    row.kickoff_at || null,
+          opens_at:      row.opens_at   || null,
+          closes_at:     row.closes_at  || null,
+          home_score:    "",
+          away_score:    "",
+        };
+
         const response = await fetch("/api/admin/prediction-matches", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(withPredictionDatePayload(payload)),
+          body: JSON.stringify(body),
         });
 
         if (!response.ok) {
-          const json = await response.json().catch(() => ({})) as { error?: string };
-          errors.push(`${row.home_team} vs ${row.away_team}: ${json.error ?? "failed"}`);
+          const responseText = await response.text().catch(() => "");
+          let errMsg = "failed";
+          try { errMsg = (JSON.parse(responseText) as { error?: string }).error ?? responseText; } catch { errMsg = responseText; }
+          errors.push(`${row.home_team} vs ${row.away_team}: ${errMsg}`);
         } else {
           created++;
         }
@@ -9997,6 +10062,20 @@ function DesktopAdminDashboard({
                     >
                       Upload CSV
                     </button>
+                    {sortedGameLinks.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void downloadTournamentQrs()}
+                        className="flex items-center gap-2 rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20"
+                        title={`Download QR codes for ${sortedGameLinks.length} game${sortedGameLinks.length !== 1 ? "s" : ""}`}
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+                          <path d="M14 14h3v3m0 4h4v-4m-4 0v4" />
+                        </svg>
+                        Download QRs ({sortedGameLinks.length})
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setGameCreateOpen(true)}
@@ -10052,6 +10131,7 @@ function DesktopAdminDashboard({
                           </option>
                         ))}
                       </select>
+
                     </div>
                   </div>
                   {sortedGameLinks.length === 0 ? (
