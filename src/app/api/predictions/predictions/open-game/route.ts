@@ -130,19 +130,21 @@ function getGameTitle(match: PredictionMatchRecord) {
 }
 
 function isCurrentlyOpen(match: PredictionMatchRecord, nowMs: number) {
-  if (!getCode(match)) return false;
-
+  // Follow the admin status first. If the admin table shows OPEN, the client
+  // scan card should show even when the public code field name differs.
   const status = clean(match.status).toLowerCase();
+
   if (match.is_active === false) return false;
-  if (["closed", "inactive", "disabled", "draft"].includes(status))
-    return false;
+  if (["closed", "inactive", "disabled", "draft"].includes(status)) return false;
+  if (status === "open") return true;
 
-  const openMs = parseDateMs(getOpenDate(match));
   const closeMs = parseDateMs(getCloseDate(match));
-
-  if (openMs !== null && nowMs < openMs) return false;
   if (closeMs !== null && nowMs > closeMs) return false;
 
+  const openMs = parseDateMs(getOpenDate(match));
+  if (openMs !== null && nowMs < openMs) return false;
+
+  // If the row is active and does not expose dates, treat it as visible.
   return true;
 }
 
@@ -209,7 +211,7 @@ export async function GET() {
     return NextResponse.json({
       match: null,
       debug: {
-        reason: "No open prediction game found",
+        reason: "No active prediction game link found",
         rows_checked: (data ?? []).length,
         server_time: new Date(nowMs).toISOString(),
         checked_matches: ((data ?? []) as PredictionMatchRecord[])
@@ -235,7 +237,7 @@ export async function GET() {
   return NextResponse.json({
     match: {
       id: match.id,
-      code: getCode(match),
+      code: getCode(match) || match.id,
       title: getGameTitle(match),
       label:
         clean(match.match_label) ||
