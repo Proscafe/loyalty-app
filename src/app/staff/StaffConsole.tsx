@@ -77,194 +77,173 @@ function UniversalStableQrScanner({
   onResult: (value: string) => void | Promise<void>;
   onClose: () => void;
 }) {
-  const scannerRef = useRef<Html5QrcodeInstance | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const frameRef = useRef<number | null>(null);
   const lockedRef = useRef(false);
-  const [status, setStatus] = useState<"opening" | "scanning" | "error">("opening");
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [status, setStatus] = useState("Opening camera...");
 
-  const stopScanner = useCallback(async () => {
-    const scanner = scannerRef.current;
-    scannerRef.current = null;
-
-    if (!scanner) return;
-
-    try {
-      await scanner.stop();
-    } catch {
-      // Scanner may already be stopped.
+  const stopCamera = useCallback(() => {
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
     }
 
-    try {
-      await scanner.clear();
-    } catch {
-      // Some browsers clear automatically.
-    }
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
   }, []);
+
+  const closeScanner = useCallback(() => {
+    stopCamera();
+    onClose();
+  }, [onClose, stopCamera]);
 
   const finishWithResult = useCallback(
     async (value: string) => {
       const cleanValue = value.trim();
-
       if (!cleanValue || lockedRef.current) return;
 
       lockedRef.current = true;
-      await stopScanner();
+      stopCamera();
       await onResult(cleanValue);
     },
-    [onResult, stopScanner],
+    [onResult, stopCamera],
   );
 
-  const startScanner = useCallback(async () => {
-    await loadHtml5QrScript();
+  const startCamera = useCallback(async () => {
+    if (typeof window === "undefined") return;
 
-    const Html5Qrcode = (window as WindowWithHtml5Qrcode).Html5Qrcode;
+    lockedRef.current = false;
+    setStatus("Opening camera...");
+    stopCamera();
 
-    if (!Html5Qrcode) {
-      throw new Error("QR scanner could not start.");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus("Camera scanning is not supported on this browser.");
+      return;
     }
 
-    const existingRegion = document.getElementById(HTML5_QR_REGION_ID);
-    if (existingRegion) existingRegion.innerHTML = "";
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
 
-    const scanner = new Html5Qrcode(HTML5_QR_REGION_ID, false);
-    scannerRef.current = scanner;
+      streamRef.current = stream;
 
-    setStatus("scanning");
-    setCameraError(null);
+      const video = videoRef.current;
+      if (!video) {
+        setStatus("Camera is open, but the scanner view is not ready. Please try again.");
+        return;
+      }
 
-    await scanner.start(
-      { facingMode: "environment" },
-      {
-        fps: 6,
-        qrbox: { width: 280, height: 280 },
-        aspectRatio: 1.7777778,
-        disableFlip: true,
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-      },
-      (decodedText) => {
-        void finishWithResult(decodedText);
-      },
-      () => {
-        // Decode misses are normal. Do not update state here; that prevents blinking.
-      },
-    );
-  }, [finishWithResult]);
+      video.srcObject = stream;
+      await video.play();
+
+      const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
+
+      if (!BarcodeDetectorConstructor) {
+        setStatus("Camera is open. This browser cannot read QR codes inside the app.");
+        return;
+      }
+
+      const detector = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
+      setStatus("Point your camera at the QR code.");
+
+      const scanFrame = async () => {
+        const activeVideo = videoRef.current;
+
+        if (!activeVideo || activeVideo.readyState < 2) {
+          frameRef.current = window.requestAnimationFrame(scanFrame);
+          return;
+        }
+
+        try {
+          const barcodes = await detector.detect(activeVideo);
+          const value = String(barcodes?.[0]?.rawValue ?? "").trim();
+
+          if (value) {
+            await finishWithResult(value);
+            return;
+          }
+        } catch {
+          // Some frames fail while the camera is focusing. Keep scanning.
+        }
+
+        frameRef.current = window.requestAnimationFrame(scanFrame);
+      };
+
+      frameRef.current = window.requestAnimationFrame(scanFrame);
+    } catch {
+      setStatus("Camera permission was blocked. Please allow camera access and try again.");
+    }
+  }, [finishWithResult, stopCamera]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function start() {
-      try {
-        setStatus("opening");
-        lockedRef.current = false;
-        await startScanner();
-      } catch (error) {
-        if (cancelled) return;
-
-        setCameraError(error instanceof Error ? error.message : "Camera could not open.");
-        setStatus("error");
-      }
-    }
-
-    void start();
-
-    return () => {
-      cancelled = true;
-      lockedRef.current = true;
-      void stopScanner();
-    };
-  }, [startScanner, stopScanner]);
-
-  async function restartScanner() {
-    try {
-      setStatus("opening");
-      setCameraError(null);
-      lockedRef.current = false;
-      await stopScanner();
-      await startScanner();
-    } catch (error) {
-      setCameraError(error instanceof Error ? error.message : "Camera could not open.");
-      setStatus("error");
-    }
-  }
+    void startCamera();
+    return () => stopCamera();
+  }, [startCamera, stopCamera]);
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black text-white">
-      <div className="absolute inset-0">
-        <div id={HTML5_QR_REGION_ID} className="h-full w-full overflow-hidden bg-black" />
-      </div>
-
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_36%,rgba(0,0,0,0.50)_37%,rgba(0,0,0,0.82)_100%)]" />
-
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-[34px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.06)]">
-        <div className="absolute -left-1 -top-1 h-12 w-12 rounded-tl-[34px] border-l-4 border-t-4 border-white" />
-        <div className="absolute -right-1 -top-1 h-12 w-12 rounded-tr-[34px] border-r-4 border-t-4 border-white" />
-        <div className="absolute -bottom-1 -left-1 h-12 w-12 rounded-bl-[34px] border-b-4 border-l-4 border-white" />
-        <div className="absolute -bottom-1 -right-1 h-12 w-12 rounded-br-[34px] border-b-4 border-r-4 border-white" />
-      </div>
-
-      <div className="absolute left-0 right-0 top-0 flex items-start justify-between gap-4 p-5">
-        <div>
-          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.28em] text-[#ffd66b]">
-            <span className={`h-2.5 w-2.5 rounded-full ${status === "scanning" ? "bg-emerald-300" : "bg-[#ffd66b]"}`} />
-            QR Scanner
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 px-5 text-white backdrop-blur-sm">
+      <div className="w-full max-w-sm overflow-hidden rounded-[24px] border border-white/15 bg-[#1c2530] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[12px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+              Scan QR
+            </div>
+            <div className="mt-1 text-[18px] font-black text-white">
+              Find customer
+            </div>
           </div>
-          <div className="mt-1 text-[14px] font-black text-white">
-            Hold the QR inside the yellow square
-          </div>
-          <div className="mt-1 text-[11px] font-bold text-white/58">
-            {status === "scanning"
-              ? "Stable scanner active"
-              : status === "error"
-                ? "Camera error"
-                : "Opening camera..."}
+
+          <button
+            type="button"
+            onClick={closeScanner}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-[20px] font-black text-white"
+            aria-label="Close QR scanner"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="relative overflow-hidden rounded-[18px] bg-black">
+          <video
+            ref={videoRef}
+            className="h-[320px] w-full object-cover"
+            muted
+            playsInline
+          />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="h-[210px] w-[210px] rounded-[28px] border-2 border-[#ffd66b] shadow-[0_0_0_999px_rgba(0,0,0,0.18)]">
+              <div className="absolute left-1/2 top-1/2 h-[210px] w-[210px] -translate-x-1/2 -translate-y-1/2 rounded-[28px]">
+                <div className="absolute -left-1 -top-1 h-10 w-10 rounded-tl-[28px] border-l-4 border-t-4 border-white" />
+                <div className="absolute -right-1 -top-1 h-10 w-10 rounded-tr-[28px] border-r-4 border-t-4 border-white" />
+                <div className="absolute -bottom-1 -left-1 h-10 w-10 rounded-bl-[28px] border-b-4 border-l-4 border-white" />
+                <div className="absolute -bottom-1 -right-1 h-10 w-10 rounded-br-[28px] border-b-4 border-r-4 border-white" />
+              </div>
+            </div>
           </div>
         </div>
 
+        <p className="mt-3 text-center text-[13px] font-bold leading-5 text-white/75">
+          {status}
+        </p>
+
         <button
           type="button"
-          onClick={onClose}
-          className="rounded-full bg-white/14 px-4 py-2 text-[12px] font-black text-white backdrop-blur-xl"
+          onClick={() => void startCamera()}
+          className="mt-3 w-full rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
         >
-          Close
+          Restart Camera
         </button>
-      </div>
-
-      <div className="absolute bottom-8 left-5 right-5 rounded-[24px] border border-white/18 bg-black/46 p-4 text-center backdrop-blur-2xl">
-        {cameraError ? (
-          <div className="space-y-3">
-            <div className="text-[13px] font-bold leading-5 text-red-200">
-              {cameraError}
-            </div>
-            <button
-              type="button"
-              onClick={() => void restartScanner()}
-              className="w-full rounded-full bg-[#ffd66b] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#365665]"
-            >
-              Restart Camera
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="text-[13px] font-bold leading-5 text-white/82">
-              {status === "opening"
-                ? "Opening camera..."
-                : "Move closer, keep the QR flat, and fill most of the square."}
-            </div>
-            <button
-              type="button"
-              onClick={() => void restartScanner()}
-              className="w-full rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
-            >
-              Restart Camera
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
 }
-
 
 function StaffConsole({ profile, categories }: Props) {
   const router = useRouter();

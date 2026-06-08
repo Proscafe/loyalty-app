@@ -783,6 +783,7 @@ export function ClientDashboard({
   const qrFrameRef = useRef<number | null>(null);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
+  const [showGameScanCard, setShowGameScanCard] = useState(false);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(((rewards ?? initialRewards ?? []) as ClientReward[]).map((reward) => reward.id))
@@ -934,6 +935,71 @@ export function ClientDashboard({
 
   useEffect(() => {
     return () => stopQrScanner();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    function parseMatchTime(value: unknown) {
+      const text = cleanText(value);
+      if (!text) return null;
+
+      const parsed = Date.parse(text.replace(" ", "T"));
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function isOpenMatch(match: AnyRecord, nowMs: number) {
+      if (!match || match.is_active === false) return false;
+
+      const status = cleanText(match.status).toLowerCase();
+      if (["closed", "inactive", "disabled", "draft"].includes(status)) return false;
+      if (status === "open") return true;
+
+      const closesAt = parseMatchTime(match.closes_at ?? match.close_at);
+      if (closesAt !== null && nowMs > closesAt) return false;
+
+      const opensAt = parseMatchTime(match.opens_at ?? match.open_at);
+      if (opensAt !== null && nowMs < opensAt) return false;
+
+      return true;
+    }
+
+    async function refreshGameScanCard() {
+      try {
+        const response = await fetch("/api/admin/prediction-matches", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (isMounted) setShowGameScanCard(false);
+          return;
+        }
+
+        const payload = (await response.json()) as { matches?: AnyRecord[] | null };
+        const nowMs = Date.now();
+        const hasOpenGame = (payload.matches ?? []).some((match) =>
+          isOpenMatch(match, nowMs),
+        );
+
+        if (isMounted) setShowGameScanCard(hasOpenGame);
+      } catch {
+        if (isMounted) setShowGameScanCard(false);
+      }
+    }
+
+    void refreshGameScanCard();
+
+    const interval = window.setInterval(() => {
+      void refreshGameScanCard();
+    }, 15000);
+
+    window.addEventListener("focus", refreshGameScanCard);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshGameScanCard);
+    };
   }, []);
 
   const categoryMap = useMemo(
@@ -1328,6 +1394,7 @@ export function ClientDashboard({
           </div>
         </section>
 
+        {showGameScanCard ? (
         <section
           className="relative mt-6 overflow-hidden px-4 py-4 shadow-[0_18px_46px_rgba(0,0,0,0.16)]"
           style={{
@@ -1381,6 +1448,7 @@ export function ClientDashboard({
             </button>
           </div>
         </section>
+        ) : null}
 
         <section
           role="button"
