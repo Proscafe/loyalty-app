@@ -630,7 +630,8 @@ function MobileAdminDashboard({
     }
   }
 
-  useEffect(() => {
+
+    useEffect(() => {
     let isMounted = true;
 
     async function loadAdminData() {
@@ -3548,6 +3549,22 @@ function DesktopAdminDashboard({
   const [gameSaving, setGameSaving] = useState(false);
   const [gameCreateOpen, setGameCreateOpen] = useState(false);
   const [tournamentPopupOpen, setTournamentPopupOpen] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvPreview, setCsvPreview] = useState<Array<{
+    home_team: string;
+    away_team: string;
+    sport_type: "football" | "basketball";
+    match_label: string;
+    venue: string;
+    tournament_id: string;
+    kickoff_at: string;
+    opens_at: string;
+    closes_at: string;
+  }>>([]);
+  const [csvErrors, setCsvErrors] = useState<string[]>([]);
+  const [csvFileName, setCsvFileName] = useState("");
+  const csvFileInputRef = useRef<HTMLInputElement | null>(null);
   const [tournamentDeleteId, setTournamentDeleteId] = useState<string | null>(null);
   const [tournamentSaving, setTournamentSaving] = useState(false);
   const [tournamentForm, setTournamentForm] = useState({ name: "", sport_type: "basketball" as "football" | "basketball" });
@@ -4515,6 +4532,184 @@ function DesktopAdminDashboard({
       setGameSaving(false);
     }
   }
+
+  function parseCsvGames(text: string) {
+    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+    if (lines.length < 2) return { rows: [], errors: ["CSV has no data rows."] };
+
+    // Proper CSV parser — handles quoted fields that contain commas
+    function splitCsvLine(line: string): string[] {
+      const result: string[] = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if (ch === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += ch;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    }
+
+    const headers = splitCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/[\s"']+/g, "_"));
+    const errors: string[] = [];
+
+    const formatLocalDateTime = (date: Date) => {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+
+    const resolveKickoff = (raw: string) => {
+      if (!raw) return "";
+      const normalised = raw.trim().replace(" ", "T");
+      const d = new Date(normalised);
+      if (!Number.isNaN(d.getTime())) return formatLocalDateTime(d);
+      const withTime = new Date(normalised + "T00:00");
+      return !Number.isNaN(withTime.getTime()) ? formatLocalDateTime(withTime) : "";
+    };
+
+    const get = (row: string[], keys: string[]) => {
+      for (const k of keys) {
+        const i = headers.indexOf(k);
+        if (i !== -1 && row[i]?.trim()) return row[i].trim().replace(/^["']|["']$/g, "");
+      }
+      return "";
+    };
+
+    const rows = lines.slice(1).map((line, index) => {
+      const cols = splitCsvLine(line);
+      const home = get(cols, ["home_team", "home", "team_1", "team1"]);
+      const away = get(cols, ["away_team", "away", "team_2", "team2"]);
+      const rawKickoff = get(cols, ["kickoff_at", "kickoff", "match_time", "datetime", "date"]);
+      const kickoff = resolveKickoff(rawKickoff);
+      const sportRaw = get(cols, ["sport_type", "sport"]).toLowerCase();
+      const sport_type: "football" | "basketball" = sportRaw.includes("basket") ? "basketball" : "football";
+      const match_label = get(cols, ["match_label", "label", "round", "stage"]) || (sport_type === "basketball" ? "Basket" : "World Cup");
+      const venue = get(cols, ["venue", "description", "desc"]);
+      const tournament_id = get(cols, ["tournament_id"]);
+
+      let opens_at = get(cols, ["opens_at", "open_at"]);
+      let closes_at = get(cols, ["closes_at", "close_at"]);
+
+      if (kickoff && !opens_at) {
+        const d = new Date(kickoff);
+        opens_at = formatLocalDateTime(new Date(d.getTime() - 20 * 60 * 1000));
+      }
+      if (kickoff && !closes_at) {
+        const d = new Date(kickoff);
+        closes_at = formatLocalDateTime(new Date(d.getTime() + 10 * 60 * 1000));
+      }
+
+      if (!home || !away) errors.push(`Row ${index + 2}: missing home or away team.`);
+      if (!kickoff) errors.push(`Row ${index + 2}: could not parse kickoff "${rawKickoff}" — use YYYY-MM-DDTHH:MM.`);
+
+      return { home_team: home, away_team: away, sport_type, match_label, venue, tournament_id, kickoff_at: kickoff, opens_at, closes_at };
+    }).filter((row) => row.home_team && row.away_team);
+
+    return { rows, errors };
+  }
+
+  function handleCsvFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setCsvFileName(file.name);
+    setCsvErrors([]);
+    setCsvPreview([]);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const { rows, errors } = parseCsvGames(text);
+      setCsvPreview(rows);
+      setCsvErrors(errors);
+    };
+    reader.readAsText(file);
+    // Reset so the same file can be re-uploaded if needed
+    event.target.value = "";
+  }
+
+  async function importCsvGames() {
+    if (csvPreview.length === 0) return;
+    setCsvImporting(true);
+
+    let created = 0;
+    const errors: string[] = [];
+
+    for (const row of csvPreview) {
+      try {
+        const payload =
+          row.sport_type === "basketball"
+            ? {
+                home_team: row.home_team,
+                away_team: row.away_team,
+                tournament_id: row.tournament_id || null,
+                sport_type: "basketball" as const,
+                match_label: row.match_label || "Basket",
+                venue: row.venue,
+                home_score: "",
+                away_score: "",
+                kickoff_at: row.kickoff_at,
+                opens_at: row.opens_at,
+                closes_at: row.closes_at,
+              }
+            : {
+                home_team: row.home_team,
+                away_team: row.away_team,
+                tournament_id: row.tournament_id || null,
+                sport_type: "football" as const,
+                match_label: row.match_label || "World Cup",
+                venue: row.venue,
+                home_score: "",
+                away_score: "",
+                kickoff_at: row.kickoff_at,
+                opens_at: row.opens_at,
+                closes_at: row.closes_at,
+              };
+
+        const response = await fetch("/api/admin/prediction-matches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(withPredictionDatePayload(payload)),
+        });
+
+        if (!response.ok) {
+          const json = await response.json().catch(() => ({})) as { error?: string };
+          errors.push(`${row.home_team} vs ${row.away_team}: ${json.error ?? "failed"}`);
+        } else {
+          created++;
+        }
+      } catch (err) {
+        errors.push(`${row.home_team} vs ${row.away_team}: network error`);
+      }
+    }
+
+    setCsvImporting(false);
+
+    if (errors.length > 0) setCsvErrors(errors);
+
+    if (created > 0) {
+      await refreshDesktopGameLinks();
+      flash(`${created} game${created !== 1 ? "s" : ""} imported.`);
+
+      if (errors.length === 0) {
+        setCsvImportOpen(false);
+        setCsvPreview([]);
+        setCsvErrors([]);
+        setCsvFileName("");
+      }
+    } else {
+      flash("Import failed. Check errors below.", "error");
+    }
+  }
+
 
   useEffect(() => {
     let isMounted = true;
@@ -9797,6 +9992,13 @@ function DesktopAdminDashboard({
                     </button>
                     <button
                       type="button"
+                      onClick={() => { setCsvImportOpen(true); setCsvPreview([]); setCsvErrors([]); setCsvFileName(""); }}
+                      className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20"
+                    >
+                      Upload CSV
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setGameCreateOpen(true)}
                       className="rounded-full bg-[#ffd66b] px-6 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]"
                     >
@@ -9988,7 +10190,147 @@ function DesktopAdminDashboard({
                   )}
                 </Panel>
 
-                {tournamentPopupOpen ? (
+                {/* Hidden CSV file input */}
+                <input
+                  ref={csvFileInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={handleCsvFileChange}
+                />
+
+                {/* CSV Import Modal */}
+                {csvImportOpen ? (
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-8 backdrop-blur-sm"
+                    onClick={() => !csvImporting && setCsvImportOpen(false)}
+                  >
+                    <div
+                      className="w-full max-w-2xl overflow-hidden rounded-[30px] border border-white/18 bg-[#61716b] p-6 shadow-2xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {/* Header */}
+                      <div className="mb-5 flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">Admin</div>
+                          <h3 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
+                            Import Games <span className="text-[#ffd66b]">via CSV</span>
+                          </h3>
+                          <p className="mt-1 text-[11px] font-bold text-white/60">
+                            Columns: <span className="text-white/82">home_team, away_team, sport_type, match_label, venue, kickoff_at, opens_at, closes_at, tournament_id</span>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCsvImportOpen(false)}
+                          disabled={csvImporting}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white disabled:opacity-40"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      {/* Drop zone / file picker */}
+                      <button
+                        type="button"
+                        onClick={() => csvFileInputRef.current?.click()}
+                        disabled={csvImporting}
+                        className="mb-4 flex w-full flex-col items-center justify-center gap-2 rounded-[18px] border-2 border-dashed border-white/25 bg-white/8 py-8 text-center transition hover:border-[#ffd66b]/60 hover:bg-white/12 disabled:opacity-50"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-8 w-8 text-[#ffd66b]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        <span className="text-[12px] font-black text-white">
+                          {csvFileName ? csvFileName : "Click to choose a CSV file"}
+                        </span>
+                        {csvFileName && (
+                          <span className="text-[10px] font-bold text-white/55">Click to change file</span>
+                        )}
+                      </button>
+
+                      {/* Template download hint */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const header = "home_team,away_team,sport_type,match_label,venue,kickoff_at,opens_at,closes_at,tournament_id";
+                          const example = "SAGESSE,HOMENETMEN,basketball,Game 1,,2026-06-15T20:00,,,"
+                          const blob = new Blob([header + "\n" + example], { type: "text/csv" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url; a.download = "games-template.csv";
+                          a.click(); URL.revokeObjectURL(url);
+                        }}
+                        className="mb-4 flex items-center gap-1.5 text-[11px] font-bold text-[#ffd66b] underline underline-offset-2 hover:text-white"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download template CSV
+                      </button>
+
+                      {/* Validation errors */}
+                      {csvErrors.length > 0 && (
+                        <div className="mb-4 rounded-[14px] bg-red-500/16 p-3">
+                          <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-red-300">Warnings</p>
+                          <ul className="space-y-1">
+                            {csvErrors.map((error, i) => (
+                              <li key={i} className="text-[11px] font-bold text-red-200">{error}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Preview table */}
+                      {csvPreview.length > 0 && (
+                        <div className="mb-5">
+                          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
+                            Preview — {csvPreview.length} game{csvPreview.length !== 1 ? "s" : ""} ready to import
+                          </p>
+                          <div className="max-h-[220px] overflow-auto rounded-[14px] border border-white/14 bg-white/8">
+                            <table className="w-full text-left text-[11px]">
+                              <thead>
+                                <tr className="border-b border-white/10 text-[9px] font-black uppercase tracking-[0.14em] text-white/50">
+                                  <th className="px-3 py-2">Match</th>
+                                  <th className="px-3 py-2">Sport</th>
+                                  <th className="px-3 py-2">Label</th>
+                                  <th className="px-3 py-2">Kickoff</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {csvPreview.map((row, i) => (
+                                  <tr key={i} className="border-b border-white/8 last:border-0">
+                                    <td className="px-3 py-2 font-bold text-white">{row.home_team} vs {row.away_team}</td>
+                                    <td className="px-3 py-2 font-black text-[#ffd66b] capitalize">{row.sport_type}</td>
+                                    <td className="px-3 py-2 text-white/70">{row.match_label}</td>
+                                    <td className="px-3 py-2 text-white/60">{row.kickoff_at ? new Date(row.kickoff_at).toLocaleString() : "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Import button */}
+                      <button
+                        type="button"
+                        onClick={() => void importCsvGames()}
+                        disabled={csvPreview.length === 0 || csvImporting}
+                        className="flex h-11 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {csvImporting
+                          ? `Importing ${csvPreview.length} game${csvPreview.length !== 1 ? "s" : ""}…`
+                          : csvPreview.length > 0
+                            ? `Import ${csvPreview.length} Game${csvPreview.length !== 1 ? "s" : ""}`
+                            : "Select a CSV file above"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                                {tournamentPopupOpen ? (
                   <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm lg:items-center lg:pb-0">
                     <div className="w-full max-w-xl rounded-[30px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
                       <div className="mb-4 flex items-start justify-between gap-4">
