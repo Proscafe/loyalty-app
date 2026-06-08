@@ -4,6 +4,8 @@ import { WorldCupClient } from "./WorldCupClient";
 
 export const dynamic = "force-dynamic";
 
+const WORLD_CUP_2026_TOURNAMENT_ID = "54ef3cd5-7a08-41ed-8c60-9a090a5039ab";
+
 type ProfileRow = {
   id: string;
   full_name: string | null;
@@ -32,11 +34,9 @@ function shortName(name?: string | null) {
 
 function getRankLabel(rank: number | null) {
   if (!rank) return "—";
-
   if (rank === 1) return "1st";
   if (rank === 2) return "2nd";
   if (rank === 3) return "3rd";
-
   return `${rank}th`;
 }
 
@@ -53,12 +53,26 @@ export default async function WorldCupPage() {
 
   const admin = createAdminClient();
 
+  // First get all match IDs that belong to World Cup 2026
+  const { data: wcMatches } = await admin
+    .from("prediction_matches")
+    .select("id")
+    .eq("tournament_id", WORLD_CUP_2026_TOURNAMENT_ID);
+
+  const wcMatchIds = (wcMatches ?? []).map((m: { id: string }) => m.id);
+
   const [{ data: profile }, { data: entries }, { data: winnerPicks }] = await Promise.all([
     admin.from("profiles").select("id, full_name, email").eq("id", user.id).maybeSingle(),
-    admin
-      .from("prediction_entries")
-      .select("id, client_id, points, created_at")
-      .order("created_at", { ascending: false }),
+
+    // Only prediction_entries for World Cup 2026 matches
+    wcMatchIds.length > 0
+      ? admin
+          .from("prediction_entries")
+          .select("id, client_id, points, created_at")
+          .in("match_id", wcMatchIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+
     admin
       .from("world_cup_winner_predictions")
       .select("id, client_id, team_name, fifa_rank, points, created_at")
@@ -79,10 +93,8 @@ export default async function WorldCupPage() {
       totalPoints: 0,
       totalPredictions: 0,
     };
-
     current.totalPoints += Number(entry.points ?? 0);
     current.totalPredictions += 1;
-
     statsMap.set(entry.client_id, current);
   });
 
@@ -92,16 +104,13 @@ export default async function WorldCupPage() {
       totalPoints: 0,
       totalPredictions: 0,
     };
-
     current.totalPoints += Number(entry.points ?? 0);
     current.totalPredictions += 1;
-
     statsMap.set(entry.client_id, current);
   });
 
   const leaderboard = Array.from(statsMap.values()).sort((a, b) => {
     if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-
     return b.totalPredictions - a.totalPredictions;
   });
 
@@ -113,7 +122,6 @@ export default async function WorldCupPage() {
       : { data: [] as ProfileRow[] };
 
   const profileMap = new Map<string, ProfileRow>();
-
   ((topProfiles ?? []) as ProfileRow[]).forEach((item) => {
     profileMap.set(item.id, item);
   });
@@ -148,7 +156,6 @@ export default async function WorldCupPage() {
       }
       leaderboard={leaderboard.slice(0, 10).map((item, index) => {
         const rowProfile = profileMap.get(item.client_id);
-
         return {
           id: item.client_id,
           rank: index + 1,
