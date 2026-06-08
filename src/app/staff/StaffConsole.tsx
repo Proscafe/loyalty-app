@@ -376,7 +376,7 @@ function StaffConsole({ profile, categories }: Props) {
     async (searchValue: string) => {
       setSearching(true);
       const res = await fetch(`/api/client/search?q=${encodeURIComponent(searchValue)}`);
-      const json = await res.json();
+      const json = await readApiResponse<{ results?: Profile[] }>(res);
       setSearching(false);
 
       if (!res.ok) {
@@ -438,7 +438,7 @@ function StaffConsole({ profile, categories }: Props) {
 
       try {
         const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`, { cache: "no-store" });
-        const json = await res.json();
+        const json = await readApiResponse<{ client?: Profile }>(res);
 
         if (!res.ok || !json.client) {
           flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
@@ -489,11 +489,11 @@ function StaffConsole({ profile, categories }: Props) {
     );
   }
 
-  async function readApiResponse(res: Response) {
+  async function readApiResponse<T = any>(res: Response): Promise<T & { error?: string }> {
     const contentType = res.headers.get("content-type") ?? "";
 
     if (contentType.includes("application/json")) {
-      return (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; phone?: string | null };
+      return (await res.json().catch(() => ({}))) as T & { error?: string };
     }
 
     const text = await res.text().catch(() => "");
@@ -502,7 +502,7 @@ function StaffConsole({ profile, categories }: Props) {
         text && text.length < 140
           ? text
           : `API route failed with status ${res.status}. Make sure the route file exists and restart the server.`,
-    };
+    } as T & { error?: string };
   }
 
   async function saveClientPassword() {
@@ -582,7 +582,7 @@ function StaffConsole({ profile, categories }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ client_id: client.id, category_id: categoryId }),
       });
-      const json: AddStampResult | { error: string } = await res.json();
+      const json = await readApiResponse<AddStampResult>(res);
 
       if (!res.ok || "error" in json) {
         setBusy(false);
@@ -625,7 +625,7 @@ function StaffConsole({ profile, categories }: Props) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reward_id: rewardId }),
     });
-    const json = await res.json();
+    const json = await readApiResponse(res);
     setBusy(false);
 
     if (!res.ok) {
