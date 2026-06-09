@@ -195,9 +195,9 @@ interface Props {
 const TABS = [
   "Overview",
   "Activity",
-  "Comment Cards",
-  "Birthdays",
   "Gifts",
+  "Birthdays",
+  "Comment Cards",
   "Loyalty Program",
 ] as const;
 type Tab = (typeof TABS)[number];
@@ -988,21 +988,6 @@ function MobileAdminDashboard({
           ))}
         </div>
 
-        {tab === "Users" ? (
-          <div className="relative z-20 mb-5">
-            <input
-              value={searchTerm}
-              onChange={(event) => {
-                setSearchTerm(event.target.value);
-                setVisibleUserCount(15);
-                setSelectedUser(null);
-              }}
-              placeholder="Search customers, staff, admin..."
-              className="h-12 w-full rounded-full border border-white/18 bg-white px-5 text-[13px] font-bold text-black placeholder:text-zinc-400 outline-none backdrop-blur-xl focus:border-[#ffd66b]/70"
-            />
-          </div>
-        ) : null}
-
         {tab === "Overview" && (
           <section className="mb-12 space-y-6">
             <DashboardGroup title="Primary Stats">
@@ -1056,164 +1041,6 @@ function MobileAdminDashboard({
                 />
               </div>
             </DashboardGroup>
-          </section>
-        )}
-
-        {tab === "Users" && (
-          <section className="mb-12">
-            {selectedUser ? (
-              <ClientProfilePanel
-                user={selectedUser}
-                currentUserId={profile.id}
-                categories={selectedCategories}
-                stamps={selectedStamps}
-                rewards={selectedRewards}
-                loading={selectedLoading}
-                onBack={() => setSelectedUser(null)}
-                onRoleChange={(role) => void setRole(selectedUser.id, role)}
-                onDeactivate={() => void deactivateUser(selectedUser.id)}
-                onReactivate={(role) =>
-                  void reactivateUser(selectedUser.id, role)
-                }
-              />
-            ) : (
-              <>
-                <div className="mb-4 flex gap-1 rounded-full border border-white/14 bg-white/12 p-1 text-[11px] backdrop-blur-xl">
-                  {(["all", "client", "staff", "master_admin"] as const).map(
-                    (item) => (
-                      <button
-                        type="button"
-                        key={item}
-                        onClick={() => {
-                          setFilter(item);
-                          setVisibleUserCount(15);
-                          setSelectedUser(null);
-                        }}
-                        className={`flex-1 rounded-full py-2 font-black transition ${
-                          filter === item
-                            ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.2)]"
-                            : "text-white/68"
-                        }`}
-                      >
-                        {item === "all"
-                          ? "All"
-                          : item === "master_admin"
-                            ? "Admin"
-                            : item === "staff"
-                              ? "Staff"
-                              : "Clients"}
-                      </button>
-                    ),
-                  )}
-                </div>
-
-                <div className="space-y-1.5 mt-4">
-                  {visibleUsers.map((user) => (
-                    <div
-                      key={user.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => void openUserProfile(user)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          void openUserProfile(user);
-                        }
-                      }}
-                      className="w-full cursor-pointer border border-white/20 p-4 text-left shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl transition active:scale-[0.99]"
-                      style={{ borderRadius: 24, background: GLASS_CARD }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-[17px] font-black text-white">
-                            {user.full_name}
-                          </div>
-                          <div className="mt-1 truncate text-[12px] font-semibold text-white/62">
-                            {user.email}
-                            {user.phone ? ` · ${user.phone}` : ""}
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            {user.client_code ? (
-                              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
-                                {user.client_code}
-                              </span>
-                            ) : null}
-
-                            {user.is_active === false ? (
-                              <span className="rounded-full bg-red-500/14 px-2 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-red-300">
-                                Deactivated
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <select
-                          value={
-                            user.is_active === false ? "deactivated" : user.role
-                          }
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => {
-                            event.stopPropagation();
-                            const value = event.target.value;
-
-                            if (value === "deactivated") {
-                              void deactivateUser(user.id);
-                              return;
-                            }
-
-                            if (user.is_active === false) {
-                              void reactivateUser(user.id, value as UserRole);
-                              return;
-                            }
-
-                            void setRole(user.id, value as UserRole);
-                          }}
-                          disabled={user.id === profile.id}
-                          className={`shrink-0 rounded-full border border-white/30 bg-white/108 px-3 py-2 text-[11px] font-black outline-none disabled:opacity-55 ${
-                            user.is_active === false
-                              ? "text-red-600"
-                              : "text-white"
-                          }`}
-                          title={
-                            user.id === profile.id
-                              ? "You cannot change your own role"
-                              : ""
-                          }
-                        >
-                          <option value="client">Client</option>
-                          <option value="staff">Staff</option>
-                          <option value="master_admin">Admin</option>
-                          <option
-                            value="deactivated"
-                            className="font-black text-red-600"
-                          >
-                            Deactivate
-                          </option>
-                        </select>
-                      </div>
-                    </div>
-                  ))}
-
-                  {filteredUsers.length === 0 ? (
-                    <EmptyState text="No users in this view." />
-                  ) : null}
-
-                  {filteredUsers.length > visibleUsers.length ? (
-                    <button
-                      type="button"
-                      onClick={() => setVisibleUserCount((count) => count + 15)}
-                      className="w-full rounded-full bg-[#ffd66b] py-3 text-[12px] font-black text-[#365665] shadow-[0_14px_30px_rgba(255,214,107,0.18)]"
-                    >
-                      Load more
-                    </button>
-                  ) : null}
-                </div>
-
-                <p className="mt-4 px-1 text-[11px] font-semibold leading-relaxed text-white/58">
-                  Tap a user to open their profile, stamps, and gifts.
-                </p>
-              </>
-            )}
           </section>
         )}
 
@@ -2667,7 +2494,6 @@ function inferPredictionSportType(match: {
 
 function tabIcon(tab: Tab) {
   if (tab === "Overview") return "⌂";
-  if (tab === "Users") return "👤";
   if (tab === "Activity") return "↯";
   if (tab === "Gifts") return "🎁";
   if (tab === "Birthdays") return "🎂";
@@ -2677,7 +2503,6 @@ function tabIcon(tab: Tab) {
 }
 
 function desktopTabLabel(tab: Tab) {
-  if (tab === "Users") return "Customer behavior";
   return tab;
 }
 
@@ -3025,13 +2850,10 @@ function DesktopAdminDashboard({
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<Tab>(() => {
-    // Read ?tab= query param on first render (works even with ssr:false)
     if (typeof window !== "undefined") {
-      const requested = new URLSearchParams(window.location.search).get("tab");
-      if (requested && (["Overview","Activity","Gifts","Birthdays","Comment Cards","Loyalty Program"] as string[]).includes(requested)) {
-        window.history.replaceState(null, "", window.location.pathname);
-        return requested as Tab;
-      }
+      const r = new URLSearchParams(window.location.search).get("tab");
+      const valid = ["Overview","Activity","Gifts","Birthdays","Comment Cards","Loyalty Program"] as string[];
+      if (r && valid.includes(r)) { window.history.replaceState(null, "", window.location.pathname); return r as Tab; }
     }
     return "Overview";
   });
@@ -7240,45 +7062,17 @@ function DesktopAdminDashboard({
           </div>
 
           <nav className="flex-1 px-3 py-4">
-            {/* Dashboard (Overview) */}
             {(["Overview"] as const).map((item) => (
-              <button key={item} type="button" title={desktopTabLabel(item)}
-                onClick={() => { setTab(item); setSelectedUser(null); }}
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>
-                {isDesktopSidebarOpen ? "Dashboard" : null}
-              </button>
+              <button key={item} type="button" title="Dashboard" onClick={() => { setTab(item); setSelectedUser(null); }} className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>{isDesktopSidebarOpen ? "Dashboard" : null}</button>
             ))}
-            {/* Activity */}
             {(["Activity"] as const).map((item) => (
-              <button key={item} type="button" title={item}
-                onClick={() => { setTab(item); setSelectedUser(null); }}
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>
-                {isDesktopSidebarOpen ? item : null}
-              </button>
+              <button key={item} type="button" title={item} onClick={() => { setTab(item); setSelectedUser(null); }} className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>{isDesktopSidebarOpen ? item : null}</button>
             ))}
-            {/* Customer behavior → /admin/users */}
-            <Link href="/admin/users" title="Customer behavior"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-              <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>👤</span>
-              {isDesktopSidebarOpen ? "Customer behavior" : null}
-            </Link>
-            {/* Comment Cards, Birthdays, Gifts, Loyalty Program */}
+            <Link href="/admin/users" title="Customer behavior" className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>👤</span>{isDesktopSidebarOpen ? "Customer behavior" : null}</Link>
             {(["Comment Cards", "Birthdays", "Gifts", "Loyalty Program"] as const).map((item) => (
-              <button key={item} type="button" title={item}
-                onClick={() => { setTab(item); setSelectedUser(null); }}
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>
-                {isDesktopSidebarOpen ? item : null}
-              </button>
+              <button key={item} type="button" title={item} onClick={() => { setTab(item); setSelectedUser(null); }} className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>{isDesktopSidebarOpen ? item : null}</button>
             ))}
-            {/* Games */}
-            <Link href="/admin/games" title="Games"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-              <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎮</span>
-              {isDesktopSidebarOpen ? "Games" : null}
-            </Link>
+            <Link href="/admin/games" title="Games" className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎮</span>{isDesktopSidebarOpen ? "Games" : null}</Link>
           </nav>
 
           <div className="border-t border-white/8 px-3 py-5">
@@ -7342,14 +7136,8 @@ function DesktopAdminDashboard({
           </div>
         </aside>
 
-        <section
-          className={`min-h-[calc(100vh-48px)] min-w-0 flex-1 ${
-            tab === "Users"
-              ? "overflow-visible"
-              : "overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl"
-          }`}
-        >
-          <div className={tab === "Users" ? "px-0 py-0" : "px-5 py-6 lg:px-8"}>
+        <section className="min-h-[calc(100vh-48px)] min-w-0 flex-1 overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl">
+          <div className="px-5 py-6 lg:px-8">
             {tab === "Overview" ? (
               <section className="space-y-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -7373,18 +7161,18 @@ function DesktopAdminDashboard({
                   <StatTile
                     value={totalCustomers}
                     label="Total Customers"
-                    onClick={() => setTab("Users")}
+                    onClick={() => { window.location.href = "/admin/users"; }}
                   />
                   <StatTile
                     value={activeCustomers}
                     label="Active Customers"
-                    onClick={() => setTab("Users")}
+                    onClick={() => { window.location.href = "/admin/users"; }}
                   />
                   <StatTile
                     value={newCustomersForTimeRange}
                     label="New Customers"
                     trend={desktopTimeRangeLabel(timeRange)}
-                    onClick={() => setTab("Users")}
+                    onClick={() => { window.location.href = "/admin/users"; }}
                   />
                   <StatTile
                     value={dashboardTotalStamps}
@@ -7588,7 +7376,7 @@ function DesktopAdminDashboard({
                       <button
                         type="button"
                         onClick={() => {
-                          setTab("Users");
+                          window.location.href = "/admin/users";
                           setLastVisitFilter("inactive");
                         }}
                         className="rounded-full bg-[#ffd66b] px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#243b42]"
@@ -7614,7 +7402,7 @@ function DesktopAdminDashboard({
                       </h2>
                       <button
                         type="button"
-                        onClick={() => setTab("Users")}
+                        onClick={() => { window.location.href = "/admin/users"; }}
                         className="text-[11px] font-black text-white"
                       >
                         View behavior
@@ -7690,528 +7478,6 @@ function DesktopAdminDashboard({
                     </div>
                   </Panel>
                 </div>
-              </section>
-            ) : null}
-
-            {tab === "Users" ? (
-              <section>
-                {selectedUser ? (
-                  <DesktopClientProfilePanel
-                    user={selectedUser}
-                    currentUserId={profile.id}
-                    categories={selectedCategories}
-                    stamps={selectedStamps}
-                    rewards={selectedRewards}
-                    activities={activityTxns.filter(
-                      (txn) =>
-                        txn.client_id === selectedUser.id &&
-                        txn.action_type !== "manual_adjustment",
-                    )}
-                    loading={selectedLoading}
-                    onBack={() => setSelectedUser(null)}
-                    onRoleChange={(role) => void setRole(selectedUser.id, role)}
-                    onDeactivate={() => void deactivateUser(selectedUser.id)}
-                    onReactivate={(role) =>
-                      void reactivateUser(selectedUser.id, role)
-                    }
-                    onAddStamp={(categoryId) =>
-                      void addStampToSelectedClient(categoryId)
-                    }
-                    onRemoveStamp={(categoryId) =>
-                      void removeStampFromSelectedClient(categoryId)
-                    }
-                    onSendGift={(gift, description) =>
-                      void sendGiftToSelectedClient(gift, description)
-                    }
-                  />
-                ) : (
-                  <>
-                    <div className="mb-4 min-h-[calc(100vh-48px)] w-full rounded-[30px] bg-white/10 p-5 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl">
-                      <div className="mb-4 flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <h2 className="mt-1 shrink-0 text-[24px] font-black tracking-[-0.04em] text-white">
-                          Customer behavior
-                        </h2>
-
-                        <div className="ml-auto flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end lg:w-auto">
-                          <input
-                            value={searchTerm}
-                            onChange={(event) => {
-                              setSearchTerm(event.target.value);
-                              setVisibleUserCount(15);
-                              setSelectedUser(null);
-                            }}
-                            placeholder="Search by name, phone, member ID..."
-                            onFocus={() => setReportFiltersOpen(false)}
-                            className="h-9 min-w-0 rounded-[11px] border border-white/25 bg-white px-3 text-[11px] font-bold text-black outline-none focus:border-[#ffd66b] sm:w-[320px] lg:w-[380px]"
-                          />
-
-                          <div ref={reportFilterRef} className="relative">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setReportFiltersOpen((current) => !current)
-                              }
-                              className="h-10 rounded-[12px] border border-white/25 bg-white/12 px-5 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/18"
-                            >
-                              Filter
-                            </button>
-
-                            {reportFiltersOpen ? (
-                              <div className="absolute right-0 top-12 z-30 w-[300px] rounded-[22px] bg-[#365665] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
-                                <div className="space-y-4">
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Date Range
-                                    </span>
-                                    <select
-                                      value={timeRange}
-                                      onChange={(event) => {
-                                        setTimeRange(
-                                          event.target
-                                            .value as DesktopTimeRange,
-                                        );
-                                        setReportFiltersOpen(false);
-                                      }}
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="today">Today</option>
-                                      <option value="week">This week</option>
-                                      <option value="month">This month</option>
-                                      <option value="all">Show all</option>
-                                    </select>
-                                  </label>
-
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Last Visit
-                                    </span>
-                                    <select
-                                      value={lastVisitFilter}
-                                      onChange={(event) => {
-                                        setLastVisitFilter(
-                                          event.target.value as
-                                            | "all"
-                                            | "active"
-                                            | "inactive",
-                                        );
-                                        setReportFiltersOpen(false);
-                                      }}
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="all">All</option>
-                                      <option value="active">
-                                        Active recently
-                                      </option>
-                                      <option value="inactive">
-                                        Inactive recently
-                                      </option>
-                                    </select>
-                                  </label>
-
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Profile Tab
-                                    </span>
-                                    <select
-                                      value={filter}
-                                      onChange={(event) => {
-                                        setFilter(
-                                          event.target.value as
-                                            | "all"
-                                            | UserRole,
-                                        );
-                                        setReportFiltersOpen(false);
-                                      }}
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="all">All profiles</option>
-                                      <option value="client">Clients</option>
-                                      <option value="staff">Staff</option>
-                                      <option value="master_admin">
-                                        Admin
-                                      </option>
-                                    </select>
-                                  </label>
-
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Status
-                                    </span>
-                                    <select
-                                      value={customerStatusFilter}
-                                      onChange={(event) =>
-                                        setCustomerStatusFilter(
-                                          event.target
-                                            .value as typeof customerStatusFilter,
-                                        )
-                                      }
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="all">All status</option>
-                                      <option value="active">Recent 0–7</option>
-                                      <option value="inactive">
-                                        Overdue 31+
-                                      </option>
-                                      <option value="at_risk">
-                                        At Risk 31+
-                                      </option>
-                                      <option value="vip">VIP</option>
-                                    </select>
-                                  </label>
-
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Gender
-                                    </span>
-                                    <select
-                                      value={customerGenderFilter}
-                                      onChange={(event) =>
-                                        setCustomerGenderFilter(
-                                          event.target
-                                            .value as typeof customerGenderFilter,
-                                        )
-                                      }
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="all">All genders</option>
-                                      <option value="male">Male</option>
-                                      <option value="female">Female</option>
-                                    </select>
-                                  </label>
-
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Age Range
-                                    </span>
-                                    <select
-                                      value={customerAgeRangeFilter}
-                                      onChange={(event) =>
-                                        setCustomerAgeRangeFilter(
-                                          event.target
-                                            .value as typeof customerAgeRangeFilter,
-                                        )
-                                      }
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="all">All ages</option>
-                                      <option value="18-24">18–24</option>
-                                      <option value="25-34">25–34</option>
-                                      <option value="35-44">35–44</option>
-                                      <option value="45+">45+</option>
-                                    </select>
-                                  </label>
-
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Visit Range
-                                    </span>
-                                    <select
-                                      value={customerVisitRangeFilter}
-                                      onChange={(event) =>
-                                        setCustomerVisitRangeFilter(
-                                          event.target
-                                            .value as typeof customerVisitRangeFilter,
-                                        )
-                                      }
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="all">All visits</option>
-                                      <option value="0">0 visits</option>
-                                      <option value="1-3">1–3 visits</option>
-                                      <option value="4-10">4–10 visits</option>
-                                      <option value="10+">10+</option>
-                                    </select>
-                                  </label>
-
-                                  <label className="block">
-                                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                                      Value Range
-                                    </span>
-                                    <select
-                                      value={customerValueRangeFilter}
-                                      onChange={(event) =>
-                                        setCustomerValueRangeFilter(
-                                          event.target
-                                            .value as typeof customerValueRangeFilter,
-                                        )
-                                      }
-                                      className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                                    >
-                                      <option value="all">All values</option>
-                                      <option value="0">$0</option>
-                                      <option value="1-50">$1–$50</option>
-                                      <option value="50-200">$50–$200</option>
-                                      <option value="200+">$200+</option>
-                                    </select>
-                                  </label>
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={downloadVisibleCustomerTable}
-                            title="Download table"
-                            aria-label="Download table"
-                            className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/25 bg-white/12 text-white transition hover:bg-white/18"
-                          >
-                            <svg
-                              width="17"
-                              height="17"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              aria-hidden="true"
-                            >
-                              <path
-                                d="M12 3v11m0 0 4-4m-4 4-4-4"
-                                stroke="currentColor"
-                                strokeWidth="2.4"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                              <path
-                                d="M5 17v2.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V17"
-                                stroke="currentColor"
-                                strokeWidth="2.4"
-                                strokeLinecap="round"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div
-                        className="mb-4 grid w-full gap-2"
-                        style={{
-                          gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                        }}
-                      >
-                        <DesktopReportMetric
-                          label="New Customers"
-                          value={newCustomerCount}
-                        />
-                        <DesktopReportMetric
-                          label="Returning"
-                          value={returningCustomerCount}
-                        />
-                        <DesktopReportMetric
-                          label="Active"
-                          value={activeReportCustomers}
-                        />
-                        <DesktopReportMetric
-                          label="Inactive"
-                          value={inactiveCustomerCount}
-                        />
-                        <DesktopReportMetric
-                          label="At Risk"
-                          value={atRiskCustomerCount}
-                        />
-                        <DesktopReportMetric
-                          label="VIP"
-                          value={vipCustomerCount}
-                        />
-                        <DesktopReportMetric
-                          label="Avg. Visits"
-                          value={averageVisitsPerCustomer}
-                        />
-                      </div>
-
-                      <div className="w-full overflow-hidden rounded-[22px] bg-white/10">
-                        <div
-                          className="grid gap-4 border-b border-white/14 bg-white/6 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58"
-                          style={{
-                            gridTemplateColumns: CUSTOMER_TABLE_GRID,
-                            width: "100%",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => sortCustomerTable("name")}
-                            className={customerHeaderClass("name")}
-                          >
-                            Names
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => sortCustomerTable("contact")}
-                            className={customerHeaderClass("contact")}
-                          >
-                            Contact
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => sortCustomerTable("lastVisit")}
-                            className={customerHeaderClass("lastVisit")}
-                          >
-                            Last Visit
-                          </button>
-                          <div>Days Ago</div>
-                          <button
-                            type="button"
-                            onClick={() => sortCustomerTable("visits")}
-                            className={customerHeaderClass("visits")}
-                          >
-                            Visits
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => sortCustomerTable("lifetime")}
-                            className={customerHeaderClass("lifetime")}
-                          >
-                            Lifetime $
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => sortCustomerTable("gifts")}
-                            className={customerHeaderClass("gifts")}
-                          >
-                            Gifts
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => sortCustomerTable("status")}
-                            className={customerHeaderClass("status")}
-                          >
-                            Status
-                          </button>
-                          <div className="text-left">Actions</div>
-                          <div className="text-left">Last Contacted</div>
-                        </div>
-
-                        <div className="max-h-[560px] overflow-auto">
-                          {sortedCustomerReportRows.slice(0, 80).map((row) => {
-                            const digits = String(row.user.phone || "").replace(
-                              /\D/g,
-                              "",
-                            );
-                            const whatsappUrl = digits
-                              ? `https://wa.me/${digits}`
-                              : "";
-                            const contactKeys = sharedContactKeys(
-                              row.user.phone,
-                              row.user.email,
-                              row.user.full_name || row.user.id,
-                            );
-                            const lastContactedDates = contactHistoryForKeys(contactKeys).slice(0, 2);
-
-                            return (
-                              <div
-                                key={row.user.id}
-                                className="grid gap-4 px-4 py-3 text-[12px] font-bold text-white/78 transition hover:bg-white/10"
-                                style={{
-                                  gridTemplateColumns: CUSTOMER_TABLE_GRID,
-                                  width: "100%",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => void openUserProfile(row.user)}
-                                  className="min-w-0 text-left"
-                                >
-                                  <div className="truncate font-black text-white">
-                                    {row.user.full_name || "Client"}
-                                  </div>
-                                  <div className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-[#ffd66b]">
-                                    {row.user.client_code || "No ID"}
-                                  </div>
-                                </button>
-
-                                <div className="min-w-0">
-                                  <div className="truncate">
-                                    {row.user.phone || "—"}
-                                  </div>
-                                </div>
-
-                                <div>
-                                  {desktopFormatDateOnly(row.lastVisit)}
-                                </div>
-                                <div>
-                                  <span
-                                    className={`inline-flex min-w-[34px] justify-center rounded-full px-2 py-1 text-[10px] font-black ${daysAgoClass(row.daysSinceLastVisit)}`}
-                                  >
-                                    {row.daysSinceLastVisit ?? "—"}
-                                  </span>
-                                </div>
-                                <div className="font-black text-white">
-                                  {row.totalVisits}
-                                </div>
-                                <div className="font-black text-white">
-                                  {desktopFormatMoney(row.lifetimeValue)}
-                                </div>
-                                <div className="font-black text-white">
-                                  {row.giftsCount}
-                                </div>
-                                <div>
-                                  <span
-                                    className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoStatusClass(row.daysSinceLastVisit)}`}
-                                  >
-                                    {daysAgoStatusLabel(row.daysSinceLastVisit)}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-start gap-2">
-                                  {row.user.role === "client" ? (
-                                    <button
-                                      type="button"
-                                      onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        openQuickGift(row.user);
-                                      }}
-                                      className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                                    >
-                                      Gift
-                                    </button>
-                                  ) : (
-                                    <span className="text-white/36">—</span>
-                                  )}
-                                  {whatsappUrl ? (
-                                    <a
-                                      href={whatsappUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
-                                    >
-                                      WA
-                                    </a>
-                                  ) : (
-                                    <span className="text-white/36">—</span>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      markCustomerContacted(row.user);
-                                    }}
-                                    className="rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
-                                  >
-                                    Contacted
-                                  </button>
-                                </div>
-                                <div className="space-y-0.5 text-[11px] font-black text-white/72">
-                                  {lastContactedDates.length > 0 ? (
-                                    lastContactedDates.map((date) => (
-                                      <div key={date}>{desktopFormatDateTime(date)}</div>
-                                    ))
-                                  ) : (
-                                    <span className="text-white/42">—</span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {sortedCustomerReportRows.length === 0 ? (
-                            <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">
-                              No customer report data for this view.
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
               </section>
             ) : null}
 

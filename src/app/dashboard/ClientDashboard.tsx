@@ -861,28 +861,41 @@ export function ClientDashboard({
     return false;
   }
 
+  function loadJsQrScript(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if ((window as any).jsQR) { resolve(); return; }
+      const existing = document.getElementById("pros-jsqr-script") as HTMLScriptElement | null;
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        existing.addEventListener("error", () => reject(), { once: true });
+        return;
+      }
+      const s = document.createElement("script");
+      s.id = "pros-jsqr-script";
+      s.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject();
+      document.head.appendChild(s);
+    });
+  }
+
   async function openQrScanner() {
     if (typeof window === "undefined") return;
 
+    // Full reset so re-opening always works cleanly
+    stopQrScanner();
     setIsQrScannerOpen(true);
-    setQrScannerStatus("Opening camera...");
-
-    const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
+    setQrScannerStatus("Opening camera\u2026");
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      setQrScannerStatus("Camera scanning is not supported on this browser. Please use your phone camera app.");
+      setQrScannerStatus("Camera not supported on this browser. Please use your phone camera app.");
       return;
     }
 
     try {
-      stopQrScanner();
-
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
 
@@ -890,46 +903,78 @@ export function ClientDashboard({
       const video = qrVideoRef.current;
 
       if (!video) {
-        setQrScannerStatus("Camera is open, but the scanner view is not ready. Please try again.");
+        setQrScannerStatus("Scanner view not ready \u2014 please try again.");
         return;
       }
 
       video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      video.muted = true;
       await video.play();
 
-      if (!BarcodeDetectorConstructor) {
-        setQrScannerStatus(
-          "Camera is open. This browser cannot read QR codes inside the app, so use your phone camera app if scanning does not continue.",
-        );
-        return;
-      }
+      const NativeBD = (window as any).BarcodeDetector;
 
-      const detector = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
-      setQrScannerStatus("Point your camera at the QR code.");
+      if (NativeBD) {
+        // Path A: native BarcodeDetector (Chrome / Android WebView)
+        const detector = new NativeBD({ formats: ["qr_code"] });
+        setQrScannerStatus("Point your camera at the QR code.");
 
-      const scanFrame = async () => {
-        const activeVideo = qrVideoRef.current;
-
-        if (!activeVideo || activeVideo.readyState < 2) {
-          qrFrameRef.current = window.requestAnimationFrame(scanFrame);
+        const scanFrame = async () => {
+          const activeVideo = qrVideoRef.current;
+          if (!activeVideo || activeVideo.readyState < 2 || activeVideo.paused) {
+            qrFrameRef.current = requestAnimationFrame(scanFrame);
+            return;
+          }
+          try {
+            const barcodes = await detector.detect(activeVideo);
+            const value = cleanText(barcodes?.[0]?.rawValue);
+            if (value && openPredictionLinkFromQr(value)) return;
+          } catch {
+            // Some frames fail while focusing — keep going
+          }
+          qrFrameRef.current = requestAnimationFrame(scanFrame);
+        };
+        qrFrameRef.current = requestAnimationFrame(scanFrame);
+      } else {
+        // Path B: jsQR canvas decode (Safari / Firefox)
+        setQrScannerStatus("Loading QR engine\u2026");
+        try {
+          await loadJsQrScript();
+        } catch {
+          setQrScannerStatus("QR engine failed to load. Try refreshing the page.");
           return;
         }
 
-        try {
-          const barcodes = await detector.detect(activeVideo);
-          const value = cleanText(barcodes?.[0]?.rawValue);
+        const canvas = document.createElement("canvas");
+        setQrScannerStatus("Point your camera at the QR code.");
 
-          if (value && openPredictionLinkFromQr(value)) return;
-        } catch {
-          // Keep scanning; some frames can fail while the camera is adjusting.
-        }
-
-        qrFrameRef.current = window.requestAnimationFrame(scanFrame);
-      };
-
-      qrFrameRef.current = window.requestAnimationFrame(scanFrame);
+        const scanFrame = () => {
+          const activeVideo = qrVideoRef.current;
+          if (!activeVideo || activeVideo.readyState < 2 || activeVideo.paused) {
+            qrFrameRef.current = requestAnimationFrame(scanFrame);
+            return;
+          }
+          const vw = activeVideo.videoWidth;
+          const vh = activeVideo.videoHeight;
+          if (vw && vh) {
+            canvas.width = vw;
+            canvas.height = vh;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (ctx) {
+              ctx.drawImage(activeVideo, 0, 0, vw, vh);
+              const imageData = ctx.getImageData(0, 0, vw, vh);
+              const result = (window as any).jsQR?.(imageData.data, vw, vh, {
+                inversionAttempts: "dontInvert",
+              });
+              if (result?.data && openPredictionLinkFromQr(result.data)) return;
+            }
+          }
+          qrFrameRef.current = requestAnimationFrame(scanFrame);
+        };
+        qrFrameRef.current = requestAnimationFrame(scanFrame);
+      }
     } catch {
-      setQrScannerStatus("Camera permission was blocked. Please allow camera access and try again.");
+      setQrScannerStatus("Camera permission blocked. Allow camera access and try again.");
     }
   }
 
@@ -1592,13 +1637,24 @@ export function ClientDashboard({
                 </button>
               </div>
 
-              <div className="overflow-hidden rounded-[18px] bg-black">
+              <div className="relative overflow-hidden rounded-[18px] bg-black">
                 <video
                   ref={qrVideoRef}
                   className="h-[320px] w-full object-cover"
                   muted
                   playsInline
+                  autoPlay
                 />
+                {/* Viewfinder overlay */}
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="relative h-[210px] w-[210px]">
+                    <div className="absolute inset-0 rounded-[28px] shadow-[0_0_0_999px_rgba(0,0,0,0.32)]" />
+                    <div className="absolute -left-0.5 -top-0.5 h-10 w-10 rounded-tl-[28px] border-l-[3px] border-t-[3px] border-[#f0cf61]" />
+                    <div className="absolute -right-0.5 -top-0.5 h-10 w-10 rounded-tr-[28px] border-r-[3px] border-t-[3px] border-[#f0cf61]" />
+                    <div className="absolute -bottom-0.5 -left-0.5 h-10 w-10 rounded-bl-[28px] border-b-[3px] border-l-[3px] border-[#f0cf61]" />
+                    <div className="absolute -bottom-0.5 -right-0.5 h-10 w-10 rounded-br-[28px] border-b-[3px] border-r-[3px] border-[#f0cf61]" />
+                  </div>
+                </div>
               </div>
 
               {qrScannerStatus ? (
@@ -1606,6 +1662,14 @@ export function ClientDashboard({
                   {qrScannerStatus}
                 </p>
               ) : null}
+
+              <button
+                type="button"
+                onClick={() => void openQrScanner()}
+                className="mt-3 w-full rounded-full bg-white/14 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white active:scale-95"
+              >
+                Restart Camera
+              </button>
             </div>
           </div>
         ) : null}
