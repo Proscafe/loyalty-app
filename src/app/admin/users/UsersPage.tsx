@@ -48,6 +48,19 @@ function parseMoneyValue(value: string | number | null | undefined) {
   return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
+function getTransactionStampCount(txn: unknown) {
+  const record = txn as Record<string, unknown>;
+  const raw =
+    record.stamp_count ??
+    record.stamps ??
+    record.quantity ??
+    record.amount ??
+    1;
+
+  const count = Number(raw);
+  return Number.isFinite(count) && count > 0 ? count : 1;
+}
+
 function desktopFormatDate(value?: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -449,11 +462,11 @@ function DesktopClientProfilePanel({
     const record = txn as unknown as Record<string, unknown>;
     const categoryId =
       typeof record.category_id === "string" ? record.category_id : "";
-    const actionType = String(record.action_type ?? "");
+    const actionType = String(record.action_type ?? "").toLowerCase();
 
-    if (actionType.includes("remove")) return 0;
+    if (actionType !== "add_stamp") return 0;
 
-    return priceByCategoryId.get(categoryId) ?? 0;
+    return (priceByCategoryId.get(categoryId) ?? 0) * getTransactionStampCount(txn);
   };
 
   const giftValueFor = (reward: Reward) => {
@@ -483,14 +496,32 @@ function DesktopClientProfilePanel({
     [filteredActivities],
   );
 
+  const currentStampsValue = useMemo(
+    () =>
+      stamps.reduce(
+        (sum, stamp) =>
+          sum +
+          Math.max(0, Number(stamp.stamp_count ?? 0)) *
+            (priceByCategoryId.get(stamp.category_id) ?? 0),
+        0,
+      ),
+    [stamps, priceByCategoryId],
+  );
+
   const value = useMemo(
-    () => filteredActivities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
-    [filteredActivities, priceByCategoryId],
+    () =>
+      filteredActivities.reduce((sum, txn) => sum + stampValueFor(txn), 0) +
+      currentStampsValue,
+    [filteredActivities, priceByCategoryId, currentStampsValue],
   );
 
   const lifetime = useMemo(
-    () => activities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
-    [activities, priceByCategoryId],
+    () =>
+      Math.max(
+        activities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
+        currentStampsValue,
+      ),
+    [activities, priceByCategoryId, currentStampsValue],
   );
 
   const giftsValue = useMemo(
@@ -1113,7 +1144,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
     async function loadData() {
       setLoading(true);
       try {
-        const [profilesRes, txnsRes, rewardsRes, categoriesRes] = await Promise.all([
+        const [profilesRes, txnsRes, rewardsRes, categoriesRes, stampsRes] = await Promise.all([
           supabase
             .from("profiles")
             .select("id, full_name, email, phone, client_code, role, is_active, gender, birthday, created_at")
@@ -1136,6 +1167,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
             .from("loyalty_categories")
             .select("id, name, average_price, sort_order")
             .order("sort_order", { ascending: true }),
+
+          supabase
+            .from("client_stamps")
+            .select("client_id, category_id, stamp_count"),
         ]);
 
         if (!isMounted) return;
@@ -1144,15 +1179,24 @@ export function UsersPage({ adminId }: { adminId: string }) {
         if (profilesRes.error) console.error("[UsersPage] profiles error:", profilesRes.error);
         if (txnsRes.error) console.error("[UsersPage] txns error:", txnsRes.error);
         if (rewardsRes.error) console.error("[UsersPage] rewards error:", rewardsRes.error);
+        if (categoriesRes.error) console.error("[UsersPage] categories error:", categoriesRes.error);
+        if (stampsRes.error) console.error("[UsersPage] client_stamps error:", stampsRes.error);
         console.log("[UsersPage] loaded:", {
           profiles: profilesRes.data?.length,
           txns: txnsRes.data?.length,
           rewards: rewardsRes.data?.length,
+          categories: categoriesRes.data?.length,
+          clientStamps: stampsRes.data?.length,
         });
 
         const txns = (txnsRes.data ?? []) as StampTransaction[];
         const rewards = rewardsRes.data ?? [];
         const cats = (categoriesRes.data ?? []) as AdminCategory[];
+        const clientStamps = (stampsRes.data ?? []) as Array<{
+          client_id: string | null;
+          category_id: string | null;
+          stamp_count: number | null;
+        }>;
 
         // Build price map
         const priceByCategory = new Map<string, number>();
@@ -1177,10 +1221,25 @@ export function UsersPage({ adminId }: { adminId: string }) {
           }
           const existing = lastVisitByUser.get(txn.client_id);
           if (!existing || txn.created_at > existing) lastVisitByUser.set(txn.client_id, txn.created_at);
-          if (txn.action_type === "add_stamp") {
+          if (String(txn.action_type ?? "").toLowerCase() === "add_stamp") {
             const price = priceByCategory.get(txn.category_id ?? "") ?? 0;
-            lifetimeByUser.set(txn.client_id, (lifetimeByUser.get(txn.client_id) ?? 0) + price);
+            lifetimeByUser.set(
+              txn.client_id,
+              (lifetimeByUser.get(txn.client_id) ?? 0) +
+                price * getTransactionStampCount(txn),
+            );
           }
+        });
+
+        const currentStampValueByUser = new Map<string, number>();
+        clientStamps.forEach((stamp) => {
+          if (!stamp.client_id || !stamp.category_id) return;
+          const price = priceByCategory.get(stamp.category_id) ?? 0;
+          const count = Math.max(0, Number(stamp.stamp_count ?? 0));
+          currentStampValueByUser.set(
+            stamp.client_id,
+            (currentStampValueByUser.get(stamp.client_id) ?? 0) + price * count,
+          );
         });
 
         const rewardsByUser = new Map<string, number>();
@@ -1197,7 +1256,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
             ? Math.floor((Date.now() - new Date(lastVisitByUser.get(p.id)!).getTime()) / 86400000)
             : null,
           giftsCount:   rewardsByUser.get(p.id) ?? 0,
-          lifetimeValue: lifetimeByUser.get(p.id) ?? 0,
+          lifetimeValue: Math.max(
+            lifetimeByUser.get(p.id) ?? 0,
+            currentStampValueByUser.get(p.id) ?? 0,
+          ),
         }));
 
         setUsers(enriched as AdminUser[]);
@@ -1233,7 +1295,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
     setSelectedCategories([]); setSelectedStamps([]); setSelectedRewards([]);
     try {
       const [catResult, stampResult, rewardResult] = await Promise.all([
-        supabase.from("loyalty_categories").select("id, name, sort_order").eq("is_active", true).order("sort_order", { ascending: true }),
+        supabase.from("loyalty_categories").select("id, name, sort_order, average_price").eq("is_active", true).order("sort_order", { ascending: true }),
         supabase.from("client_stamps").select("id, client_id, category_id, stamp_count, updated_at").eq("client_id", user.id),
         supabase.from("rewards").select("*").eq("client_id", user.id).order("created_at", { ascending: false }).limit(20),
       ]);
@@ -1285,7 +1347,59 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
     if (stampError) { flash(stampError.message, "error"); setSelectedLoading(false); return; }
 
-    await supabase.from("stamp_transactions").insert({ client_id: selectedUser.id, category_id: categoryId, action_type: "add_stamp", stamp_count: 1, staff_id: adminId, created_at: new Date().toISOString() });
+    const createdAt = new Date().toISOString();
+    const { data: insertedTxn, error: transactionError } = await supabase
+      .from("stamp_transactions")
+      .insert({
+        client_id: selectedUser.id,
+        category_id: categoryId,
+        action_type: "add_stamp",
+        stamp_count: 1,
+        staff_id: adminId,
+        created_at: createdAt,
+      })
+      .select("*")
+      .single();
+
+    if (transactionError) {
+      flash(`Stamp was added, but the value history was not saved: ${transactionError.message}`, "error");
+    } else if (insertedTxn) {
+      setActivityTxns((current) => [insertedTxn as StampTransaction, ...current]);
+      const addedValue =
+        (selectedCategories.find((category) => category.id === categoryId)?.average_price
+          ? parseMoneyValue(
+              selectedCategories.find((category) => category.id === categoryId)
+                ?.average_price,
+            )
+          : 0) ||
+        (categories.find((category) => category.id === categoryId)?.average_price
+          ? parseMoneyValue(
+              categories.find((category) => category.id === categoryId)?.average_price,
+            )
+          : 0);
+
+      setUsers((current) =>
+        current.map((user) =>
+          user.id === selectedUser.id
+            ? {
+                ...user,
+                lifetimeValue: Math.max(
+                  user.lifetimeValue ?? 0,
+                  (user.lifetimeValue ?? 0) + addedValue,
+                ),
+              }
+            : user,
+        ),
+      );
+      setSelectedUser((current) =>
+        current?.id === selectedUser.id
+          ? {
+              ...current,
+              lifetimeValue: (current.lifetimeValue ?? 0) + addedValue,
+            }
+          : current,
+      );
+    }
 
     if (nextCount >= 5) {
       const categoryName = selectedCategories.find(c => c.id === categoryId)?.name?.toLowerCase() ?? "";

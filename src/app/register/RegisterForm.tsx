@@ -5,6 +5,50 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
+function normalizeLebanonPhone(value: string) {
+  const cleaned = value.replace(/[\s\-().]/g, "").trim();
+
+  if (cleaned.startsWith("00")) {
+    return `+${cleaned.slice(2)}`;
+  }
+
+  if (cleaned.startsWith("+9610")) {
+    return `+961${cleaned.slice(5)}`;
+  }
+
+  if (cleaned.startsWith("+961")) {
+    return cleaned;
+  }
+
+  if (cleaned.startsWith("9610")) {
+    return `+961${cleaned.slice(4)}`;
+  }
+
+  if (cleaned.startsWith("961")) {
+    return `+${cleaned}`;
+  }
+
+  if (cleaned.startsWith("0")) {
+    return `+961${cleaned.slice(1)}`;
+  }
+
+  return `+961${cleaned}`;
+}
+
+function isValidLebanonPhone(value: string) {
+  const normalizedPhone = normalizeLebanonPhone(value);
+
+  if (!/^\+\d+$/.test(normalizedPhone)) {
+    return false;
+  }
+
+  if (/^(\+961)?0+$/.test(normalizedPhone)) {
+    return false;
+  }
+
+  return /^\+961(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(normalizedPhone);
+}
+
 export function RegisterForm() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
@@ -20,6 +64,20 @@ export function RegisterForm() {
     setError(null);
     setInfo(null);
 
+    const trimmedFullName = fullName.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const normalizedPhone = normalizeLebanonPhone(phone);
+
+    if (!trimmedFullName) {
+      setError("Please enter your full name.");
+      return;
+    }
+
+    if (!isValidLebanonPhone(phone)) {
+      setError("Please enter a valid Lebanese phone number, like 03 123 456 or +961 71 123 456.");
+      return;
+    }
+
     if (password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
@@ -29,12 +87,12 @@ export function RegisterForm() {
 
     const supabase = createClient();
     const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
+      email: trimmedEmail,
       password,
       options: {
         data: {
-          full_name: fullName,
-          phone,
+          full_name: trimmedFullName,
+          phone: normalizedPhone,
         },
       },
     });
@@ -99,13 +157,16 @@ export function RegisterForm() {
         </label>
         <input
           id="phone"
+          type="tel"
           className={inputClass}
           required
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          placeholder="Enter your phone number"
+          placeholder="03 123 456 or +961 71 123 456"
           autoComplete="tel"
           inputMode="tel"
+          pattern="[0-9+\s\-().]{7,20}"
+          title="Enter a valid Lebanese phone number, like 03 123 456 or +961 71 123 456."
         />
       </div>
 

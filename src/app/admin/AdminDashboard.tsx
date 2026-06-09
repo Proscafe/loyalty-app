@@ -656,9 +656,7 @@ function MobileAdminDashboard({
 
       if (!isMounted) return;
 
-      const txns = ((txnResult.data ?? []) as StampTransaction[]).filter(
-        (txn) => txn.action_type !== "manual_adjustment",
-      );
+      const txns = (txnResult.data ?? []) as StampTransaction[];
 
       setActivityTxns(txns);
 
@@ -1231,6 +1229,31 @@ function parseMoneyValue(value: string | number | null | undefined) {
       ? value
       : Number(String(value ?? "").replace(/[^\d.]/g, ""));
   return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function getStampTransactionQuantity(txn: unknown) {
+  const record = txn as Record<string, unknown>;
+  const candidates = [
+    record.stamp_count,
+    record.stamps,
+    record.quantity,
+    record.amount,
+  ];
+
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+
+  return 1;
+}
+
+function isAddStampTransaction(txn: unknown) {
+  const actionType = String(
+    (txn as Record<string, unknown>).action_type ?? "",
+  ).toLowerCase();
+
+  return actionType === "add_stamp" || actionType === "stamp_added" || actionType === "manual_adjustment";
 }
 
 function formatLoyaltyMoney(value: number, currency: string) {
@@ -4278,7 +4301,6 @@ function DesktopAdminDashboard({
         supabase
           .from("stamp_transactions")
           .select("*")
-          .neq("action_type", "manual_adjustment")
           .order("created_at", { ascending: false })
           .limit(250),
 
@@ -4544,7 +4566,7 @@ function DesktopAdminDashboard({
       const [categoryResult, stampResult, rewardResult] = await Promise.all([
         supabase
           .from("loyalty_categories")
-          .select("id, name, sort_order")
+          .select("id, name, sort_order, average_price")
           .eq("is_active", true)
           .order("sort_order", { ascending: true }),
 
@@ -4618,14 +4640,41 @@ function DesktopAdminDashboard({
       return;
     }
 
-    await supabase.from("stamp_transactions").insert({
+    const transactionCreatedAt = new Date().toISOString();
+    const { data: insertedTxn, error: transactionError } = await supabase
+      .from("stamp_transactions")
+      .insert({
+        client_id: selectedUser.id,
+        category_id: categoryId,
+        action_type: "add_stamp",
+        stamp_count: 1,
+        staff_id: profile.id,
+        created_at: transactionCreatedAt,
+      })
+      .select("*")
+      .single();
+
+    if (transactionError) {
+      flash(`Stamp count changed, but lifetime was not updated: ${transactionError.message}`, "error");
+      setSelectedLoading(false);
+      return;
+    }
+
+    const newTxn = (insertedTxn ?? {
       client_id: selectedUser.id,
       category_id: categoryId,
       action_type: "add_stamp",
       stamp_count: 1,
       staff_id: profile.id,
-      created_at: new Date().toISOString(),
-    });
+      created_at: transactionCreatedAt,
+    }) as StampTransaction;
+
+    setActivityTxns((current) => [
+      newTxn,
+      ...current.filter(
+        (txn) => String((txn as unknown as Record<string, unknown>).id ?? "") !== String((newTxn as unknown as Record<string, unknown>).id ?? ""),
+      ),
+    ]);
 
     if (nextCount >= 5) {
       const categoryName =
@@ -5804,11 +5853,10 @@ function DesktopAdminDashboard({
         const record = txn as unknown as Record<string, unknown>;
         const categoryId =
           typeof record.category_id === "string" ? record.category_id : "";
-        const actionType = String(record.action_type ?? "");
 
-        if (actionType.includes("remove")) return 0;
+        if (!isAddStampTransaction(txn)) return 0;
 
-        return categoryAveragePriceById[categoryId] ?? 0;
+        return (categoryAveragePriceById[categoryId] ?? 0) * getStampTransactionQuantity(txn);
       };
 
       const visits = new Set(
@@ -9466,11 +9514,10 @@ function DesktopClientProfilePanel({
     const record = txn as unknown as Record<string, unknown>;
     const categoryId =
       typeof record.category_id === "string" ? record.category_id : "";
-    const actionType = String(record.action_type ?? "");
 
-    if (actionType.includes("remove")) return 0;
+    if (!isAddStampTransaction(txn)) return 0;
 
-    return priceByCategoryId.get(categoryId) ?? 0;
+    return (priceByCategoryId.get(categoryId) ?? 0) * getStampTransactionQuantity(txn);
   };
 
   const giftValueFor = (reward: Reward) => {

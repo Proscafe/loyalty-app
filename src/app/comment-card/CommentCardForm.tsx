@@ -23,6 +23,82 @@ type Ratings = {
   visitAgain: number;
 };
 
+type NormalizedPhoneResult = { valid: true; value: string } | { valid: false; message: string };
+
+const LEBANON_PHONE_PREFIXES = [
+  "1",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "70",
+  "71",
+  "76",
+  "78",
+  "79",
+  "81",
+];
+
+function normalizeLebanonPhone(rawValue: string): NormalizedPhoneResult {
+  const value = rawValue.trim();
+
+  if (!value) {
+    return { valid: false, message: "Please enter a phone number." };
+  }
+
+  if (/[^\d\s()+-]/.test(value)) {
+    return {
+      valid: false,
+      message: "Phone number can only contain numbers, spaces, +, -, and parentheses.",
+    };
+  }
+
+  const compact = value.replace(/[\s()-]/g, "");
+
+  if ((compact.match(/\+/g) || []).length > 1 || (compact.includes("+") && !compact.startsWith("+"))) {
+    return { valid: false, message: "Please enter a valid phone number." };
+  }
+
+  const digitsOnly = compact.replace(/\D/g, "");
+
+  if (digitsOnly.length < 7 || digitsOnly.length > 11 || /^(\d)\1+$/.test(digitsOnly)) {
+    return { valid: false, message: "Please enter a real phone number." };
+  }
+
+  let localNumber = "";
+
+  if (compact.startsWith("+961")) {
+    localNumber = compact.slice(4);
+  } else if (digitsOnly.startsWith("961")) {
+    localNumber = digitsOnly.slice(3);
+  } else {
+    localNumber = digitsOnly;
+  }
+
+  if (localNumber.startsWith("0")) {
+    localNumber = localNumber.slice(1);
+  }
+
+  const hasValidLength = localNumber.length === 7 || localNumber.length === 8;
+  const hasValidPrefix = LEBANON_PHONE_PREFIXES.some((prefix) => localNumber.startsWith(prefix));
+
+  if (!hasValidLength || !hasValidPrefix || /^(\d)\1+$/.test(localNumber)) {
+    return {
+      valid: false,
+      message: "Please enter a valid Lebanese phone number, e.g. 03 123 456 or +961 71 123 456.",
+    };
+  }
+
+  return { valid: true, value: `+961${localNumber}` };
+}
+
+function cleanPhoneInput(value: string) {
+  return value.replace(/[^\d\s()+-]/g, "");
+}
+
 function StarRating({
   label,
   value,
@@ -170,6 +246,13 @@ export function CommentCardForm() {
       return;
     }
 
+    const phoneResult = normalizeLebanonPhone(phone);
+
+    if (phoneResult.valid === false) {
+      setError(phoneResult.message);
+      return;
+    }
+
     setLoading(true);
 
     const birthdayValue =
@@ -179,7 +262,7 @@ export function CommentCardForm() {
 
     const { error: insertError } = await supabase.from("comment_cards").insert({
       full_name: fullName.trim(),
-      phone: phone.trim(),
+      phone: phoneResult.value,
       birthday: birthdayValue,
       experience_rating: ratings.experience,
       food_rating: ratings.food,
@@ -229,10 +312,14 @@ export function CommentCardForm() {
             className={inputClass}
             required
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Enter your phone number"
+            onChange={(e) => setPhone(cleanPhoneInput(e.target.value))}
+            placeholder="03 123 456 or +961 71 123 456"
             autoComplete="tel"
             inputMode="tel"
+            minLength={7}
+            maxLength={20}
+            pattern="[0-9\s()+-]{7,20}"
+            title="Enter a real Lebanese phone number, e.g. 03 123 456 or +961 71 123 456"
           />
         </div>
 
