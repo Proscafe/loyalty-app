@@ -373,8 +373,8 @@ export function PredictionPageClient({
             )}
           </section>
         )}
-      </div>
-        <footer className="mx-auto mt-auto w-full max-w-md pt-10 text-center text-[12px] font-semibold text-white/54">
+
+        <footer className="mt-4 text-center text-[12px] font-semibold text-white/80">
           © Powered by{" "}
           <a
             href="https://wissamdesigns.com"
@@ -385,6 +385,7 @@ export function PredictionPageClient({
             wissamdesigns.com
           </a>
         </footer>
+      </div>
       </main>
     </AppShell>
   );

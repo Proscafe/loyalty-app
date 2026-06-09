@@ -312,6 +312,7 @@ export function GameLinkDetailsClient({
       : "",
   );
   const [editOpen, setEditOpen] = useState(false);
+  const [saveResultOpen, setSaveResultOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editForm, setEditForm] = useState<EditForm>({
     sport_type:
@@ -662,25 +663,39 @@ export function GameLinkDetailsClient({
 
   return (
     <main
-      className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)] px-6 py-8 text-white"
+      className="min-h-screen bg-[#61716b] px-6 py-8 text-white lg:bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#61716b_0%,#365665_52%,#61716b_100%)]"
       style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}
     >
       <div className="mx-auto max-w-6xl">
+        <header className="mb-7 flex h-[78px] items-center justify-between rounded-[18px] bg-[#718078] px-6 shadow-[0_18px_42px_rgba(20,30,26,0.16)] lg:hidden">
+          <img
+            src="/pros-logo-basic.png"
+            alt="PRO's Cafe"
+            className="h-12 w-auto object-contain"
+          />
+          <div className="flex h-11 w-11 items-center justify-center" aria-label="Admin profile">
+            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="15" cy="8.5" r="6.5" fill="#FFD66B" />
+              <path d="M5.5 27C6.2 20.7 9.9 17.4 15 17.4C20.1 17.4 23.8 20.7 24.5 27H5.5Z" fill="#FFD66B" />
+            </svg>
+          </div>
+        </header>
+
         <Link
-          href="/admin?tab=Game%20Links"
+          href="/admin/predictions"
           className="mb-6 inline-flex rounded-full bg-white/12 px-4 py-2 text-[12px] font-black text-white"
         >
           ← Back
         </Link>
 
-        <section className="rounded-[32px] border border-white/24 bg-white/10 p-6 shadow-[0_26px_70px_rgba(35,54,47,0.18)] backdrop-blur-2xl">
+        <section className="rounded-[32px] bg-[#718078] p-6 shadow-[0_26px_70px_rgba(35,54,47,0.18)] lg:border lg:border-white/24 lg:bg-white/10 lg:backdrop-blur-2xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
                 {sportLabel}
               </div>
               <h1 className="mt-2 text-[34px] font-black tracking-[-0.05em] text-white">
-                {title}
+                {title} <span className="text-[#ffd66b]">({players})</span>
               </h1>
               <p className="mt-2 text-[13px] font-bold text-white/64">
                 {match.match_label || "Game"} · {formatDate(match.kickoff_at)}
@@ -730,7 +745,7 @@ export function GameLinkDetailsClient({
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-5 hidden flex-wrap gap-3 lg:flex">
             <SmallStat label="Players" value={players} />
             <SmallStat
               label="Prediction closes"
@@ -902,12 +917,25 @@ export function GameLinkDetailsClient({
         </section>
 
         <section className="mt-5 grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-[28px] border border-white/24 bg-white/10 p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] backdrop-blur-xl">
-            <h2 className="text-[22px] font-black text-white">Save Result</h2>
-            <p className="mt-1 text-[12px] font-bold text-white/62">
-              Save the final score to calculate winners.
-            </p>
+          <div className="rounded-[28px] bg-[#718078] p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] lg:border lg:border-white/24 lg:bg-white/10 lg:backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={() => setSaveResultOpen((open) => !open)}
+              className="flex w-full items-center justify-between gap-4 text-left"
+            >
+              <div>
+                <h2 className="text-[22px] font-black text-white">Save Result</h2>
+                <p className="mt-1 text-[12px] font-bold text-white/62">
+                  Save the final score to calculate winners.
+                </p>
+              </div>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[20px] font-black text-[#365665]">
+                {saveResultOpen ? "−" : "+"}
+              </span>
+            </button>
 
+            {saveResultOpen ? (
+              <>
             {inferSportType(match) === "basketball" ? (
               <div className="mt-5 grid gap-3">
                 <label className="block">
@@ -961,17 +989,19 @@ export function GameLinkDetailsClient({
             >
               {saving ? "Saving..." : "Save Result"}
             </button>
+              </>
+            ) : null}
           </div>
 
-          <div className="rounded-[28px] border border-white/24 bg-white/10 p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] backdrop-blur-xl">
+          <div className="rounded-[28px] bg-[#718078] p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] lg:border lg:border-white/24 lg:bg-white/10 lg:backdrop-blur-xl">
             <h2 className="text-[22px] font-black text-white">Leaderboard</h2>
             <p className="mt-1 text-[12px] font-bold text-white/62">
               Names and predictions entered for this game.
             </p>
 
-            <div className="mt-5 overflow-hidden rounded-[22px] border border-white/18 bg-white/8">
+            <div className="mt-5 overflow-hidden rounded-[22px] bg-white/8 lg:border lg:border-white/18">
               <div
-                className={`grid ${inferSportType(match) === "basketball" ? "grid-cols-[0.35fr_1fr_0.8fr]" : "grid-cols-[0.35fr_1fr_0.8fr_0.5fr]"} gap-3 border-b border-white/18 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58`}
+                className={`grid ${inferSportType(match) === "basketball" ? "grid-cols-[0.35fr_1fr_0.8fr]" : "grid-cols-[0.35fr_1fr_0.8fr_0.5fr]"} gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58`}
               >
                 <div>#</div>
                 <div>Name</div>
@@ -1346,7 +1376,7 @@ function SmallStat({
   value: number | string;
 }) {
   return (
-    <div className="flex min-h-[90px] min-w-[180px] flex-1 items-center gap-4 rounded-[999px] border border-white/22 bg-white/8 px-5 py-4">
+    <div className="flex min-h-[90px] min-w-[180px] flex-1 items-center gap-4 rounded-[999px] bg-white/8 px-5 py-4 lg:border lg:border-white/22">
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[18px] font-black text-[#365665]">
         {typeof value === "number" ? value : "•"}
       </div>

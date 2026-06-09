@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
+import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 import type { Profile, Reward, StampTransaction, UserRole } from "@/types";
 
 type AdminUser = Profile & {
@@ -1698,6 +1699,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
         )}
         </section>
       </div>
+      <AdminMobileFloatingMenu active="users" onBeforeNavigate={() => setSelectedUser(null)} />
     </main>
   );
 }

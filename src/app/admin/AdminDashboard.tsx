@@ -8,6 +8,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
 import { AdminSidebar } from "@/components/AdminSidebar";
+import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 import type { Profile, Reward, StampTransaction, UserRole } from "@/types";
 
 interface Metrics {
@@ -203,6 +204,8 @@ const DASHBOARD_TABS = [
 
 type Tab = (typeof ALL_TABS)[number];
 type DashboardTab = (typeof DASHBOARD_TABS)[number];
+
+
 
 interface Props {
   profile: Profile;
@@ -937,7 +940,36 @@ function MobileAdminDashboard({
     <main className="min-h-screen" style={{ background: PAGE_BG }}>
       <Toast message={toast} tone={tone} />
 
-      <div className="mx-auto w-full max-w-md px-4 pb-12 pt-5 font-raleway text-white">
+      <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5 font-raleway text-white">
+        <header className="mb-5 flex h-[70px] items-center justify-between rounded-[18px] bg-white/10 px-5 shadow-[0_18px_46px_rgba(35,48,39,0.12)] backdrop-blur-2xl">
+          <Link
+            href="/admin"
+            className="flex items-center"
+            aria-label="Go to admin overview"
+          >
+            <img
+              src="/pros-logo-basic.png"
+              alt="PRO&apos;s Cafe"
+              className="h-[46px] w-auto object-contain"
+              draggable={false}
+            />
+          </Link>
+
+          <div
+            className="flex h-10 w-10 items-center justify-center text-[#ffd66b]"
+            title={shortName(profile.full_name || profile.email || "Admin")}
+            aria-label="Admin profile"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-9 w-9 fill-current drop-shadow-[0_8px_18px_rgba(255,214,107,0.22)]"
+            >
+              <path d="M12 12.2a4.7 4.7 0 1 0 0-9.4 4.7 4.7 0 0 0 0 9.4Zm0 2.1c-4.6 0-8.3 2.4-8.3 5.3 0 .9.7 1.6 1.6 1.6h13.4c.9 0 1.6-.7 1.6-1.6 0-2.9-3.7-5.3-8.3-5.3Z" />
+            </svg>
+          </div>
+        </header>
+
         <section
           className="relative mb-5 overflow-hidden border border-white/20 px-5 py-5 shadow-[0_24px_70px_rgba(35,48,39,0.22)] backdrop-blur-2xl"
           style={{ borderRadius: 18, background: GLASS_CARD, minHeight: 154 }}
@@ -977,26 +1009,6 @@ function MobileAdminDashboard({
             </Link>
           </div>
         </section>
-
-        <div className="relative z-30 mb-3 flex gap-1 rounded-full border border-white/14 bg-white/12 p-1 backdrop-blur-xl">
-          {DASHBOARD_TABS.map((item) => (
-            <button
-              type="button"
-              key={item}
-              onClick={() => {
-                setTab(item);
-                setSelectedUser(null);
-              }}
-              className={`flex-1 rounded-full py-2 text-[11px] font-black transition ${
-                tab === item
-                  ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.2)]"
-                  : "text-white/68"
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
 
         {tab === "Overview" && (
           <section className="mb-12 space-y-6">
@@ -1213,6 +1225,19 @@ function MobileAdminDashboard({
 
 
       </div>
+
+      <AdminMobileFloatingMenu
+        active={
+          tab === "Activity"
+            ? "activity"
+            : tab === "Comment Cards"
+              ? "comment-cards"
+              : tab === "Loyalty Program"
+                ? "loyalty-program"
+                : "overview"
+        }
+        onBeforeNavigate={() => setSelectedUser(null)}
+      />
     </main>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Toast } from "@/components/Toast";
+import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 
 
 
@@ -809,6 +810,7 @@ export function GamesPage() {
         </div>
       )}
       </div>
+      <AdminMobileFloatingMenu active="games" />
     </main>
   );
 }
