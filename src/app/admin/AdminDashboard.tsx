@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
+import { AdminSidebar } from "@/components/AdminSidebar";
 import type { Profile, Reward, StampTransaction, UserRole } from "@/types";
 
 interface Metrics {
@@ -184,15 +185,7 @@ type CommentCardSortKey =
 
 type SortDirection = "asc" | "desc";
 
-interface Props {
-  profile: Profile;
-  users?: AdminUser[];
-  recentTxns?: StampTransaction[];
-  recentRewards?: Reward[];
-  metrics: Metrics;
-}
-
-const TABS = [
+const ALL_TABS = [
   "Overview",
   "Activity",
   "Gifts",
@@ -200,7 +193,25 @@ const TABS = [
   "Comment Cards",
   "Loyalty Program",
 ] as const;
-type Tab = (typeof TABS)[number];
+
+const DASHBOARD_TABS = [
+  "Overview",
+  "Gifts",
+  "Birthdays",
+  "Loyalty Program",
+] as const;
+
+type Tab = (typeof ALL_TABS)[number];
+type DashboardTab = (typeof DASHBOARD_TABS)[number];
+
+interface Props {
+  profile: Profile;
+  users?: AdminUser[];
+  recentTxns?: StampTransaction[];
+  recentRewards?: Reward[];
+  metrics: Metrics;
+  initialTab?: Tab;
+}
 
 const PAGE_BG =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
@@ -346,18 +357,20 @@ function MobileAdminDashboard({
   recentTxns = [],
   recentRewards = [],
   metrics,
+  initialTab = "Overview",
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(() => initialTabFromCurrentRoute(initialTab as Tab));
 
   useEffect(() => {
-    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (typeof window === "undefined") return;
 
-    if (requestedTab && TABS.includes(requestedTab as Tab)) {
-      setTab(requestedTab as Tab);
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab && DASHBOARD_TABS.includes(requestedTab as DashboardTab)) {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
+
   const [users, setUsers] = useState<AdminUser[]>(initialUsers);
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(
     recentTxns ?? [],
@@ -394,7 +407,6 @@ function MobileAdminDashboard({
   const [giftDashboardCategoryId, setGiftDashboardCategoryId] = useState("");
   const [giftDashboardExpiry, setGiftDashboardExpiry] = useState("");
   const [giftDashboardNote, setGiftDashboardNote] = useState("");
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | UserRole>("staff");
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(15);
@@ -967,7 +979,7 @@ function MobileAdminDashboard({
         </section>
 
         <div className="relative z-30 mb-3 flex gap-1 rounded-full border border-white/14 bg-white/12 p-1 backdrop-blur-xl">
-          {TABS.map((item) => (
+          {DASHBOARD_TABS.map((item) => (
             <button
               type="button"
               key={item}
@@ -2529,6 +2541,21 @@ function desktopTabLabel(tab: Tab) {
   return tab;
 }
 
+function initialTabFromCurrentRoute(fallback: Tab): Tab {
+  if (typeof window === "undefined") return fallback;
+
+  const path = window.location.pathname;
+  if (path === "/admin/activity") return "Activity";
+  if (path === "/admin/comment-cards") return "Comment Cards";
+
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+  if (requestedTab && DASHBOARD_TABS.includes(requestedTab as DashboardTab)) {
+    return requestedTab as Tab;
+  }
+
+  return fallback;
+}
+
 function desktopRoleLabel(role: UserRole) {
   if (role === "master_admin") return "Admin";
   if (role === "staff") return "Staff";
@@ -2870,16 +2897,20 @@ function DesktopAdminDashboard({
   recentTxns = [],
   recentRewards = [],
   metrics,
+  initialTab = "Overview",
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window !== "undefined") {
-      const r = new URLSearchParams(window.location.search).get("tab");
-      const valid = ["Overview","Activity","Gifts","Birthdays","Comment Cards","Loyalty Program"] as string[];
-      if (r && valid.includes(r)) { window.history.replaceState(null, "", window.location.pathname); return r as Tab; }
+  const [tab, setTab] = useState<Tab>(() => initialTabFromCurrentRoute(initialTab as Tab));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab && DASHBOARD_TABS.includes(requestedTab as DashboardTab)) {
+      window.history.replaceState(null, "", window.location.pathname);
     }
-    return "Overview";
-  });
+  }, []);
+
   const [users, setUsers] = useState<AdminUser[]>(initialUsers);
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(
     recentTxns ?? [],
@@ -2910,7 +2941,7 @@ function DesktopAdminDashboard({
   const [quickGiftDescription, setQuickGiftDescription] = useState("");
   const [desktopVersionLabel, setDesktopVersionLabel] =
     useState("V2.0 07062026");
-  const [isDesktopVersionEditing, setIsDesktopVersionEditing] = useState(false);
+  const [, setIsDesktopVersionEditing] = useState(false);
   const [activityView, setActivityView] = useState<"activity" | "gifts">(
     "activity",
   );
@@ -2933,7 +2964,6 @@ function DesktopAdminDashboard({
   const [giftDashboardCategoryId, setGiftDashboardCategoryId] = useState("");
   const [giftDashboardExpiry, setGiftDashboardExpiry] = useState("");
   const [giftDashboardNote, setGiftDashboardNote] = useState("");
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | UserRole>("client");
   const [timeRange, setTimeRange] = useState<DesktopTimeRange>("today");
   const [commentCards, setCommentCards] = useState<CommentCardEntry[]>([]);
@@ -7079,110 +7109,18 @@ function DesktopAdminDashboard({
       <Toast message={toast} tone={tone} />
 
       <div className="flex min-h-screen w-full gap-6 overflow-visible bg-transparent p-6 lg:min-h-screen">
-        <aside
-          className={`hidden min-h-[calc(100vh-48px)] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.24)] backdrop-blur-2xl transition-all duration-300 lg:flex ${
-            isDesktopSidebarOpen ? "w-[238px]" : "w-[76px]"
-          }`}
-        >
-          <div
-            className={`flex h-20 items-center bg-white/5 ${isDesktopSidebarOpen ? "justify-between gap-3 px-5" : "justify-center px-3"}`}
-          >
-            {isDesktopSidebarOpen ? (
-              <div className="min-w-0">
-                <div className="text-[19px] font-black leading-none text-white">
-                  Dashboard
-                </div>
-                <div className="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
-                  PRO&apos;s Admin
-                </div>
-              </div>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => setIsDesktopSidebarOpen((current) => !current)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[20px] font-black text-[#365665] shadow-[0_12px_28px_rgba(255,214,107,0.2)] transition hover:scale-105"
-              title={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
-              aria-label={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
-            >
-              {isDesktopSidebarOpen ? "←" : "☰"}
-            </button>
-          </div>
-
-          <nav className="flex-1 px-3 py-4">
-            {(["Overview"] as const).map((item) => (
-              <button key={item} type="button" title="Dashboard" onClick={() => { setTab(item); setSelectedUser(null); }} className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>{isDesktopSidebarOpen ? "Dashboard" : null}</button>
-            ))}
-            {(["Activity"] as const).map((item) => (
-              <button key={item} type="button" title={item} onClick={() => { setTab(item); setSelectedUser(null); }} className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>{isDesktopSidebarOpen ? item : null}</button>
-            ))}
-            <Link href="/admin/users" title="Customer behavior" className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>👤</span>{isDesktopSidebarOpen ? "Customer behavior" : null}</Link>
-            {(["Comment Cards", "Birthdays", "Gifts", "Loyalty Program"] as const).map((item) => (
-              <button key={item} type="button" title={item} onClick={() => { setTab(item); setSelectedUser(null); }} className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>{isDesktopSidebarOpen ? item : null}</button>
-            ))}
-            <Link href="/admin/games" title="Games" className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}><span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎮</span>{isDesktopSidebarOpen ? "Games" : null}</Link>
-          </nav>
-
-          <div className="border-t border-white/8 px-3 py-5">
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className={`mb-4 flex w-full items-center rounded-none bg-transparent py-2 text-left text-[12px] font-black text-white/86 transition hover:text-white ${
-                isDesktopSidebarOpen
-                  ? "justify-start px-4"
-                  : "justify-center px-0"
-              }`}
-              title="Logout"
-            >
-              {isDesktopSidebarOpen ? "Logout" : "⎋"}
-            </button>
-
-            {isDesktopSidebarOpen ? (
-              <div className="space-y-3 text-left">
-                <a
-                  href="https://wissamdesigns.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block text-left text-[11px] font-black uppercase leading-5 text-[#ffd66b] transition hover:text-white"
-                >
-                  © WISSAMDESIGNS.COM
-                </a>
-
-                {isDesktopVersionEditing ? (
-                  <input
-                    autoFocus
-                    defaultValue={desktopVersionLabel}
-                    onBlur={(event) =>
-                      saveDesktopVersionLabel(event.target.value)
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        saveDesktopVersionLabel(event.currentTarget.value);
-                      }
-                      if (event.key === "Escape") {
-                        setIsDesktopVersionEditing(false);
-                      }
-                    }}
-                    className="block h-8 w-[150px] rounded-[12px] border border-white/18 bg-white px-3 text-left text-[10px] font-black uppercase tracking-[0.12em] text-[#102226] outline-none focus:border-[#ffd66b]"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onDoubleClick={() => setIsDesktopVersionEditing(true)}
-                    className="block rounded-[12px] px-0 py-2 text-left text-[10px] font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
-                    title="Double click to edit version"
-                  >
-                    {desktopVersionLabel}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="text-center text-[14px] font-black text-[#ffd66b]">
-                ©
-              </div>
-            )}
-          </div>
-        </aside>
+        <AdminSidebar
+          currentTab={
+            tab === "Birthdays" || tab === "Gifts" || tab === "Loyalty Program"
+              ? tab
+              : "Overview"
+          }
+          onTabChange={(nextTab) => {
+            setTab(nextTab);
+            setSelectedUser(null);
+          }}
+          onLogout={logout}
+        />
 
         <section className="min-h-[calc(100vh-48px)] min-w-0 flex-1 overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl">
           <div className="px-5 py-6 lg:px-8">
