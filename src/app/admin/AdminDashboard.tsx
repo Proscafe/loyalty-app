@@ -1,4 +1,5 @@
 "use client";
+// v2 — games page extracted
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -193,13 +194,11 @@ interface Props {
 
 const TABS = [
   "Overview",
-  "Users",
   "Activity",
-  "Gifts",
-  "Birthdays",
   "Comment Cards",
+  "Birthdays",
+  "Gifts",
   "Loyalty Program",
-  "Create Game",
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -1108,7 +1107,7 @@ function MobileAdminDashboard({
                   )}
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-1.5 mt-4">
                   {visibleUsers.map((user) => (
                     <div
                       key={user.id}
@@ -1375,283 +1374,7 @@ function MobileAdminDashboard({
           </section>
         )}
 
-        {tab === "Create Game" && (
-          <section className="mb-12 space-y-4">
-            <div
-              className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
-              style={{ borderRadius: 24, background: GLASS_CARD }}
-            >
-              <button
-                type="button"
-                onClick={() => setMobileGameCreateOpen((current) => !current)}
-                className="flex w-full items-center justify-between gap-3 text-left"
-              >
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.28em] text-white/58">
-                    Admin
-                  </div>
-                  <div className="mt-1 text-[22px] font-black leading-none text-white">
-                    Create <span className="text-[#ffd66b]">Game Link</span>
-                  </div>
-                </div>
 
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[20px] font-black text-white">
-                  {mobileGameCreateOpen ? "−" : "+"}
-                </div>
-              </button>
-
-              {mobileGameCreateOpen ? (
-                <div className="mt-4 border-t border-white/18 pt-4">
-                  <div className="mb-4 grid grid-cols-2 gap-2 rounded-full border border-white/14 bg-white/12 p-1">
-                    {(["football", "basketball"] as const).map((kind) => (
-                      <button
-                        key={kind}
-                        type="button"
-                        onClick={() => setMobileGameKind(kind)}
-                        className={`rounded-full py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${
-                          mobileGameKind === kind
-                            ? "bg-[#ffd66b] text-[#365665]"
-                            : "text-white/68"
-                        }`}
-                      >
-                        {kind === "football" ? "Football" : "Basketball"}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="space-y-3">
-                    <MobileGameInput
-                      label={
-                        mobileGameKind === "basketball" ? "Team 1" : "Home Team"
-                      }
-                      value={mobileGameForm.home_team}
-                      onChange={(value) =>
-                        setMobileGameForm((current) => ({
-                          ...current,
-                          home_team: value,
-                        }))
-                      }
-                    />
-                    <MobileGameInput
-                      label={
-                        mobileGameKind === "basketball" ? "Team 2" : "Away Team"
-                      }
-                      value={mobileGameForm.away_team}
-                      onChange={(value) =>
-                        setMobileGameForm((current) => ({
-                          ...current,
-                          away_team: value,
-                        }))
-                      }
-                    />
-                    <MobileGameInput
-                      label="Tournament"
-                      value={mobileGameForm.match_label}
-                      onChange={(value) =>
-                        setMobileGameForm((current) => ({
-                          ...current,
-                          match_label: value,
-                        }))
-                      }
-                    />
-                    <MobileGameInput
-                      label="Description"
-                      value={mobileGameForm.venue}
-                      onChange={(value) =>
-                        setMobileGameForm((current) => ({
-                          ...current,
-                          venue: value,
-                        }))
-                      }
-                    />
-                    <MobileGameInput
-                      type="datetime-local"
-                      label="Match Timing"
-                      value={mobileGameForm.kickoff_at}
-                      onChange={(value) =>
-                        setMobileGameForm((current) => ({
-                          ...current,
-                          kickoff_at: value,
-                        }))
-                      }
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <MobileGameInput
-                        type="datetime-local"
-                        label="Open Time"
-                        value={mobileGameForm.opens_at}
-                        onChange={(value) =>
-                          setMobileGameForm((current) => ({
-                            ...current,
-                            opens_at: value,
-                          }))
-                        }
-                      />
-                      <MobileGameInput
-                        type="datetime-local"
-                        label="Close Time"
-                        value={mobileGameForm.closes_at}
-                        onChange={(value) =>
-                          setMobileGameForm((current) => ({
-                            ...current,
-                            closes_at: value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    {mobileGameKind === "football" ? (
-                      <div className="grid grid-cols-2 gap-3">
-                        <MobileGameInput
-                          label="Home Score"
-                          value={mobileGameForm.home_score}
-                          onChange={(value) =>
-                            setMobileGameForm((current) => ({
-                              ...current,
-                              home_score: value,
-                            }))
-                          }
-                        />
-                        <MobileGameInput
-                          label="Away Score"
-                          value={mobileGameForm.away_score}
-                          onChange={(value) =>
-                            setMobileGameForm((current) => ({
-                              ...current,
-                              away_score: value,
-                            }))
-                          }
-                        />
-                      </div>
-                    ) : (
-                      <div className="rounded-[22px] border border-white/16 bg-white/10 p-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <label className="block">
-                            <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/64">
-                              Final Winner
-                            </span>
-                            <select
-                              value={mobileGameForm.basketball_winner}
-                              onChange={(event) =>
-                                setMobileGameForm((current) => ({
-                                  ...current,
-                                  basketball_winner: event.target.value,
-                                }))
-                              }
-                              className="h-11 w-full rounded-[16px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-                            >
-                              <option value="home">
-                                {mobileGameForm.home_team || "Team 1"}
-                              </option>
-                              <option value="away">
-                                {mobileGameForm.away_team || "Team 2"}
-                              </option>
-                            </select>
-                          </label>
-
-                          <MobileGameInput
-                            label="Final Win By"
-                            value={mobileGameForm.basketball_win_by}
-                            onChange={(value) =>
-                              setMobileGameForm((current) => ({
-                                ...current,
-                                basketball_win_by: value,
-                              }))
-                            }
-                          />
-                        </div>
-
-                        <p className="mt-3 text-[11px] font-semibold leading-5 text-white/58">
-                          Leave final winner and win-by empty when creating the
-                          link. Add them after the game result is known.
-                        </p>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => void createMobileGameLink()}
-                      disabled={mobileGameSaving}
-                      className="h-12 w-full rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_14px_30px_rgba(255,214,107,0.18)] disabled:opacity-55"
-                    >
-                      {mobileGameSaving
-                        ? "Creating..."
-                        : mobileGameKind === "basketball"
-                          ? "Create Basketball Link"
-                          : "Create Football Link"}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            {mobileGameLinks.length === 0 ? (
-              <EmptyState text="No games created yet." />
-            ) : null}
-
-            {mobileGameLinks.map((game) => (
-              <div
-                key={game.id}
-                className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
-                style={{ borderRadius: 24, background: GLASS_CARD }}
-              >
-                <div className="mb-4 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="mb-2 text-[10px] font-black uppercase tracking-[0.28em] text-white/58">
-                      {game.label}
-                    </div>
-                    <div className="truncate text-[24px] font-black leading-none tracking-[-0.04em] text-white">
-                      {game.title.split(" vs ")[0]}{" "}
-                      <span className="text-[#ffd66b]">vs</span>{" "}
-                      {game.title.split(" vs ")[1] ?? ""}
-                    </div>
-                    <div className="mt-3 text-[12px] font-bold leading-5 text-white/78">
-                      {game.sportType === "basketball" ? "Tip off" : "Kickoff"}{" "}
-                      {game.kickoff ? formatDate(game.kickoff) : "—"}
-                    </div>
-                  </div>
-
-                  <span
-                    className={`shrink-0 rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] ${
-                      game.status === "Open"
-                        ? "bg-[#ffd66b] text-[#365665]"
-                        : "bg-white/12 text-white"
-                    }`}
-                  >
-                    {game.status}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <a
-                    href={mobilePredictionLinkFor(game.code)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex h-11 items-center justify-center rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-white"
-                  >
-                    Open Link
-                  </a>
-
-                  <button
-                    type="button"
-                    onClick={() => void downloadMobileQr(game.code, game.title)}
-                    className="flex h-11 items-center justify-center rounded-full bg-white/0 text-[11px] font-black uppercase tracking-[0.18em] text-white"
-                  >
-                    Download QR
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void copyMobilePredictionLink(game.code)}
-                    className="col-span-2 flex h-11 items-center justify-center rounded-full bg-white/14 text-[11px] font-black uppercase tracking-[0.18em] text-white"
-                  >
-                    Copy Link
-                  </button>
-                </div>
-              </div>
-            ))}
-          </section>
-        )}
       </div>
     </main>
   );
@@ -2127,8 +1850,8 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
           </div>
         ) : null}
 
-        <div className="rounded-[22px] border border-white/16 bg-white/10 p-4">
-          <div className={mainGridClass}>
+        <div className="rounded-[16px] border border-white/16 bg-white/10 p-3">
+          <div className="flex flex-wrap items-end gap-2">
             <LoyaltyTextInput
               label="Program Name"
               value={settings.program_name}
@@ -2148,58 +1871,21 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
               }
               placeholder="5"
             />
-            <div className="flex gap-2 lg:items-end">
-              <button
-                type="button"
-                onClick={() => void saveSettings()}
-                disabled={savingSettings}
-                className="h-12 flex-1 rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.16em] text-[#365665] transition hover:bg-[#f0cf61] disabled:opacity-55 lg:flex-none"
-              >
-                {savingSettings ? "Saving" : "Save"}
-              </button>
-              <button
-                type="button"
-                onClick={requestProgramToggle}
-                disabled={savingSettings}
-                className={`h-12 flex-1 rounded-full px-5 text-[10px] font-black uppercase tracking-[0.16em] transition disabled:opacity-55 lg:flex-none ${
-                  settings.is_enabled
-                    ? "bg-red-500/18 text-red-100 hover:bg-red-500/24"
-                    : "bg-emerald-400/18 text-emerald-100 hover:bg-emerald-400/24"
-                }`}
-              >
-                {settings.is_enabled ? "Disable" : "Enable"}
-              </button>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => void saveSettings()} disabled={savingSettings} className="h-9 rounded-full bg-[#ffd66b] px-4 text-[9px] font-black uppercase tracking-[0.14em] text-[#365665] transition hover:bg-[#f0cf61] disabled:opacity-55">{savingSettings ? "Saving" : "Save"}</button>
+              <button type="button" onClick={requestProgramToggle} disabled={savingSettings} className={`h-9 rounded-full px-4 text-[9px] font-black uppercase tracking-[0.14em] transition disabled:opacity-55 ${settings.is_enabled ? "bg-red-500/18 text-red-100 hover:bg-red-500/24" : "bg-emerald-400/18 text-emerald-100 hover:bg-emerald-400/24"}`}>{settings.is_enabled ? "Disable" : "Enable"}</button>
             </div>
           </div>
         </div>
 
-        <div className="mt-5 rounded-[22px] border border-white/16 bg-white/10 p-4">
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h3 className="text-[18px] font-black tracking-[-0.04em] text-white">
-                Stamp Categories
-              </h3>
-              <p className="mt-1 text-[12px] font-bold leading-5 text-white/64">
-                Add, rename, disable, or remove categories.
-              </p>
-            </div>
+        <div className="mt-3 rounded-[16px] border border-white/16 bg-white/10 p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-[13px] font-black text-white">Stamp Categories</h3>
           </div>
 
-          <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-            <input
-              value={newCategoryName}
-              onChange={(event) => setNewCategoryName(event.target.value)}
-              placeholder="New category name"
-              className="h-10 flex-1 rounded-[12px] border border-white/25 bg-white px-3 text-[12px] font-bold text-black outline-none focus:border-[#ffd66b]"
-            />
-            <button
-              type="button"
-              onClick={() => void addCategory()}
-              disabled={savingCategoryId === "new"}
-              className="h-10 rounded-[12px] bg-[#ffd66b] px-4 text-[10px] font-black uppercase tracking-[0.14em] text-[#365665] disabled:opacity-55"
-            >
-              Add Category
-            </button>
+          <div className="mb-2 flex gap-2">
+            <input value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="New category name" className="h-8 flex-1 rounded-[10px] border border-white/25 bg-white px-3 text-[11px] font-bold text-black outline-none focus:border-[#ffd66b]" />
+            <button type="button" onClick={() => void addCategory()} disabled={savingCategoryId === "new"} className="h-8 rounded-[10px] bg-[#ffd66b] px-3 text-[9px] font-black uppercase tracking-[0.14em] text-[#365665] disabled:opacity-55">Add Category</button>
           </div>
 
           {loading ? (
@@ -2356,62 +2042,30 @@ function LoyaltyCategoryRow({
     parseMoneyValue(averagePrice) !== parseMoneyValue(category.average_price);
 
   return (
-    <div className="rounded-[14px] border border-white/16 bg-white/10 px-3 py-3">
-      <div className="grid gap-3 lg:grid-cols-[1fr_160px_auto] lg:items-start">
-        <div className="min-w-0">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="h-10 w-full rounded-[11px] border border-white/18 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-          />
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] font-black uppercase tracking-[0.13em]">
-            <span className={isActive ? "text-emerald-100" : "text-red-100"}>
-              {isActive ? "Active" : "Disabled"}
-            </span>
-            <span className="text-white/36">•</span>
-            <span className="text-white/52">ID: {category.id.slice(0, 8)}</span>
+    <div className="rounded-[10px] border border-white/12 bg-white/8 px-3 py-2.5">
+      <div className="grid grid-cols-[1fr_90px_auto] items-center gap-3">
+        {/* Name + status */}
+        <div>
+          <input value={name} onChange={(event) => setName(event.target.value)} className="h-9 w-full rounded-[10px] border border-white/18 bg-white px-3 text-[13px] font-black text-[#365665] outline-none" />
+          <div className="mt-1 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-[0.12em]">
+            <span className={isActive ? "text-emerald-300" : "text-red-300"}>{isActive ? "●" : "○"}</span>
+            <span className={isActive ? "text-emerald-200" : "text-red-200"}>{isActive ? "Active" : "Disabled"}</span>
+            <span className="text-white/30">·</span>
+            <span className="text-white/40">{category.id.slice(0, 8)}</span>
           </div>
         </div>
 
-        <label className="block">
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={averagePrice}
-            onChange={(event) => setAveragePrice(event.target.value)}
-            className="h-10 w-full rounded-[11px] border border-white/18 bg-white px-3 text-[12px] font-black text-[#365665] outline-none"
-          />
-          <span className="mt-1.5 block text-[8px] font-black uppercase tracking-[0.16em] text-white/58">
-            Average Price
-          </span>
-        </label>
+        {/* Avg price */}
+        <div>
+          <input type="number" min="0" step="0.01" value={averagePrice} onChange={(event) => setAveragePrice(event.target.value)} className="h-9 w-full rounded-[10px] border border-white/18 bg-white px-3 text-[13px] font-black text-[#365665] outline-none" />
+          <span className="mt-1 block text-center text-[8px] font-black uppercase tracking-[0.1em] text-white/46">Avg $</span>
+        </div>
 
-        <div className="flex flex-wrap gap-2 lg:justify-end">
-          <button
-            type="button"
-            onClick={() => onSave(name, parseMoneyValue(averagePrice))}
-            disabled={saving || !isDirty}
-            className="h-9 rounded-full bg-[#ffd66b] px-3 text-[9px] font-black uppercase tracking-[0.12em] text-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={onToggle}
-            disabled={saving}
-            className="h-9 rounded-full bg-white/14 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-white disabled:opacity-45"
-          >
-            {isActive ? "Disable" : "Enable"}
-          </button>
-          <button
-            type="button"
-            onClick={onRemove}
-            disabled={saving}
-            className="h-9 rounded-full bg-red-500/16 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-red-100 disabled:opacity-45"
-          >
-            Remove
-          </button>
+        {/* Actions */}
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => onSave(name, parseMoneyValue(averagePrice))} disabled={saving || !isDirty} className="h-8 rounded-full bg-[#ffd66b] px-3 text-[9px] font-black uppercase tracking-[0.1em] text-[#365665] disabled:cursor-not-allowed disabled:opacity-45">Save</button>
+          <button type="button" onClick={onToggle} disabled={saving} className="h-8 rounded-full bg-white/14 px-3 text-[9px] font-black uppercase tracking-[0.1em] text-white disabled:opacity-45">{isActive ? "Disable" : "Enable"}</button>
+          <button type="button" onClick={onRemove} disabled={saving} className="h-8 rounded-full bg-red-500/16 px-3 text-[9px] font-black uppercase tracking-[0.1em] text-red-100 disabled:opacity-45">Remove</button>
         </div>
       </div>
     </div>
@@ -3370,7 +3024,17 @@ function DesktopAdminDashboard({
   metrics,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(() => {
+    // Read ?tab= query param on first render (works even with ssr:false)
+    if (typeof window !== "undefined") {
+      const requested = new URLSearchParams(window.location.search).get("tab");
+      if (requested && (["Overview","Activity","Gifts","Birthdays","Comment Cards","Loyalty Program"] as string[]).includes(requested)) {
+        window.history.replaceState(null, "", window.location.pathname);
+        return requested as Tab;
+      }
+    }
+    return "Overview";
+  });
   const [users, setUsers] = useState<AdminUser[]>(initialUsers);
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(
     recentTxns ?? [],
@@ -7576,37 +7240,45 @@ function DesktopAdminDashboard({
           </div>
 
           <nav className="flex-1 px-3 py-4">
-            {TABS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                title={desktopTabLabel(item)}
-                onClick={() => {
-                  setTab(item);
-                  setSelectedUser(null);
-                }}
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${
-                  isDesktopSidebarOpen
-                    ? "justify-start px-4"
-                    : "justify-center px-0"
-                } ${
-                  tab === item
-                    ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]"
-                    : "text-white/70 hover:bg-white/12 hover:text-white"
-                }`}
-              >
-                <span
-                  className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${
-                    tab === item
-                      ? "bg-[#ffd66b] text-[#365665]"
-                      : "bg-white/12 text-white/72"
-                  }`}
-                >
-                  {tabIcon(item)}
-                </span>
-                {isDesktopSidebarOpen ? desktopTabLabel(item) : null}
+            {/* Dashboard (Overview) */}
+            {(["Overview"] as const).map((item) => (
+              <button key={item} type="button" title={desktopTabLabel(item)}
+                onClick={() => { setTab(item); setSelectedUser(null); }}
+                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}>
+                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>
+                {isDesktopSidebarOpen ? "Dashboard" : null}
               </button>
             ))}
+            {/* Activity */}
+            {(["Activity"] as const).map((item) => (
+              <button key={item} type="button" title={item}
+                onClick={() => { setTab(item); setSelectedUser(null); }}
+                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}>
+                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>
+                {isDesktopSidebarOpen ? item : null}
+              </button>
+            ))}
+            {/* Customer behavior → /admin/users */}
+            <Link href="/admin/users" title="Customer behavior"
+              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
+              <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>👤</span>
+              {isDesktopSidebarOpen ? "Customer behavior" : null}
+            </Link>
+            {/* Comment Cards, Birthdays, Gifts, Loyalty Program */}
+            {(["Comment Cards", "Birthdays", "Gifts", "Loyalty Program"] as const).map((item) => (
+              <button key={item} type="button" title={item}
+                onClick={() => { setTab(item); setSelectedUser(null); }}
+                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${tab === item ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}>
+                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${tab === item ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{tabIcon(item)}</span>
+                {isDesktopSidebarOpen ? item : null}
+              </button>
+            ))}
+            {/* Games */}
+            <Link href="/admin/games" title="Games"
+              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
+              <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎮</span>
+              {isDesktopSidebarOpen ? "Games" : null}
+            </Link>
           </nav>
 
           <div className="border-t border-white/8 px-3 py-5">
@@ -10035,665 +9707,12 @@ function DesktopAdminDashboard({
               </section>
             ) : null}
 
-            {tab === "Create Game" ? (
-              <section className="space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-[26px] font-black tracking-[-0.04em] text-white">
-                      Create Game
-                    </h2>
-                    <p className="mt-1 text-[12px] font-bold text-white/65">
-                      Manage links, QR codes, players, scores, and leaderboards.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTournamentPopupOpen(true)}
-                      className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20"
-                    >
-                      Add Tournament
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCsvImportOpen(true); setCsvPreview([]); setCsvErrors([]); setCsvFileName(""); }}
-                      className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20"
-                    >
-                      Upload CSV
-                    </button>
-                    {sortedGameLinks.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => void downloadTournamentQrs()}
-                        className="flex items-center gap-2 rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20"
-                        title={`Download QR codes for ${sortedGameLinks.length} game${sortedGameLinks.length !== 1 ? "s" : ""}`}
-                      >
-                        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
-                          <path d="M14 14h3v3m0 4h4v-4m-4 0v4" />
-                        </svg>
-                        Download QRs ({sortedGameLinks.length})
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setGameCreateOpen(true)}
-                      className="rounded-full bg-[#ffd66b] px-6 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]"
-                    >
-                      Create Link
-                    </button>
-                  </div>
-                </div>
-
-                <Panel className="!p-4">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {([
-                        ["all", "Show all"],
-                        ["today", "Today"],
-                        ["week", "This week"],
-                        ["month", "This month"],
-                      ] as const).map(([value, label]) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setGameDateFilter(value)}
-                          className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${
-                            gameDateFilter === value
-                              ? "bg-[#ffd66b] text-[#365665]"
-                              : "bg-white/10 text-white/70 hover:bg-white/16 hover:text-[#ffd66b]"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={gameSportFilter}
-                        onChange={(event) => setGameSportFilter(event.target.value as "all" | "football" | "basketball")}
-                        className="h-10 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none"
-                      >
-                        <option value="all">All sports</option>
-                        <option value="football">Football</option>
-                        <option value="basketball">Basketball</option>
-                      </select>
-                      <select
-                        value={gameTournamentFilter}
-                        onChange={(event) => setGameTournamentFilter(event.target.value)}
-                        className="h-10 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none"
-                      >
-                        <option value="all">All tournaments</option>
-                        {predictionTournaments.map((tournament) => (
-                          <option key={tournament.id} value={tournament.id}>
-                            {tournament.name}
-                          </option>
-                        ))}
-                      </select>
-
-                    </div>
-                  </div>
-                  {sortedGameLinks.length === 0 ? (
-                    <p className="rounded-[18px] border border-white/18 bg-white/10 p-4 text-[13px] font-bold text-white/70">
-                      No created games yet.
-                    </p>
-                  ) : (
-                    <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/8">
-                      <div className="grid grid-cols-[0.7fr_1fr_1.35fr_0.9fr_0.7fr_0.5fr_0.48fr_0.48fr_0.48fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
-                        <button
-                          type="button"
-                          onClick={() => sortGames("sport")}
-                          className="text-left"
-                        >
-                          Sport
-                        </button>
-                        <div className="text-left">Tournament</div>
-                        <button
-                          type="button"
-                          onClick={() => sortGames("match")}
-                          className="text-left"
-                        >
-                          Match Name
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => sortGames("date")}
-                          className="text-left"
-                        >
-                          Date
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => sortGames("status")}
-                          className="text-left"
-                        >
-                          Status
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => sortGames("players")}
-                          className="text-left"
-                        >
-                          Players
-                        </button>
-                        <div>Copy</div>
-                        <div>QR</div>
-                        <div>Open</div>
-                      </div>
-
-                      <div className="max-h-[560px] overflow-auto">
-                        {sortedGameLinks.map((game) => (
-                          <div
-                            key={game.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              window.location.href = `/admin/game-links/${game.id}`;
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                window.location.href = `/admin/game-links/${game.id}`;
-                              }
-                            }}
-                            className="grid cursor-pointer grid-cols-[0.7fr_1fr_1.35fr_0.9fr_0.7fr_0.5fr_0.48fr_0.48fr_0.48fr] items-center gap-3 border-b border-white/10 px-4 py-4 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10"
-                          >
-                            <div className="font-black text-[#ffd66b]">
-                              {game.sport}
-                            </div>
-                            <div className="truncate text-white/70">
-                              {game.tournamentName ?? "—"}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="truncate text-[14px] font-black text-white">
-                                {game.title}
-                              </div>
-                              <div className="truncate text-[10px] font-bold text-white/46">
-                                {game.matchLabel}
-                              </div>
-                            </div>
-                            <div>{desktopFormatDate(game.kickoff)}</div>
-                            <div>
-                              <span
-                                className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
-                                  game.status === "Open"
-                                    ? "bg-[#ffd66b] text-[#365665]"
-                                    : game.status === "Closed"
-                                      ? "bg-red-500/16 text-red-100"
-                                      : "bg-white/14 text-white"
-                                }`}
-                              >
-                                {game.status}
-                              </span>
-                            </div>
-                            <div className="font-black text-white">
-                              {game.players}
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void copyGamePredictionLink(game.code);
-                              }}
-                              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[15px] text-white transition hover:bg-white/20"
-                              title="Copy link"
-                            >
-                              ⧉
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void downloadGameQr(game.code, game.title);
-                              }}
-                              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[15px] text-white transition hover:bg-white/20"
-                              title="Download QR"
-                            >
-                              ▣
-                            </button>
-                            <a
-                              href={predictionLinkFor(game.code)}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(event) => event.stopPropagation()}
-                              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[15px] font-black text-white transition hover:bg-white/20"
-                              title="Open prediction"
-                            >
-                              ↗
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </Panel>
-
-                {/* Hidden CSV file input */}
-                <input
-                  ref={csvFileInputRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="hidden"
-                  onChange={handleCsvFileChange}
-                />
-
-                {/* CSV Import Modal */}
-                {csvImportOpen ? (
-                  <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-8 backdrop-blur-sm"
-                    onClick={() => !csvImporting && setCsvImportOpen(false)}
-                  >
-                    <div
-                      className="w-full max-w-2xl overflow-hidden rounded-[30px] border border-white/18 bg-[#61716b] p-6 shadow-2xl"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {/* Header */}
-                      <div className="mb-5 flex items-start justify-between gap-4">
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">Admin</div>
-                          <h3 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
-                            Import Games <span className="text-[#ffd66b]">via CSV</span>
-                          </h3>
-                          <p className="mt-1 text-[11px] font-bold text-white/60">
-                            Columns: <span className="text-white/82">home_team, away_team, sport_type, match_label, venue, kickoff_at, opens_at, closes_at, tournament_id</span>
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setCsvImportOpen(false)}
-                          disabled={csvImporting}
-                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white disabled:opacity-40"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      {/* Drop zone / file picker */}
-                      <button
-                        type="button"
-                        onClick={() => csvFileInputRef.current?.click()}
-                        disabled={csvImporting}
-                        className="mb-4 flex w-full flex-col items-center justify-center gap-2 rounded-[18px] border-2 border-dashed border-white/25 bg-white/8 py-8 text-center transition hover:border-[#ffd66b]/60 hover:bg-white/12 disabled:opacity-50"
-                      >
-                        <svg viewBox="0 0 24 24" className="h-8 w-8 text-[#ffd66b]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                        <span className="text-[12px] font-black text-white">
-                          {csvFileName ? csvFileName : "Click to choose a CSV file"}
-                        </span>
-                        {csvFileName && (
-                          <span className="text-[10px] font-bold text-white/55">Click to change file</span>
-                        )}
-                      </button>
-
-                      {/* Template download hint */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const header = "home_team,away_team,sport_type,match_label,venue,kickoff_at,opens_at,closes_at,tournament_id";
-                          const example = "SAGESSE,HOMENETMEN,basketball,Game 1,,2026-06-15T20:00,,,"
-                          const blob = new Blob([header + "\n" + example], { type: "text/csv" });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = url; a.download = "games-template.csv";
-                          a.click(); URL.revokeObjectURL(url);
-                        }}
-                        className="mb-4 flex items-center gap-1.5 text-[11px] font-bold text-[#ffd66b] underline underline-offset-2 hover:text-white"
-                      >
-                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
-                        Download template CSV
-                      </button>
-
-                      {/* Validation errors */}
-                      {csvErrors.length > 0 && (
-                        <div className="mb-4 rounded-[14px] bg-red-500/16 p-3">
-                          <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-red-300">Warnings</p>
-                          <ul className="space-y-1">
-                            {csvErrors.map((error, i) => (
-                              <li key={i} className="text-[11px] font-bold text-red-200">{error}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Preview table */}
-                      {csvPreview.length > 0 && (
-                        <div className="mb-5">
-                          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
-                            Preview — {csvPreview.length} game{csvPreview.length !== 1 ? "s" : ""} ready to import
-                          </p>
-                          <div className="max-h-[220px] overflow-auto rounded-[14px] border border-white/14 bg-white/8">
-                            <table className="w-full text-left text-[11px]">
-                              <thead>
-                                <tr className="border-b border-white/10 text-[9px] font-black uppercase tracking-[0.14em] text-white/50">
-                                  <th className="px-3 py-2">Match</th>
-                                  <th className="px-3 py-2">Sport</th>
-                                  <th className="px-3 py-2">Label</th>
-                                  <th className="px-3 py-2">Kickoff</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {csvPreview.map((row, i) => (
-                                  <tr key={i} className="border-b border-white/8 last:border-0">
-                                    <td className="px-3 py-2 font-bold text-white">{row.home_team} vs {row.away_team}</td>
-                                    <td className="px-3 py-2 font-black text-[#ffd66b] capitalize">{row.sport_type}</td>
-                                    <td className="px-3 py-2 text-white/70">{row.match_label}</td>
-                                    <td className="px-3 py-2 text-white/60">{row.kickoff_at ? new Date(row.kickoff_at).toLocaleString() : "—"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Import button */}
-                      <button
-                        type="button"
-                        onClick={() => void importCsvGames()}
-                        disabled={csvPreview.length === 0 || csvImporting}
-                        className="flex h-11 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        {csvImporting
-                          ? `Importing ${csvPreview.length} game${csvPreview.length !== 1 ? "s" : ""}…`
-                          : csvPreview.length > 0
-                            ? `Import ${csvPreview.length} Game${csvPreview.length !== 1 ? "s" : ""}`
-                            : "Select a CSV file above"}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                                {tournamentPopupOpen ? (
-                  <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm lg:items-center lg:pb-0">
-                    <div className="w-full max-w-xl rounded-[30px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
-                      <div className="mb-4 flex items-start justify-between gap-4">
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">Tournament</div>
-                          <h3 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">Add Tournament</h3>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setTournamentPopupOpen(false)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">Tournament name</span>
-                        <input
-                          value={tournamentForm.name}
-                          onChange={(event) => setTournamentForm((current) => ({ ...current, name: event.target.value }))}
-                          className="h-11 w-full rounded-[14px] border border-white/20 bg-white px-4 text-[13px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
-                          placeholder="World Cup 2026"
-                        />
-                      </label>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2 rounded-[16px] bg-white/10 p-1">
-                        {(["football", "basketball"] as const).map((sport) => (
-                          <button
-                            key={sport}
-                            type="button"
-                            onClick={() => setTournamentForm((current) => ({ ...current, sport_type: sport }))}
-                            className={`h-9 rounded-[13px] text-[10px] font-black uppercase tracking-[0.18em] transition ${
-                              tournamentForm.sport_type === sport
-                                ? "bg-[#ffd66b] text-[#365665]"
-                                : "text-white/72 hover:bg-white/10"
-                            }`}
-                          >
-                            {sport === "football" ? "Football" : "Basketball"}
-                          </button>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => void createPredictionTournament()}
-                        disabled={tournamentSaving}
-                        className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
-                      >
-                        {tournamentSaving ? "Creating..." : "Create Tournament"}
-                      </button>
-
-                      <div className="mt-5 max-h-[260px] space-y-2 overflow-auto">
-                        {predictionTournaments.length === 0 ? (
-                          <div className="rounded-[16px] bg-white/10 p-4 text-[12px] font-bold text-white/70">No tournaments yet.</div>
-                        ) : null}
-                        {predictionTournaments.map((tournament) => (
-                          <div key={tournament.id} className="flex items-center justify-between gap-3 rounded-[16px] bg-white/10 px-4 py-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-[13px] font-black text-white">{tournament.name}</div>
-                              <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#ffd66b]">{tournament.sport_type}</div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setTournamentDeleteId(tournament.id)}
-                              className="rounded-full bg-red-400/18 px-3 py-2 text-[11px] font-black text-red-100 transition hover:bg-red-400/26"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {tournamentDeleteId ? (
-                  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm">
-                    <div className="w-full max-w-sm rounded-[26px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
-                      <h3 className="text-[20px] font-black text-white">Delete tournament?</h3>
-                      <p className="mt-2 text-[13px] font-bold leading-relaxed text-white/68">
-                        This will delete the tournament and remove it from linked games. This action cannot be undone.
-                      </p>
-                      <div className="mt-5 flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setTournamentDeleteId(null)}
-                          className="rounded-full bg-white/12 px-5 py-3 text-[11px] font-black text-white"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void deletePredictionTournament(tournamentDeleteId)}
-                          className="rounded-full bg-red-300 px-5 py-3 text-[11px] font-black text-red-950"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {gameCreateOpen ? (
-                  <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 px-4 pb-5 backdrop-blur-sm lg:items-center lg:pb-0">
-                    <div className="w-full max-w-2xl rounded-[30px] border border-white/18 bg-[#61716b] p-5 shadow-2xl">
-                      <div className="mb-4 flex items-start justify-between gap-4">
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">
-                            Admin
-                          </div>
-                          <h3 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
-                            Create{" "}
-                            <span className="text-[#ffd66b]">Game</span>
-                          </h3>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setGameCreateOpen(false)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[18px] font-black text-white"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <div className="mb-4 grid grid-cols-2 gap-2 rounded-[16px] bg-white/10 p-1">
-                        {(["football", "basketball"] as const).map((kind) => (
-                          <button
-                            key={kind}
-                            type="button"
-                            onClick={() => setGameKind(kind)}
-                            className={`h-9 rounded-[13px] text-[10px] font-black uppercase tracking-[0.18em] transition ${
-                              gameKind === kind
-                                ? "bg-[#ffd66b] text-[#365665]"
-                                : "text-white/72 hover:bg-white/10"
-                            }`}
-                          >
-                            {kind === "football" ? "Football" : "Basketball"}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        <label className="block lg:col-span-2">
-                          <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">
-                            Tournament
-                          </span>
-                          <select
-                            value={gameForm.tournament_id}
-                            onChange={(event) => setGameForm((current) => ({ ...current, tournament_id: event.target.value }))}
-                            className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
-                          >
-                            <option value="">No tournament</option>
-                            {gameTournamentOptions.map((tournament) => (
-                              <option key={tournament.id} value={tournament.id}>
-                                {tournament.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <AdminGameInput
-                          label={
-                            gameKind === "basketball" ? "Team 1" : "Home Team"
-                          }
-                          value={gameForm.home_team}
-                          onChange={(value) =>
-                            setGameForm((current) => ({
-                              ...current,
-                              home_team: value,
-                            }))
-                          }
-                        />
-                        <AdminGameInput
-                          label={
-                            gameKind === "basketball" ? "Team 2" : "Away Team"
-                          }
-                          value={gameForm.away_team}
-                          onChange={(value) =>
-                            setGameForm((current) => ({
-                              ...current,
-                              away_team: value,
-                            }))
-                          }
-                        />
-                        <AdminGameInput
-                          label="Game Label"
-                          value={gameForm.match_label}
-                          onChange={(value) =>
-                            setGameForm((current) => ({
-                              ...current,
-                              match_label: value,
-                            }))
-                          }
-                        />
-                        <AdminGameInput
-                          label="Description"
-                          value={gameForm.venue}
-                          onChange={(value) =>
-                            setGameForm((current) => ({
-                              ...current,
-                              venue: value,
-                            }))
-                          }
-                        />
-                        <AdminGameInput
-                          type="datetime-local"
-                          label="Match Timing"
-                          value={gameForm.kickoff_at}
-                          onChange={setGameKickoffWithDefaultWindow}
-                        />
-                        <AdminGameInput
-                          type="datetime-local"
-                          label="Open Time"
-                          value={gameForm.opens_at}
-                          onChange={(value) =>
-                            setGameForm((current) => ({
-                              ...current,
-                              opens_at: value,
-                            }))
-                          }
-                        />
-                        <AdminGameInput
-                          type="datetime-local"
-                          label="Close Time"
-                          value={gameForm.closes_at}
-                          onChange={(value) =>
-                            setGameForm((current) => ({
-                              ...current,
-                              closes_at: value,
-                            }))
-                          }
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => void createGameLinkFromDesktop()}
-                        disabled={gameSaving}
-                        className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[0.22em] text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-55"
-                      >
-                        {gameSaving ? "Creating..." : "Create Game"}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
           </div>
         </section>
       </div>
     </main>
   );
 }
-
-function AdminGameInput({
-  label,
-  value,
-  onChange,
-  type = "text",
-  className = "",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  className?: string;
-}) {
-  return (
-    <label className={`block ${className}`}>
-      <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">
-        {label}
-      </span>
-      <input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
-      />
-    </label>
-  );
-}
-
 function DesktopTimeRangeFilter({
   value,
   onChange,
@@ -11783,6 +10802,34 @@ function DesktopEmptyState({ text }: { text: string }) {
     <div className="rounded-[18px] border border-white/22 bg-white/12 p-5 text-center text-[14px] font-bold text-white/70 shadow-[0_18px_46px_rgba(54,86,101,0.08)]">
       {text}
     </div>
+  );
+}
+
+function AdminGameInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+  className = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  className?: string;
+}) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.2em] text-white/86">
+        {label}
+      </span>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#24352f] outline-none focus:border-[#ffd66b]"
+      />
+    </label>
   );
 }
 
