@@ -148,7 +148,7 @@ export function WorldCupClient({
             className="pointer-events-none absolute inset-0 opacity-28"
             style={{
               backgroundImage: "url('/WC-branding.png')",
-              backgroundSize: "auto 88%",
+              backgroundSize: "auto 66%",
               backgroundPosition: "right bottom",
               backgroundRepeat: "no-repeat",
             }}
@@ -162,16 +162,17 @@ export function WorldCupClient({
                 Predict &amp; <span className="text-[#ffd66b]">Win</span>
               </h1>
 
-              <p className="mt-4 max-w-[300px] text-[13px] font-black leading-5">
-                <span className="text-white">Look up, scan the SCREEN QR code,</span>
-                <br />
-                <span className="text-[#ffd66b]">&amp; make your prediction.</span>
-              </p>
+              <div className="mt-4 max-w-[220px] text-[13px] font-black leading-5 sm:max-w-[260px]">
+                <p className="text-white">Look up, scan the SCREEN QR code,</p>
+                <p className="text-[#ffd66b]">&amp; make your prediction.</p>
+              </div>
 
-              <p className="mt-3 max-w-[300px] text-[13px] font-semibold leading-5 text-white/68">
-                Guess the right score &amp; earn <span className="font-black text-[#ffd66b]">3 points</span>
+              <p className="mt-3 max-w-[220px] text-[13px] font-black leading-5 sm:max-w-[260px]">
+                <span className="text-white">Right score </span>
+                <span className="text-[#ffd66b]">3 points</span>
                 <br />
-                Pick the winning team &amp; earn <span className="font-black text-[#ffd66b]">1 point</span>
+                <span className="text-white">Winning team </span>
+                <span className="text-[#ffd66b]">1 point</span>
               </p>
             </div>
 
