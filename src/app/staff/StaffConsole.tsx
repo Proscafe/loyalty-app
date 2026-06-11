@@ -21,6 +21,23 @@ type ClaimedReward = Reward & {
 const pageGradient =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+type PushStatus = "idle" | "unsupported" | "blocked" | "enabled" | "error";
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = `${base64String}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let index = 0; index < rawData.length; index += 1) {
+    outputArray[index] = rawData.charCodeAt(index);
+  }
+
+  return outputArray;
+}
+
 
 
 // Loads jsQR as a fallback for browsers without BarcodeDetector (Safari, Firefox)
@@ -282,10 +299,13 @@ function StaffConsole({ profile, categories }: Props) {
   const [claimedRewards, setClaimedRewards] = useState<ClaimedReward[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [showPasswordEditor, setShowPasswordEditor] = useState(false);
+  const [showPhoneEditor, setShowPhoneEditor] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"success" | "error">("success");
+  const [pushStatus, setPushStatus] = useState<PushStatus>("idle");
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -304,6 +324,62 @@ function StaffConsole({ profile, categories }: Props) {
     setToast(message);
     setTimeout(() => setToast(null), 2200);
   }, []);
+
+  const enableClaimNotifications = useCallback(
+    async (showFeedback = true) => {
+      try {
+        if (!VAPID_PUBLIC_KEY || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+          setPushStatus("unsupported");
+          if (showFeedback) flash("Push notifications are not supported on this device.", "error");
+          return;
+        }
+
+        let permission = Notification.permission;
+
+        if (permission === "default") {
+          permission = await Notification.requestPermission();
+        }
+
+        if (permission !== "granted") {
+          setPushStatus("blocked");
+          if (showFeedback) flash("Notifications are blocked. Enable them from your browser settings.", "error");
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.register("/sw.js");
+        const readyRegistration = await navigator.serviceWorker.ready;
+
+        let subscription = await readyRegistration.pushManager.getSubscription();
+
+        if (!subscription) {
+          subscription = await readyRegistration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          });
+        }
+
+        const response = await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription }),
+        });
+
+        const json = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(json.error || "Could not save push subscription.");
+        }
+
+        setPushStatus("enabled");
+        if (showFeedback) flash("Claim alerts enabled.");
+      } catch (error) {
+        console.error("Push subscription failed", error);
+        setPushStatus("error");
+        if (showFeedback) flash(error instanceof Error ? error.message : "Could not enable claim alerts.", "error");
+      }
+    },
+    [flash],
+  );
 
   async function cleanupRewardTimers() {
     try {
@@ -394,7 +470,9 @@ function StaffConsole({ profile, categories }: Props) {
       setQuery("");
       setSelectedCategories([]);
       setShowPasswordEditor(false);
+      setShowPhoneEditor(false);
       setNewPassword("");
+      setPhoneDraft(selectedClient.phone ?? "");
       await refreshSelectedClient(selectedClient.id);
     },
     [refreshSelectedClient],
@@ -450,7 +528,9 @@ function StaffConsole({ profile, categories }: Props) {
         setQuery("");
         setSelectedCategories([]);
         setShowPasswordEditor(false);
-          setNewPassword("");
+        setShowPhoneEditor(false);
+        setNewPassword("");
+        setPhoneDraft(foundClient.phone ?? "");
         await refreshSelectedClient(foundClient.id);
         await loadClaimedRewards();
 
@@ -531,6 +611,37 @@ function StaffConsole({ profile, categories }: Props) {
     flash("Client password updated.");
   }
 
+  async function saveClientPhone() {
+    if (!client) return;
+
+    const trimmedPhone = phoneDraft.trim();
+
+    setBusy(true);
+
+    const res = await fetch("/api/staff/client-phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: client.id, phone: trimmedPhone }),
+    });
+
+    const json = await readApiResponse(res);
+
+    setBusy(false);
+
+    if (!res.ok) {
+      flash(json.error ?? `Could not update phone number. Status ${res.status}`, "error");
+      return;
+    }
+
+    const nextPhone = typeof json.phone === "string" ? json.phone : trimmedPhone;
+
+    setClient({ ...client, phone: nextPhone || null });
+    setPhoneDraft(nextPhone);
+    setShowPhoneEditor(false);
+    flash("Client phone number updated.");
+    await refreshSelectedClient(client.id);
+  }
+
   async function addStamps() {
     if (!client || selectedCategories.length === 0) return;
 
@@ -551,9 +662,8 @@ function StaffConsole({ profile, categories }: Props) {
         setBusy(false);
         const errorMessage = "error" in json ? String(json.error || "") : "";
         flash(
-          errorMessage.includes("one_stamp_per_client_per_category_per_day")
-            ? "This client already received today's stamp in this category."
-            : errorMessage || "Could not add stamp.",
+          errorMessage ||
+            "Could not add stamp. Staff can stamp once per category from 9:00 AM until 5:00 AM Beirut time.",
           "error",
         );
         await refreshSelectedClient(client.id);
@@ -641,6 +751,13 @@ function StaffConsole({ profile, categories }: Props) {
       supabase.removeChannel(rewardChannel);
     };
   }, [loadClaimedRewards, supabase]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      void enableClaimNotifications(false);
+    }
+  }, [enableClaimNotifications]);
 
   function maskPhoneNumber(value?: string | null) {
     const raw = String(value || "").trim();
@@ -747,6 +864,19 @@ function StaffConsole({ profile, categories }: Props) {
                 </h1>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => void enableClaimNotifications(true)}
+              disabled={pushStatus === "enabled"}
+              className={`w-full rounded-[22px] px-5 py-3 text-left text-[12px] font-black shadow-[0_16px_34px_rgba(20,30,26,0.12)] transition active:scale-[0.99] ${
+                pushStatus === "enabled"
+                  ? "bg-[#ffd66b] text-[#365665]"
+                  : "bg-white/16 text-white backdrop-blur-2xl"
+              }`}
+            >
+              {pushStatus === "enabled" ? "Claim alerts are enabled" : "Enable claim alerts on this phone"}
+            </button>
 
             <div className="flex items-center gap-3">
               <div className="min-w-0 flex-1 rounded-full border border-white/45 bg-[#e7e9e3] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl">
@@ -872,10 +1002,22 @@ function StaffConsole({ profile, categories }: Props) {
                       type="button"
                       onClick={() => {
                         setShowPasswordEditor((value) => !value);
-                                        }}
+                        setShowPhoneEditor(false);
+                      }}
                       className="rounded-full bg-[#ffd66b] px-4 py-2 text-[12px] font-black text-[#365665] shadow-[0_12px_26px_rgba(255,214,107,0.20)]"
                     >
                       Change password
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoneDraft(client.phone ?? "");
+                        setShowPhoneEditor((value) => !value);
+                        setShowPasswordEditor(false);
+                      }}
+                      className="rounded-full border border-white/25 bg-white/18 px-4 py-2 text-[12px] font-black text-white backdrop-blur-xl"
+                    >
+                      Edit Phone Number
                     </button>
                   </div>
 
@@ -904,6 +1046,30 @@ function StaffConsole({ profile, categories }: Props) {
                     </div>
                   )}
 
+                  {showPhoneEditor && (
+                    <div className="mt-4 rounded-[22px] border border-white/18 bg-white/14 p-3 backdrop-blur-xl">
+                      <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+                        Phone number
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="tel"
+                          value={phoneDraft}
+                          onChange={(event) => setPhoneDraft(event.target.value)}
+                          placeholder="Phone number"
+                          className="min-w-0 flex-1 rounded-full bg-[#e7e9e3] px-4 py-3 text-[13px] font-black text-[#365665] outline-none placeholder:text-[#365665]/55"
+                        />
+                        <button
+                          type="button"
+                          onClick={saveClientPhone}
+                          disabled={busy}
+                          className="rounded-full bg-[#ffd66b] px-5 py-3 text-[12px] font-black text-[#365665] disabled:opacity-60"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
