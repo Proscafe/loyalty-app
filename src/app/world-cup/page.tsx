@@ -12,6 +12,12 @@ type ProfileRow = {
   email: string | null;
 };
 
+type PredictionMatchRow = {
+  id: string;
+  home_score: number | null;
+  away_score: number | null;
+};
+
 type PredictionEntryRow = {
   id: string;
   client_id: string;
@@ -40,6 +46,10 @@ function getRankLabel(rank: number | null) {
   return `${rank}th`;
 }
 
+function hasSavedResult(match: PredictionMatchRow) {
+  return match.home_score !== null && match.home_score !== undefined && match.away_score !== null && match.away_score !== undefined;
+}
+
 export default async function WorldCupPage() {
   const supabase = await createClient();
 
@@ -53,26 +63,30 @@ export default async function WorldCupPage() {
 
   const admin = createAdminClient();
 
-  // First get all match IDs that belong to World Cup 2026
+  // Get World Cup matches and only count entries for matches that already have saved results.
   const { data: wcMatches } = await admin
     .from("prediction_matches")
-    .select("id")
+    .select("id, home_score, away_score")
     .eq("tournament_id", WORLD_CUP_2026_TOURNAMENT_ID);
 
-  const wcMatchIds = (wcMatches ?? []).map((m: { id: string }) => m.id);
+  const resultedMatchIds = ((wcMatches ?? []) as PredictionMatchRow[])
+    .filter(hasSavedResult)
+    .map((match) => match.id);
 
   const [{ data: profile }, { data: entries }, { data: winnerPicks }] = await Promise.all([
     admin.from("profiles").select("id, full_name, email").eq("id", user.id).maybeSingle(),
 
-    // Only prediction_entries for World Cup 2026 matches
-    wcMatchIds.length > 0
+    // Only prediction_entries for World Cup 2026 matches that have a saved score/result.
+    resultedMatchIds.length > 0
       ? admin
           .from("prediction_entries")
           .select("id, client_id, points, created_at")
-          .in("match_id", wcMatchIds)
+          .in("match_id", resultedMatchIds)
           .order("created_at", { ascending: false })
       : Promise.resolve({ data: [] }),
 
+    // Winner picks are loaded only to show the current user's locked pick.
+    // They should not add leaderboard points until the final tournament winner is handled separately.
     admin
       .from("world_cup_winner_predictions")
       .select("id, client_id, team_name, fifa_rank, points, created_at")
@@ -93,26 +107,18 @@ export default async function WorldCupPage() {
       totalPoints: 0,
       totalPredictions: 0,
     };
+
     current.totalPoints += Number(entry.points ?? 0);
     current.totalPredictions += 1;
     statsMap.set(entry.client_id, current);
   });
 
-  winnerRows.forEach((entry) => {
-    const current = statsMap.get(entry.client_id) ?? {
-      client_id: entry.client_id,
-      totalPoints: 0,
-      totalPredictions: 0,
-    };
-    current.totalPoints += Number(entry.points ?? 0);
-    current.totalPredictions += 1;
-    statsMap.set(entry.client_id, current);
-  });
-
-  const leaderboard = Array.from(statsMap.values()).sort((a, b) => {
-    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-    return b.totalPredictions - a.totalPredictions;
-  });
+  const leaderboard = Array.from(statsMap.values())
+    .filter((row) => row.totalPoints > 0)
+    .sort((a, b) => {
+      if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+      return b.totalPredictions - a.totalPredictions;
+    });
 
   const topIds = leaderboard.slice(0, 10).map((row) => row.client_id);
 
