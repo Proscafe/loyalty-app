@@ -274,7 +274,7 @@ export function WorldCupClient({
                       {firstNameOnly(item.name)}
                     </div>
                     <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white/46">
-                      {item.totalPredictions} predictions
+                      {item.totalPredictions} {item.totalPredictions === 1 ? "prediction" : "predictions"}
                     </div>
                   </div>
                 </div>
@@ -284,7 +284,7 @@ export function WorldCupClient({
                     {item.totalPoints}
                   </div>
                   <div className="text-[9px] font-black uppercase tracking-[0.14em] text-white/46">
-                    Points
+                    {item.totalPoints === 1 ? "Point" : "Points"}
                   </div>
                 </div>
               </div>
