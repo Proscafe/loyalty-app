@@ -49,9 +49,12 @@ export async function sendNewRewardClaimNotification({
     return;
   }
 
+  const cleanClientName = clientName?.trim() || "A customer";
+  const cleanRewardType = rewardType?.trim() || "a reward";
+
   const payload = JSON.stringify({
-    title: "New reward claim",
-    body: `${clientName} claimed ${rewardType}`,
+    title: "🎁 New reward claim",
+    body: `👤 ${cleanClientName} claimed ${cleanRewardType}`,
     url: "/staff",
     tag: `reward-claim-${rewardId}`,
   });
