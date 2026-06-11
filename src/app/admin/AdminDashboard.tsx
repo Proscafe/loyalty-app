@@ -170,6 +170,7 @@ type CommentCardFilter =
   | "low_rating"
   | "has_comments"
   | "today"
+  | "yesterday"
   | "week"
   | "month";
 
@@ -955,10 +956,11 @@ function MobileAdminDashboard({
             />
           </Link>
 
-          <div
+          <Link
+            href="/profile"
             className="flex h-10 w-10 items-center justify-center text-[#ffd66b]"
             title={shortName(profile.full_name || profile.email || "Admin")}
-            aria-label="Admin profile"
+            aria-label="Open profile"
           >
             <svg
               viewBox="0 0 24 24"
@@ -967,48 +969,62 @@ function MobileAdminDashboard({
             >
               <path d="M12 12.2a4.7 4.7 0 1 0 0-9.4 4.7 4.7 0 0 0 0 9.4Zm0 2.1c-4.6 0-8.3 2.4-8.3 5.3 0 .9.7 1.6 1.6 1.6h13.4c.9 0 1.6-.7 1.6-1.6 0-2.9-3.7-5.3-8.3-5.3Z" />
             </svg>
-          </div>
+          </Link>
         </header>
 
-        <section
-          className="relative mb-5 overflow-hidden border border-white/20 px-5 py-5 shadow-[0_24px_70px_rgba(35,48,39,0.22)] backdrop-blur-2xl"
-          style={{ borderRadius: 18, background: GLASS_CARD, minHeight: 154 }}
-        >
-          <img
-            src="/client-main-card.png"
-            alt=""
-            className="pointer-events-none absolute inset-0 h-full w-[128%] translate-x-8 scale-[1.06] object-cover object-right opacity-55"
-          />
+        {tab === "Overview" ? (
+          <section
+            className="relative mb-5 overflow-hidden border border-white/20 px-5 py-5 shadow-[0_24px_70px_rgba(35,48,39,0.22)] backdrop-blur-2xl"
+            style={{ borderRadius: 18, background: GLASS_CARD, minHeight: 154 }}
+          >
+            <img
+              src="/client-main-card.png"
+              alt=""
+              className="pointer-events-none absolute inset-0 h-full w-[128%] translate-x-8 scale-[1.06] object-cover object-right opacity-55"
+            />
 
-          <div className="relative z-10 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-white/80">
-                Admin Dashboard
-              </p>
+            <div className="relative z-10 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="mb-3 text-[11px] font-black uppercase tracking-[0.34em] text-white/80">
+                  Admin Dashboard
+                </p>
 
-              <h1 className="text-[30px] font-black leading-[1.02] tracking-[-0.04em] text-white">
-                Hello,
-                <br />
-                <span className="text-[#ffd66b]">
-                  {shortName(profile.full_name)}
-                </span>
-              </h1>
+                <h1 className="text-[30px] font-black leading-[1.02] tracking-[-0.04em] text-white">
+                  Hello,
+                  <br />
+                  <span className="text-[#ffd66b]">
+                    {shortName(profile.full_name)}
+                  </span>
+                </h1>
+              </div>
+
+              <Link
+                href="/world-cup"
+                aria-label="Open World Cup leaderboard"
+                className="group flex h-[112px] w-[112px] shrink-0 items-center justify-center transition active:scale-[0.98]"
+              >
+                <img
+                  src="/WC-logo.png"
+                  alt="World Cup"
+                  className="h-[108px] w-[108px] object-contain drop-shadow-[0_18px_34px_rgba(35,48,39,0.22)] transition group-active:scale-95"
+                  draggable={false}
+                />
+              </Link>
             </div>
-
-            <Link
-              href="/admin/predictions"
-              aria-label="Open World Cup predictions"
-              className="group flex h-[112px] w-[112px] shrink-0 items-center justify-center transition active:scale-[0.98]"
-            >
-              <img
-                src="/WC-logo.png"
-                alt="World Cup"
-                className="h-[108px] w-[108px] object-contain drop-shadow-[0_18px_34px_rgba(35,48,39,0.22)] transition group-active:scale-95"
-                draggable={false}
-              />
-            </Link>
-          </div>
-        </section>
+          </section>
+        ) : tab === "Activity" ? (
+          <section className="mb-5 rounded-[22px] bg-[#718078] px-5 py-5 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
+            <h1 className="text-[24px] font-black leading-none tracking-[-0.04em] text-white">
+              Activity
+            </h1>
+          </section>
+        ) : tab === "Loyalty Program" ? (
+          <section className="mb-5 rounded-[22px] bg-[#718078] px-5 py-5 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
+            <h1 className="text-[24px] font-black leading-none tracking-[-0.04em] text-white">
+              Loyalty Program
+            </h1>
+          </section>
+        ) : null}
 
         {tab === "Overview" && (
           <section className="mb-12 space-y-6">
@@ -1604,19 +1620,7 @@ function LoyaltyProgramPanel({ compact = false }: { compact?: boolean }) {
     return (
       <div className="space-y-4">
         <Panel>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/62">
-                Loyalty Program
-              </div>
-              <h2 className="mt-1 text-[23px] font-black tracking-[-0.04em] text-white">
-                Program Status
-              </h2>
-              <p className="mt-2 max-w-sm text-[12px] font-bold leading-5 text-white/68">
-                Enable or disable the loyalty program for clients.
-              </p>
-            </div>
-
+          <div className="flex items-center justify-end">
             <span
               className={`inline-flex h-10 items-center rounded-full px-4 text-[10px] font-black uppercase tracking-[0.16em] ${
                 settings.is_enabled
@@ -2998,6 +3002,8 @@ function DesktopAdminDashboard({
   >([]);
   const [commentSearch, setCommentSearch] = useState("");
   const [commentFilter, setCommentFilter] = useState<CommentCardFilter>("all");
+  const [isCommentFilterOpen, setIsCommentFilterOpen] = useState(false);
+  const commentFilterRef = useRef<HTMLDivElement | null>(null);
   const [commentSort, setCommentSort] = useState<{
     key: CommentCardSortKey;
     direction: SortDirection;
@@ -4537,6 +4543,24 @@ function DesktopAdminDashboard({
       document.removeEventListener("touchstart", closeReportFilter);
     };
   }, [reportFiltersOpen]);
+
+  useEffect(() => {
+    if (!isCommentFilterOpen) return;
+
+    function closeCommentFilter(event: MouseEvent | TouchEvent) {
+      if (!commentFilterRef.current) return;
+      if (commentFilterRef.current.contains(event.target as Node)) return;
+      setIsCommentFilterOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeCommentFilter);
+    document.addEventListener("touchstart", closeCommentFilter);
+
+    return () => {
+      document.removeEventListener("mousedown", closeCommentFilter);
+      document.removeEventListener("touchstart", closeCommentFilter);
+    };
+  }, [isCommentFilterOpen]);
 
   async function setRole(userId: string, role: UserRole) {
     const { error } = await supabase
@@ -6589,6 +6613,10 @@ function DesktopAdminDashboard({
       now.getMonth(),
       now.getDate(),
     );
+    const startTomorrow = new Date(startToday);
+    startTomorrow.setDate(startToday.getDate() + 1);
+    const startYesterday = new Date(startToday);
+    startYesterday.setDate(startToday.getDate() - 1);
     const startWeek = new Date(startToday);
     startWeek.setDate(startToday.getDate() - ((startToday.getDay() + 6) % 7));
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -6605,7 +6633,9 @@ function DesktopAdminDashboard({
           card.service_rating,
           card.cleanliness_rating,
           card.visit_again_rating,
-        ].map((value) => (Number.isFinite(Number(value)) ? Number(value) : 0));
+        ]
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0 && value <= 5);
         const averageRating = ratings.length
           ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length
           : 0;
@@ -6650,7 +6680,16 @@ function DesktopAdminDashboard({
           return false;
         if (
           commentFilter === "today" &&
-          (!row.submittedTime || row.submittedTime < startToday)
+          (!row.submittedTime ||
+            row.submittedTime < startToday ||
+            row.submittedTime >= startTomorrow)
+        )
+          return false;
+        if (
+          commentFilter === "yesterday" &&
+          (!row.submittedTime ||
+            row.submittedTime < startYesterday ||
+            row.submittedTime >= startToday)
         )
           return false;
         if (
@@ -6744,17 +6783,61 @@ function DesktopAdminDashboard({
     const total = commentCardRows.length;
     const registered = commentCardRows.filter((row) => row.member).length;
     const lowRating = commentCardRows.filter(
-      (row) => row.averageRating < 4,
+      (row) => row.averageRating > 0 && row.averageRating < 4,
     ).length;
-    const average = total
+
+    const now = new Date();
+    const startToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const startWeek = new Date(startToday);
+    startWeek.setDate(startToday.getDate() - ((startToday.getDay() + 6) % 7));
+
+    const newThisWeek = commentCardRows.filter(
+      (row) => row.submittedTime && row.submittedTime >= startWeek,
+    ).length;
+
+    const giftRowsFromCommentCards = giftRows.filter((reward) =>
+      String(reward.reward_type ?? "")
+        .toLowerCase()
+        .includes("source comment cards"),
+    ).length;
+    const pendingGiftsFromCommentCards = pendingCommentCardGifts.filter(
+      (gift) => String(gift.status ?? "").toLowerCase() !== "cancelled",
+    ).length;
+    const giftsSent = giftRowsFromCommentCards + pendingGiftsFromCommentCards;
+
+    const sourceCounts = new Map<string, number>();
+    commentCardRows.forEach((row) => {
+      const source = String(row.card.heard_about_us || "").trim();
+      if (!source) return;
+      sourceCounts.set(source, (sourceCounts.get(source) ?? 0) + 1);
+    });
+
+    const topSource = [...sourceCounts.entries()].sort(
+      (first, second) => second[1] - first[1] || first[0].localeCompare(second[0]),
+    )[0]?.[0] ?? "—";
+
+    const ratedRows = commentCardRows.filter((row) => row.averageRating > 0);
+    const average = ratedRows.length
       ? (
-          commentCardRows.reduce((sum, row) => sum + row.averageRating, 0) /
-          total
+          ratedRows.reduce((sum, row) => sum + row.averageRating, 0) /
+          ratedRows.length
         ).toFixed(1)
       : "0.0";
 
-    return { total, registered, lowRating, average };
-  }, [commentCardRows]);
+    return {
+      total,
+      registered,
+      lowRating,
+      average,
+      newThisWeek,
+      giftsSent,
+      topSource,
+    };
+  }, [commentCardRows, giftRows, pendingCommentCardGifts]);
 
   const selectedCommentCardRow = useMemo(() => {
     if (!selectedCommentCardId) return null;
@@ -8401,25 +8484,75 @@ function DesktopAdminDashboard({
                       className="h-10 w-[320px] rounded-[13px] border-0 bg-white px-4 text-[12px] font-bold text-[#365665] outline-none placeholder:text-[#365665]/45"
                     />
 
-                    <select
-                      value={commentFilter}
-                      onChange={(event) =>
-                        setCommentFilter(
-                          event.target.value as CommentCardFilter,
-                        )
-                      }
-                      className="h-10 rounded-[13px] border-0 bg-white px-4 text-[12px] font-black text-[#365665] outline-none"
-                    >
-                      <option value="all">All Feedback</option>
-                      <option value="registered">Registered Members</option>
-                      <option value="not_registered">Not Registered</option>
-                      <option value="five_star">5 Star Reviews</option>
-                      <option value="low_rating">Needs Attention</option>
-                      <option value="has_comments">Has Comments</option>
-                      <option value="today">Today</option>
-                      <option value="week">This Week</option>
-                      <option value="month">This Month</option>
-                    </select>
+                    <div className="flex h-10 items-center rounded-[14px] bg-white/10 p-1 shadow-[0_14px_34px_rgba(20,30,26,0.12)]">
+                      {[
+                        ["today", "Today"],
+                        ["yesterday", "Yesterday"],
+                        ["week", "This week"],
+                        ["month", "This month"],
+                        ["all", "All"],
+                      ].map(([value, label]) => {
+                        const isActive = commentFilter === value;
+
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setCommentFilter(value as CommentCardFilter)}
+                            className={`h-8 rounded-[11px] px-4 text-[11px] font-black transition ${
+                              isActive
+                                ? "bg-[#FFD66B] text-[#365665] shadow-[0_10px_20px_rgba(255,214,107,0.22)]"
+                                : "text-white hover:bg-white/10"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div ref={commentFilterRef} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setIsCommentFilterOpen((open) => !open)}
+                        className="inline-flex h-10 items-center justify-center rounded-[13px] border border-white/24 bg-white/5 px-5 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-white/12"
+                      >
+                        Filter
+                      </button>
+
+                      {isCommentFilterOpen ? (
+                        <div className="absolute right-0 top-full z-50 mt-3 w-[220px] rounded-[18px] border border-white/12 bg-[#365665] p-2 shadow-[0_22px_55px_rgba(20,30,26,0.34)] backdrop-blur-2xl">
+                          {[
+                            ["registered", "Registered Members"],
+                            ["not_registered", "Not Registered"],
+                            ["five_star", "5 Star Reviews"],
+                            ["low_rating", "Needs Attention"],
+                            ["has_comments", "Has Comments"],
+                          ].map(([value, label]) => {
+                            const isActive = commentFilter === value;
+
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => {
+                                  setCommentFilter(value as CommentCardFilter);
+                                  setIsCommentFilterOpen(false);
+                                }}
+                                className={`mb-1 flex h-10 w-full items-center justify-between rounded-[13px] px-3 text-left text-[11px] font-black transition last:mb-0 ${
+                                  isActive
+                                    ? "bg-[#FFD66B] text-[#365665]"
+                                    : "text-white hover:bg-white/10"
+                                }`}
+                              >
+                                <span>{label}</span>
+                                {isActive ? <span>✓</span> : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
 
                     <button
                       type="button"
@@ -8448,7 +8581,7 @@ function DesktopAdminDashboard({
 
                 <div
                   className="grid gap-2"
-                  style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+                  style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
                 >
                   <DesktopGiftSummaryCard
                     label="Total Feedback"
@@ -8465,6 +8598,18 @@ function DesktopAdminDashboard({
                   <DesktopGiftSummaryCard
                     label="Needs Attention"
                     value={commentCardSummary.lowRating}
+                  />
+                  <DesktopGiftSummaryCard
+                    label="New This Week"
+                    value={commentCardSummary.newThisWeek}
+                  />
+                  <DesktopGiftSummaryCard
+                    label="Gifts Sent"
+                    value={commentCardSummary.giftsSent}
+                  />
+                  <DesktopGiftSummaryCard
+                    label="Top Source"
+                    value={commentCardSummary.topSource}
                   />
                 </div>
 

@@ -347,8 +347,26 @@ export default function ProfileSettings({
   }
 
   async function handleLogout() {
-    window.location.replace("/login");
-    void supabase.auth.signOut({ scope: "local" });
+    try {
+      await supabase.auth.signOut({ scope: "global" });
+    } catch {
+      // Continue to the login page even if Supabase returns a transient sign-out error.
+    }
+
+    try {
+      Object.keys(window.localStorage)
+        .filter((key) => key.startsWith("sb-") || key.includes("supabase"))
+        .forEach((key) => window.localStorage.removeItem(key));
+
+      Object.keys(window.sessionStorage)
+        .filter((key) => key.startsWith("sb-") || key.includes("supabase"))
+        .forEach((key) => window.sessionStorage.removeItem(key));
+    } catch {
+      // Storage may be unavailable in private mode; redirect anyway.
+    }
+
+    router.replace("/login");
+    router.refresh();
   }
 
   return (

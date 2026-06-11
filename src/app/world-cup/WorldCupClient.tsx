@@ -162,10 +162,16 @@ export function WorldCupClient({
                 Predict &amp; <span className="text-[#ffd66b]">Win</span>
               </h1>
 
-              <p className="mt-4 max-w-[300px] text-[13px] font-semibold leading-5 text-white/68">
-                Guess the right score and earn <span className="font-black text-[#ffd66b]">3 points</span>
+              <p className="mt-4 max-w-[300px] text-[13px] font-black leading-5">
+                <span className="text-white">Look up, scan the SCREEN QR code,</span>
                 <br />
-                Pick the winning team and earn <span className="font-black text-[#ffd66b]">1 point</span>
+                <span className="text-[#ffd66b]">&amp; make your prediction.</span>
+              </p>
+
+              <p className="mt-3 max-w-[300px] text-[13px] font-semibold leading-5 text-white/68">
+                Guess the right score &amp; earn <span className="font-black text-[#ffd66b]">3 points</span>
+                <br />
+                Pick the winning team &amp; earn <span className="font-black text-[#ffd66b]">1 point</span>
               </p>
             </div>
 
@@ -186,7 +192,7 @@ export function WorldCupClient({
           </h2>
 
           <p className="mt-2 text-[13px] font-normal leading-5 text-white/66">
-            A penalty shoot worth <span className="font-black text-[#ffd66b]">5 points</span>
+            Choose your champion &amp; earn <span className="font-black text-[#ffd66b]">5 bonus points</span>.
           </p>
 
           <button
@@ -215,7 +221,7 @@ export function WorldCupClient({
 
           {winnerPick ? (
             <p className="mt-3 text-[11px] font-semibold leading-5 text-white/56">
-              Your answer is locked and can&apos;t be modified.
+              Your answer is locked &amp; can&apos;t be modified.
             </p>
           ) : null}
 

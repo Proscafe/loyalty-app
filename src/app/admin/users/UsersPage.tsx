@@ -37,7 +37,7 @@ type AdminClientStamp = {
 
 const PAGE_BG = "bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]";
 const CUSTOMER_TABLE_GRID =
-  "minmax(130px,1fr) minmax(90px,0.6fr) minmax(78px,0.5fr) minmax(62px,0.38fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(178px,0.95fr) minmax(118px,0.7fr)";
+  "minmax(130px,1fr) minmax(90px,0.6fr) minmax(86px,0.52fr) minmax(78px,0.5fr) minmax(62px,0.38fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(178px,0.95fr) minmax(118px,0.7fr)";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1031,6 +1031,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(50);
   const [filter, setFilter] = useState<"all" | UserRole>("client");
+  const [mobileProfileFilter, setMobileProfileFilter] = useState<"all" | UserRole>("staff");
+  const [mobileProfileFilterOpen, setMobileProfileFilterOpen] = useState(false);
+  const mobileProfileFilterRef = useRef<HTMLDivElement | null>(null);
   const [timeRange, setTimeRange] = useState<DesktopTimeRange>("all");
   const [lastVisitFilter, setLastVisitFilter] = useState<"all" | "active" | "inactive">("all");
   const [customerStatusFilter, setCustomerStatusFilter] = useState<"all" | "active" | "inactive" | "at_risk" | "vip">("all");
@@ -1226,6 +1229,21 @@ export function UsersPage({ adminId }: { adminId: string }) {
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("touchstart", close); };
   }, [reportFiltersOpen]);
 
+  useEffect(() => {
+    if (!mobileProfileFilterOpen) return;
+    function close(e: MouseEvent | TouchEvent) {
+      if (!mobileProfileFilterRef.current?.contains(e.target as Node)) {
+        setMobileProfileFilterOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", close);
+    document.addEventListener("touchstart", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("touchstart", close);
+    };
+  }, [mobileProfileFilterOpen]);
+
   // ── User profile ─────────────────────────────────────────────────────────────
 
   async function openUserProfile(user: AdminUser) {
@@ -1335,7 +1353,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
   // ── Filtering & sorting ──────────────────────────────────────────────────────
 
   const customerReportRows = useMemo(() => {
-    return users.filter(u => u.role === "client").map(user => {
+    return users.map(user => {
       // Use server-enriched fields from /api/admin/users
       const totalVisits      = user.totalVisits ?? 0;
       const lastVisit        = user.lastVisit ?? null;
@@ -1384,33 +1402,30 @@ export function UsersPage({ adminId }: { adminId: string }) {
       if (filter !== "all" && user.role !== filter) return false;
       const created = (user as any).created_at;
       if (!isWithinDesktopTimeRange(created, timeRange)) return false;
-      if (lastVisitFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 14)) return false;
-      if (lastVisitFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 14)) return false;
-      if (customerStatusFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 7)) return false;
-      if (customerStatusFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 30)) return false;
-      if (customerStatusFilter === "at_risk" && !row.isAtRisk) return false;
-      if (customerStatusFilter === "vip" && !row.isVip) return false;
-      if (customerGenderFilter !== "all" && (user.gender ?? "").toLowerCase() !== customerGenderFilter) return false;
-      if (customerAgeRangeFilter !== "all") {
-        const age = row.age;
-        if (age === null) return false;
-        if (customerAgeRangeFilter === "18-24" && (age < 18 || age > 24)) return false;
-        if (customerAgeRangeFilter === "25-34" && (age < 25 || age > 34)) return false;
-        if (customerAgeRangeFilter === "35-44" && (age < 35 || age > 44)) return false;
-        if (customerAgeRangeFilter === "45+" && age < 45) return false;
+      const isClient = user.role === "client";
+
+      // Client-behavior filters should not hide staff/admin rows when Profile Tab is Staff/Admin.
+      if (isClient) {
+        if (lastVisitFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 14)) return false;
+        if (lastVisitFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 14)) return false;
+        if (customerStatusFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 7)) return false;
+        if (customerStatusFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 30)) return false;
+        if (customerStatusFilter === "at_risk" && !row.isAtRisk) return false;
+        if (customerStatusFilter === "vip" && !row.isVip) return false;
       }
       if (!search) return true;
       const phone = normalizePhoneForMatch(user.phone);
       if (phone && normalizedSearch && phone.includes(normalizedSearch)) return true;
       return [user.full_name, user.email, user.phone, user.client_code, desktopRoleLabel(user.role), user.is_active === false ? "deactivated" : "active"].filter(Boolean).join(" ").toLowerCase().includes(search);
     });
-  }, [customerReportRows, filter, timeRange, searchTerm, lastVisitFilter, customerStatusFilter, customerGenderFilter, customerAgeRangeFilter]);
+  }, [customerReportRows, filter, timeRange, searchTerm, lastVisitFilter, customerStatusFilter]);
 
   const sortedCustomerReportRows = useMemo(() => {
     const dir = customerSort.direction === "asc" ? 1 : -1;
     return filteredCustomerReportRows.slice().sort((a, b) => {
       if (customerSort.key === "name") return (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir;
       if (customerSort.key === "contact") return ((a.user.phone || a.user.email || "").localeCompare(b.user.phone || b.user.email || "")) * dir;
+      if (customerSort.key === "memberSince") return ((new Date((a.user as any).created_at || 0).getTime() || 0) - (new Date((b.user as any).created_at || 0).getTime() || 0)) * dir;
       if (customerSort.key === "lastVisit") return ((new Date(a.lastVisit || 0).getTime() || 0) - (new Date(b.lastVisit || 0).getTime() || 0)) * dir;
       if (customerSort.key === "visits") return (a.totalVisits - b.totalVisits) * dir;
       if (customerSort.key === "lifetime") return (a.lifetimeValue - b.lifetimeValue) * dir;
@@ -1430,24 +1445,71 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   // Stats
   // Stats match AdminDashboard exactly — computed from ALL client rows, not filtered
-  const newCustomerCount      = customerReportRows.filter(r => r.totalVisits <= 1).length;
-  const returningCustomerCount = customerReportRows.filter(r => r.totalVisits > 1).length;
-  const inactiveCustomerCount = customerReportRows.filter(r => r.inactive).length;
-  const activeReportCustomers = customerReportRows.length - inactiveCustomerCount;
-  const atRiskCustomerCount   = customerReportRows.filter(r => r.isAtRisk).length;
-  const vipCustomerCount      = customerReportRows.filter(r => r.isVip).length;
-  const averageVisitsPerCustomer = customerReportRows.length > 0
-    ? (customerReportRows.reduce((sum, r) => sum + r.totalVisits, 0) / customerReportRows.length).toFixed(1)
+  const clientReportRows = customerReportRows.filter(r => r.user.role === "client");
+  const newCustomerCount      = clientReportRows.filter(r => r.totalVisits <= 1).length;
+  const returningCustomerCount = clientReportRows.filter(r => r.totalVisits > 1).length;
+  const inactiveCustomerCount = clientReportRows.filter(r => r.inactive).length;
+  const activeReportCustomers = clientReportRows.length - inactiveCustomerCount;
+  const atRiskCustomerCount   = clientReportRows.filter(r => r.isAtRisk).length;
+  const vipCustomerCount      = clientReportRows.filter(r => r.isVip).length;
+  const averageVisitsPerCustomer = clientReportRows.length > 0
+    ? (clientReportRows.reduce((sum, r) => sum + r.totalVisits, 0) / clientReportRows.length).toFixed(1)
     : "0";
+
+  const mobileThisWeekClientRows = useMemo(() => {
+    const weekStart = getDesktopTimeRangeStart("week");
+    return customerReportRows.filter(row => {
+      if (row.user.role !== "client") return false;
+      if (!weekStart) return true;
+      const checkDate = row.lastVisit || (row.user as any).created_at || null;
+      if (!checkDate) return false;
+      const date = new Date(checkDate);
+      return !Number.isNaN(date.getTime()) && date >= weekStart;
+    });
+  }, [customerReportRows]);
+
+  const mobileFilteredRows = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+    const normalizedSearch = normalizePhoneForMatch(searchTerm.trim());
+
+    const baseRows = mobileProfileFilter === "client"
+      ? mobileThisWeekClientRows
+      : customerReportRows.filter(row => mobileProfileFilter === "all" || row.user.role === mobileProfileFilter);
+
+    return baseRows.filter(row => {
+      if (!search) return true;
+      const user = row.user;
+      const phone = normalizePhoneForMatch(user.phone);
+      if (phone && normalizedSearch && phone.includes(normalizedSearch)) return true;
+      return [user.full_name, user.email, user.phone, user.client_code, desktopRoleLabel(user.role), user.is_active === false ? "deactivated" : "active"]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
+    }).sort((a, b) => {
+      if (mobileProfileFilter === "client") {
+        return (new Date(b.lastVisit || (b.user as any).created_at || 0).getTime() || 0) - (new Date(a.lastVisit || (a.user as any).created_at || 0).getTime() || 0);
+      }
+      return (new Date((b.user as any).created_at || 0).getTime() || 0) - (new Date((a.user as any).created_at || 0).getTime() || 0);
+    });
+  }, [customerReportRows, mobileProfileFilter, mobileThisWeekClientRows, searchTerm]);
+
+  function mobileFilterLabel(value: "all" | UserRole) {
+    if (value === "client") return "Clients this week";
+    if (value === "staff") return "Staff";
+    if (value === "master_admin") return "Admin";
+    return "All profiles";
+  }
 
   function downloadVisibleCustomerTable() {
     const rows = sortedCustomerReportRows.slice(0, 80);
-    const header = ["Name", "Client Code", "Phone", "Email", "Role", "Last Visit", "Days Ago", "Total Visits", "Lifetime $", "Gifts", "Status"].join(",");
+    const header = ["Name", "Client Code", "Phone", "Email", "Role", "Member Since", "Last Visit", "Days Ago", "Total Visits", "Lifetime $", "Gifts", "Status"].join(",");
     const body = rows.map(r => [
       `"${r.user.full_name || ""}"`, r.user.client_code || "", r.user.phone || "", r.user.email || "",
-      desktopRoleLabel(r.user.role), r.lastVisit ? new Date(r.lastVisit).toLocaleDateString() : "",
+      desktopRoleLabel(r.user.role), (r.user as any).created_at ? new Date((r.user as any).created_at).toLocaleDateString() : "",
+      r.lastVisit ? new Date(r.lastVisit).toLocaleDateString() : "",
       r.daysSinceLastVisit ?? "", r.totalVisits, desktopFormatMoney(r.lifetimeValue), r.giftsCount,
-      daysAgoStatusLabel(r.daysSinceLastVisit),
+      r.user.role === "client" ? daysAgoStatusLabel(r.daysSinceLastVisit) : (r.user.is_active === false ? "Deactivated" : "Active"),
     ].join(",")).join("\n");
     const blob = new Blob([header + "\n" + body], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -1463,7 +1525,187 @@ export function UsersPage({ adminId }: { adminId: string }) {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)] text-white" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
       <Toast message={toast} tone={tone} />
 
-      <div className="flex min-h-screen w-full gap-6 overflow-visible bg-transparent p-6 lg:min-h-screen">
+      <section className="min-h-screen bg-[#61716b] px-4 pb-28 pt-5 lg:hidden">
+        <header className="mb-6 flex h-[76px] items-center justify-between rounded-[22px] bg-[#718078] px-5 shadow-[0_18px_44px_rgba(20,30,26,0.18)]">
+          <Link href="/admin" aria-label="Back to admin dashboard" className="flex items-center">
+            <img src="/pros-logo-basic.png" alt="PRO's" className="h-12 w-auto object-contain" />
+          </Link>
+          <div className="flex h-12 w-12 items-center justify-center text-[#FFD66B]">
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="h-9 w-9"
+              aria-hidden="true"
+            >
+              <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5Zm0 2c-4.418 0-8 2.239-8 5v1.25c0 .414.336.75.75.75h14.5a.75.75 0 0 0 .75-.75V19c0-2.761-3.582-5-8-5Z" />
+            </svg>
+          </div>
+        </header>
+
+        <div className="mb-5 rounded-[26px] bg-[#718078] px-6 py-5 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
+          <h1 className="text-[30px] font-black leading-none tracking-[-0.05em] text-white">
+            Users
+          </h1>
+        </div>
+
+        {loading ? (
+          <div className="rounded-[28px] bg-[#718078] px-5 py-10 text-center text-[13px] font-black text-white/78 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
+            Loading users...
+          </div>
+        ) : selectedUser ? (
+          <div className="overflow-hidden rounded-[28px] bg-[#718078] p-3 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
+            <div className="overflow-x-auto">
+              <DesktopClientProfilePanel
+                user={selectedUser}
+                currentUserId={adminId}
+                categories={selectedCategories}
+                stamps={selectedStamps}
+                rewards={selectedRewards}
+                activities={activityTxns.filter(t => t.client_id === selectedUser.id && t.action_type !== "manual_adjustment")}
+                loading={selectedLoading}
+                onBack={() => setSelectedUser(null)}
+                onRoleChange={role => void setRole(selectedUser.id, role)}
+                onDeactivate={() => void deactivateUser(selectedUser.id)}
+                onReactivate={role => void reactivateUser(selectedUser.id, role)}
+                onAddStamp={categoryId => void addStampToSelectedClient(categoryId)}
+                onRemoveStamp={categoryId => void removeStampFromSelectedClient(categoryId)}
+                onSendGift={(gift, desc) => void sendGiftToSelectedClient(gift, desc)}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-[24px] bg-[#718078] p-4 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
+              <input
+                value={searchTerm}
+                onChange={e => { setSearchTerm(e.target.value); setVisibleUserCount(50); setSelectedUser(null); }}
+                placeholder="Search name, phone, member ID..."
+                className="h-12 w-full rounded-[16px] border-0 bg-white px-4 text-[13px] font-black text-[#365665] outline-none placeholder:text-[#365665]/45"
+              />
+
+              <div ref={mobileProfileFilterRef} className="relative mt-3">
+                <button
+                  type="button"
+                  onClick={() => setMobileProfileFilterOpen(current => !current)}
+                  className="flex h-12 w-full items-center justify-between rounded-full bg-[#FFD66B] px-5 text-[12px] font-black uppercase tracking-[0.14em] text-[#61716b] shadow-[0_12px_28px_rgba(20,30,26,0.16)]"
+                >
+                  <span>Filter</span>
+                  <span>{mobileFilterLabel(mobileProfileFilter)}</span>
+                </button>
+
+                {mobileProfileFilterOpen ? (
+                  <div className="absolute left-0 right-0 top-14 z-30 rounded-[24px] bg-[#718078] p-2 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+                    {[
+                      ["staff", "Staff"],
+                      ["client", "Clients this week"],
+                      ["master_admin", "Admin"],
+                      ["all", "All profiles"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => {
+                          setMobileProfileFilter(value as any);
+                          setMobileProfileFilterOpen(false);
+                          setVisibleUserCount(50);
+                          setSelectedUser(null);
+                        }}
+                        className={`mb-2 flex h-11 w-full items-center justify-between rounded-full px-4 text-[12px] font-black uppercase tracking-[0.12em] transition last:mb-0 ${
+                          mobileProfileFilter === value
+                            ? "bg-white text-[#61716b]"
+                            : "bg-[#FFD66B] text-[#61716b]"
+                        }`}
+                      >
+                        <span>{label}</span>
+                        {mobileProfileFilter === value ? <span>✓</span> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-[14px] bg-[#718078] px-4 py-2.5 shadow-[0_14px_34px_rgba(20,30,26,0.14)]">
+                <p className="text-[8px] font-black uppercase tracking-[0.16em] text-white/56">Profiles</p>
+                <p className="mt-0.5 text-[19px] font-black text-white">{mobileFilteredRows.length}</p>
+              </div>
+              <div className="rounded-[14px] bg-[#718078] px-4 py-2.5 shadow-[0_14px_34px_rgba(20,30,26,0.14)]">
+                <p className="text-[8px] font-black uppercase tracking-[0.16em] text-white/56">Clients this week</p>
+                <p className="mt-0.5 text-[19px] font-black text-white">{mobileThisWeekClientRows.length}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {mobileFilteredRows.slice(0, visibleUserCount).map(row => {
+                const roleLabel = desktopRoleLabel(row.user.role);
+                const memberSince = desktopFormatDateOnly((row.user as any).created_at);
+                const statusLabel = row.user.role === "client"
+                  ? daysAgoStatusLabel(row.daysSinceLastVisit)
+                  : (row.user.is_active === false ? "Deactivated" : "Active");
+
+                return (
+                  <button
+                    key={row.user.id}
+                    type="button"
+                    onClick={() => void openUserProfile(row.user)}
+                    className="block w-full rounded-[24px] bg-[#718078] p-4 text-left shadow-[0_16px_38px_rgba(20,30,26,0.16)] transition active:scale-[0.99]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-[17px] font-black text-white">{row.user.full_name || "User"}</h3>
+                        <p className="mt-1 truncate text-[11px] font-black uppercase tracking-[0.14em] text-[#FFD66B]">{row.user.client_code || roleLabel}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-[#FFD66B] px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[#61716b]">
+                        {roleLabel}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-[12px] font-bold text-white/80">
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/46">Phone</p>
+                        <p className="mt-1 truncate text-white">{row.user.phone || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/46">Member Since</p>
+                        <p className="mt-1 text-white">{memberSince}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/46">Visits</p>
+                        <p className="mt-1 text-white">{row.user.role === "client" ? row.totalVisits : "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/46">Status</p>
+                        <p className="mt-1 text-white">{statusLabel}</p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+
+              {mobileFilteredRows.length > visibleUserCount && (
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleUserCount(c => c + 50)}
+                    className="rounded-full bg-[#FFD66B] px-6 py-3 text-[12px] font-black uppercase tracking-[0.12em] text-[#61716b]"
+                  >
+                    Load more
+                  </button>
+                </div>
+              )}
+
+              {mobileFilteredRows.length === 0 && (
+                <div className="rounded-[24px] bg-[#718078] px-5 py-10 text-center shadow-[0_16px_38px_rgba(20,30,26,0.16)]">
+                  <p className="text-[18px] font-black text-white">No users found</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <div className="hidden min-h-screen w-full gap-6 overflow-visible bg-transparent p-6 lg:flex lg:min-h-screen">
 
         {/* Sidebar — exact match to AdminDashboard */}
         <aside
@@ -1591,8 +1833,6 @@ export function UsersPage({ adminId }: { adminId: string }) {
                           { label: "Last Visit", value: lastVisitFilter, onChange: (v: string) => { setLastVisitFilter(v as any); setReportFiltersOpen(false); }, options: [["all","All"],["active","Active recently"],["inactive","Inactive recently"]] },
                           { label: "Profile Tab", value: filter, onChange: (v: string) => { setFilter(v as any); setReportFiltersOpen(false); }, options: [["all","All profiles"],["client","Clients"],["staff","Staff"],["master_admin","Admin"]] },
                           { label: "Status", value: customerStatusFilter, onChange: (v: string) => setCustomerStatusFilter(v as any), options: [["all","All status"],["active","Recent 0–7"],["inactive","Overdue 31+"],["at_risk","At Risk 31+"],["vip","VIP"]] },
-                          { label: "Gender", value: customerGenderFilter, onChange: (v: string) => setCustomerGenderFilter(v as any), options: [["all","All genders"],["male","Male"],["female","Female"]] },
-                          { label: "Age Range", value: customerAgeRangeFilter, onChange: (v: string) => setCustomerAgeRangeFilter(v as any), options: [["all","All ages"],["18-24","18–24"],["25-34","25–34"],["35-44","35–44"],["45+","45+"]] },
                         ].map(({ label, value, onChange, options }) => (
                           <label key={label} className="block">
                             <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">{label}</span>
@@ -1625,7 +1865,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
             {/* Table */}
             <div className="w-full overflow-hidden rounded-[22px] bg-white/10">
               <div className="grid gap-4 border-b border-white/14 bg-white/6 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58" style={{ gridTemplateColumns: CUSTOMER_TABLE_GRID, width: "100%" }}>
-                {[["name","Names"],["contact","Contact"],["lastVisit","Last Visit"]].map(([k,l]) => (
+                {[["name","Names"],["contact","Contact"],["memberSince","Member Since"],["lastVisit","Last Visit"]].map(([k,l]) => (
                   <button key={k} type="button" onClick={() => sortBy(k)} className={headerClass(k)}>{l}</button>
                 ))}
                 <div>Days Ago</div>
@@ -1648,12 +1888,13 @@ export function UsersPage({ adminId }: { adminId: string }) {
                         <div className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-[#ffd66b]">{row.user.client_code || "No ID"}</div>
                       </button>
                       <div className="min-w-0"><div className="truncate">{row.user.phone || "—"}</div></div>
-                      <div>{desktopFormatDateOnly(row.lastVisit)}</div>
+                      <div>{desktopFormatDateOnly((row.user as any).created_at)}</div>
+                      <div>{row.user.role === "client" ? desktopFormatDateOnly(row.lastVisit) : "—"}</div>
                       <div><span className={`inline-flex min-w-[34px] justify-center rounded-full px-2 py-1 text-[10px] font-black ${daysAgoClass(row.daysSinceLastVisit)}`}>{row.daysSinceLastVisit ?? "—"}</span></div>
                       <div className="font-black text-white">{row.totalVisits}</div>
                       <div className="font-black text-white">{desktopFormatMoney(row.lifetimeValue)}</div>
                       <div className="font-black text-white">{row.giftsCount}</div>
-                      <div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoClass(row.daysSinceLastVisit)}`}>{daysAgoStatusLabel(row.daysSinceLastVisit)}</span></div>
+                      <div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${row.user.role === "client" ? daysAgoClass(row.daysSinceLastVisit) : (row.user.is_active === false ? "bg-red-500/16 text-red-100" : "bg-emerald-400/16 text-emerald-100")}`}>{row.user.role === "client" ? daysAgoStatusLabel(row.daysSinceLastVisit) : (row.user.is_active === false ? "Deactivated" : "Active")}</span></div>
                       <div className="flex flex-wrap items-center gap-1.5">
                         {row.user.role === "client" ? (
                           <button type="button" onClick={() => void openUserProfile(row.user)} className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]">Gift</button>
@@ -1691,7 +1932,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                 )}
 
                 {sortedCustomerReportRows.length === 0 && (
-                  <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">No customers found for this view.</div>
+                  <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">No users found for this view.</div>
                 )}
               </div>
             </div>
