@@ -1011,24 +1011,29 @@ export function ClientDashboard({
 
     async function refreshGameScanCard() {
       try {
-        const response = await fetch("/api/admin/prediction-matches", {
+        const response = await fetch("/api/matches/open", {
           cache: "no-store",
         });
 
         if (!response.ok) {
-          if (isMounted) setShowGameScanCard(false);
-          return;
+          return; // Keep card state unchanged on API errors
         }
 
         const payload = (await response.json()) as { matches?: AnyRecord[] | null };
+        const matches = payload.matches ?? [];
         const nowMs = Date.now();
-        const hasOpenGame = (payload.matches ?? []).some((match) =>
-          isOpenMatch(match, nowMs),
-        );
+
+        const hasOpenGame = matches.some((match: AnyRecord) => {
+          if (!match || match.is_active === false) return false;
+          const opensAt = parseMatchTime(match.opens_at ?? match.open_at);
+          const closesAt = parseMatchTime(match.closes_at ?? match.close_at);
+          if (opensAt !== null && closesAt !== null) return nowMs >= opensAt && nowMs <= closesAt;
+          return match.is_active === true;
+        });
 
         if (isMounted) setShowGameScanCard(hasOpenGame);
       } catch {
-        if (isMounted) setShowGameScanCard(false);
+        // Don't hide the card on network errors — keep showing if already visible
       }
     }
 
@@ -1036,7 +1041,7 @@ export function ClientDashboard({
 
     const interval = window.setInterval(() => {
       void refreshGameScanCard();
-    }, 15000);
+    }, 30000);
 
     window.addEventListener("focus", refreshGameScanCard);
 

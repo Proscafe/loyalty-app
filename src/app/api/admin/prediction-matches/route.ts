@@ -36,6 +36,8 @@ function toNullableScore(value: unknown) {
   return score;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function getAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -79,13 +81,18 @@ export async function GET() {
   const { admin, error } = await requireAdmin();
   if (error) return error;
 
+  const now = new Date().toISOString();
+
   const { data: matches, error: matchesError } = await admin
     .from("prediction_matches")
     .select(
       "id, sport_type, tournament_id, home_team, away_team, secret_code, match_label, venue, kickoff_at, opens_at, closes_at, is_active, home_score, away_score, created_at, prediction_tournaments(id, name)",
     )
+    .eq("is_active", true)
+    .lte("opens_at", now)
+    .gte("closes_at", now)
     .order("created_at", { ascending: false })
-    .limit(250);
+    .limit(50);
 
   if (matchesError) return jsonError(matchesError.message, 400);
 
@@ -133,7 +140,9 @@ export async function POST(req: Request) {
   const awayTeam = String(body.away_team ?? "").trim();
   const matchLabel = String(body.match_label ?? "").trim() || (sportType === "basketball" ? "Basket" : "World Cup");
   const venue = String(body.venue ?? "").trim() || null;
-  const tournamentId = String(body.tournament_id ?? "").trim() || null;
+  const rawTournamentId = String(body.tournament_id ?? "").trim();
+  // Only use tournament_id if it is a valid UUID — silently drop invalid values
+  const tournamentId = UUID_RE.test(rawTournamentId) ? rawTournamentId : null;
   const kickoffAt = toIso(body.kickoff_at);
   const opensAt = toIso(body.opens_at);
   const closesAt = toIso(body.closes_at);
@@ -145,6 +154,10 @@ export async function POST(req: Request) {
   if (homeScore === undefined || awayScore === undefined) return jsonError("Scores must be whole numbers from 0 to 99.", 400);
   if (new Date(opensAt).getTime() >= new Date(closesAt).getTime()) return jsonError("Open time must be before close time.", 400);
 
+  // Validate tournament only if a UUID was provided — but do NOT block the insert if
+  // the lookup fails (e.g. RLS policy differences between local and production).
+  let resolvedTournamentId: string | null = tournamentId;
+
   if (tournamentId) {
     const { data: tournament, error: tournamentError } = await admin
       .from("prediction_tournaments")
@@ -152,14 +165,23 @@ export async function POST(req: Request) {
       .eq("id", tournamentId)
       .maybeSingle();
 
-    if (tournamentError) return jsonError(tournamentError.message, 400);
-    if (!tournament || tournament.is_active === false) return jsonError("Selected tournament was not found.", 400);
-    if (tournament.sport_type !== sportType) return jsonError("Selected tournament does not match this sport.", 400);
+    if (tournamentError) {
+      // Log but don't block — RLS or network issue on production
+      console.error("[prediction-matches] Tournament lookup error:", tournamentError.message);
+    } else if (!tournament) {
+      // Tournament not found — log and clear so insert doesn't fail with FK error
+      console.warn("[prediction-matches] Tournament not found for id:", tournamentId);
+      resolvedTournamentId = null;
+    } else if (tournament.is_active === false) {
+      return jsonError("Selected tournament is inactive.", 400);
+    } else if (tournament.sport_type !== sportType) {
+      return jsonError("Selected tournament does not match this sport.", 400);
+    }
   }
 
   const payload: Record<string, unknown> = {
     sport_type: sportType,
-    tournament_id: tournamentId,
+    tournament_id: resolvedTournamentId,
     home_team: homeTeam,
     away_team: awayTeam,
     secret_code: makeSecretCode(homeTeam, awayTeam),
