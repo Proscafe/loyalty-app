@@ -299,9 +299,7 @@ function StaffConsole({ profile, categories }: Props) {
   const [claimedRewards, setClaimedRewards] = useState<ClaimedReward[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [showPasswordEditor, setShowPasswordEditor] = useState(false);
-  const [showPhoneEditor, setShowPhoneEditor] = useState(false);
   const [newPassword, setNewPassword] = useState("");
-  const [phoneDraft, setPhoneDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"success" | "error">("success");
@@ -470,9 +468,7 @@ function StaffConsole({ profile, categories }: Props) {
       setQuery("");
       setSelectedCategories([]);
       setShowPasswordEditor(false);
-      setShowPhoneEditor(false);
       setNewPassword("");
-      setPhoneDraft(selectedClient.phone ?? "");
       await refreshSelectedClient(selectedClient.id);
     },
     [refreshSelectedClient],
@@ -528,9 +524,7 @@ function StaffConsole({ profile, categories }: Props) {
         setQuery("");
         setSelectedCategories([]);
         setShowPasswordEditor(false);
-        setShowPhoneEditor(false);
-        setNewPassword("");
-        setPhoneDraft(foundClient.phone ?? "");
+          setNewPassword("");
         await refreshSelectedClient(foundClient.id);
         await loadClaimedRewards();
 
@@ -609,37 +603,6 @@ function StaffConsole({ profile, categories }: Props) {
     setNewPassword("");
     setShowPasswordEditor(false);
     flash("Client password updated.");
-  }
-
-  async function saveClientPhone() {
-    if (!client) return;
-
-    const trimmedPhone = phoneDraft.trim();
-
-    setBusy(true);
-
-    const res = await fetch("/api/staff/client-phone", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: client.id, phone: trimmedPhone }),
-    });
-
-    const json = await readApiResponse(res);
-
-    setBusy(false);
-
-    if (!res.ok) {
-      flash(json.error ?? `Could not update phone number. Status ${res.status}`, "error");
-      return;
-    }
-
-    const nextPhone = typeof json.phone === "string" ? json.phone : trimmedPhone;
-
-    setClient({ ...client, phone: nextPhone || null });
-    setPhoneDraft(nextPhone);
-    setShowPhoneEditor(false);
-    flash("Client phone number updated.");
-    await refreshSelectedClient(client.id);
   }
 
   async function addStamps() {
@@ -865,18 +828,15 @@ function StaffConsole({ profile, categories }: Props) {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void enableClaimNotifications(true)}
-              disabled={pushStatus === "enabled"}
-              className={`w-full rounded-[22px] px-5 py-3 text-left text-[12px] font-black shadow-[0_16px_34px_rgba(20,30,26,0.12)] transition active:scale-[0.99] ${
-                pushStatus === "enabled"
-                  ? "bg-[#ffd66b] text-[#365665]"
-                  : "bg-white/16 text-white backdrop-blur-2xl"
-              }`}
-            >
-              {pushStatus === "enabled" ? "Claim alerts are enabled" : "Enable claim alerts on this phone"}
-            </button>
+            {pushStatus !== "enabled" && (
+              <button
+                type="button"
+                onClick={() => void enableClaimNotifications(true)}
+                className="w-full rounded-[22px] bg-white/16 px-5 py-3 text-left text-[12px] font-black text-white shadow-[0_16px_34px_rgba(20,30,26,0.12)] backdrop-blur-2xl transition active:scale-[0.99]"
+              >
+                Enable claim alerts on this phone
+              </button>
+            )}
 
             <div className="flex items-center gap-3">
               <div className="min-w-0 flex-1 rounded-full border border-white/45 bg-[#e7e9e3] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl">
@@ -1002,23 +962,12 @@ function StaffConsole({ profile, categories }: Props) {
                       type="button"
                       onClick={() => {
                         setShowPasswordEditor((value) => !value);
-                        setShowPhoneEditor(false);
-                      }}
+                                        }}
                       className="rounded-full bg-[#ffd66b] px-4 py-2 text-[12px] font-black text-[#365665] shadow-[0_12px_26px_rgba(255,214,107,0.20)]"
                     >
                       Change password
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPhoneDraft(client.phone ?? "");
-                        setShowPhoneEditor((value) => !value);
-                        setShowPasswordEditor(false);
-                      }}
-                      className="rounded-full border border-white/25 bg-white/18 px-4 py-2 text-[12px] font-black text-white backdrop-blur-xl"
-                    >
-                      Edit Phone Number
-                    </button>
+
                   </div>
 
                   {showPasswordEditor && (
@@ -1046,30 +995,6 @@ function StaffConsole({ profile, categories }: Props) {
                     </div>
                   )}
 
-                  {showPhoneEditor && (
-                    <div className="mt-4 rounded-[22px] border border-white/18 bg-white/14 p-3 backdrop-blur-xl">
-                      <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
-                        Phone number
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="tel"
-                          value={phoneDraft}
-                          onChange={(event) => setPhoneDraft(event.target.value)}
-                          placeholder="Phone number"
-                          className="min-w-0 flex-1 rounded-full bg-[#e7e9e3] px-4 py-3 text-[13px] font-black text-[#365665] outline-none placeholder:text-[#365665]/55"
-                        />
-                        <button
-                          type="button"
-                          onClick={saveClientPhone}
-                          disabled={busy}
-                          className="rounded-full bg-[#ffd66b] px-5 py-3 text-[12px] font-black text-[#365665] disabled:opacity-60"
-                        >
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </section>
