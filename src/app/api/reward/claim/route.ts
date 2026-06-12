@@ -1,53 +1,123 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { sendNewRewardClaimNotification } from "@/lib/push";
 
-// Reads auth cookies and calls Supabase RPCs — must run on Node, never cached.
+// Reads auth cookies and updates rewards server-side — must run on Node, never cached.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type ClaimRewardBody = {
+  reward_id?: string;
+};
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
+  const admin = createAdminClient();
 
-  let body: { reward_id?: string };
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "invalid_json" }, { status: 400 }); }
-  if (!body.reward_id) return NextResponse.json({ error: "missing_reward_id" }, { status: 400 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const { data, error } = await supabase.rpc("redeem_reward", { p_reward_id: body.reward_id });
-  if (error) {
-    const status = error.message?.includes("not_authorized") ? 403 : 400;
-    return NextResponse.json({ error: error.message }, { status });
+  if (!user) {
+    return jsonError("not_authenticated", 401);
   }
-  try {
-    const { data: reward } = await supabase
-      .from("rewards")
-      .select("id, reward_type, client_id")
-      .eq("id", body.reward_id)
-      .maybeSingle();
 
+  let body: ClaimRewardBody;
+
+  try {
+    body = await req.json();
+  } catch {
+    return jsonError("invalid_json", 400);
+  }
+
+  const rewardId = String(body.reward_id || "").trim();
+
+  if (!rewardId) {
+    return jsonError("missing_reward_id", 400);
+  }
+
+  const { data: reward, error: rewardError } = await admin
+    .from("rewards")
+    .select("id, client_id, reward_type, status, claimed_at")
+    .eq("id", rewardId)
+    .maybeSingle();
+
+  if (rewardError) {
+    return jsonError(rewardError.message || "Could not load reward.", 400);
+  }
+
+  if (!reward) {
+    return jsonError("reward_not_found", 404);
+  }
+
+  if (reward.client_id !== user.id) {
+    return jsonError("not_authorized", 403);
+  }
+
+  if (reward.status === "redeemed") {
+    return jsonError("This gift was already redeemed.", 409);
+  }
+
+  if (reward.status === "expired") {
+    return jsonError("This gift has expired.", 410);
+  }
+
+  // If the user taps more than once, do not loop or send duplicate staff alerts.
+  if (reward.status === "claimed") {
+    return NextResponse.json({
+      ok: true,
+      alreadyClaimed: true,
+      reward,
+    });
+  }
+
+  const { data: updatedReward, error: updateError } = await admin
+    .from("rewards")
+    .update({
+      status: "claimed",
+      claimed_at: new Date().toISOString(),
+    })
+    .eq("id", rewardId)
+    .eq("client_id", user.id)
+    .eq("status", "available")
+    .select("id, client_id, reward_type, status, claimed_at")
+    .maybeSingle();
+
+  if (updateError) {
+    return jsonError(updateError.message || "Could not claim gift.", 400);
+  }
+
+  if (!updatedReward) {
+    return jsonError("This gift is not available to claim.", 409);
+  }
+
+  try {
     let clientName = "A client";
 
-    if (reward?.client_id) {
-      const { data: clientProfile } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", reward.client_id)
-        .maybeSingle();
+    const { data: clientProfile } = await admin
+      .from("profiles")
+      .select("full_name")
+      .eq("id", updatedReward.client_id)
+      .maybeSingle();
 
-      clientName = clientProfile?.full_name || clientName;
-    }
+    clientName = clientProfile?.full_name || clientName;
 
     await sendNewRewardClaimNotification({
-      rewardId: body.reward_id,
-      rewardType: reward?.reward_type || "Reward",
+      rewardId,
+      rewardType: updatedReward.reward_type || "Reward",
       clientName,
     });
   } catch (notificationError) {
+    // Claim should still succeed even if push notification delivery fails.
     console.error("Claim push notification failed", notificationError);
   }
 
-  return NextResponse.json(data);
+  return NextResponse.json({
+    ok: true,
+    reward: updatedReward,
+  });
 }

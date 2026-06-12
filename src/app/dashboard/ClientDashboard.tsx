@@ -773,6 +773,7 @@ export function ClientDashboard({
 }: ClientDashboardProps) {
   const router = useRouter();
   const [localRewards, setLocalRewards] = useState<ClientReward[]>((rewards ?? initialRewards ?? []) as ClientReward[]);
+  const [claimingRewardIds, setClaimingRewardIds] = useState<Set<string>>(() => new Set());
   const [celebrationReward, setCelebrationReward] = useState<ClientReward | null>(null);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -1226,10 +1227,27 @@ export function ClientDashboard({
   }, [profile.id, visibleRewards]);
 
   async function handleClaim(rewardId: string) {
+    if (claimingRewardIds.has(rewardId)) return;
+
+    setClaimingRewardIds((current) => {
+      const next = new Set(current);
+      next.add(rewardId);
+      return next;
+    });
+
+    setCelebrationReward(null);
+
     if (rewardId.startsWith("birthday-")) {
       const birthdayReward = makeBirthdayRewards(profile).find((reward) => reward.id === rewardId);
 
-      if (!birthdayReward) return;
+      if (!birthdayReward) {
+        setClaimingRewardIds((current) => {
+          const next = new Set(current);
+          next.delete(rewardId);
+          return next;
+        });
+        return;
+      }
 
       setLocalRewards((current) => [
         { ...birthdayReward, status: "claimed" },
@@ -1249,9 +1267,13 @@ export function ClientDashboard({
           throw new Error(json?.error ?? "Failed to claim birthday reward");
         }
 
+        const claimedBirthdayReward = json.reward as ClientReward;
+        seenRewardIdsRef.current.add(claimedBirthdayReward.id);
+
         setLocalRewards((current) => [
           {
-            ...(json.reward as ClientReward),
+            ...claimedBirthdayReward,
+            status: "claimed",
             is_birthday_reward: true,
             gift_icon: "/birthday-cake.png",
           },
@@ -1263,12 +1285,35 @@ export function ClientDashboard({
         setLocalRewards((current) =>
           current.filter((reward) => reward.id !== rewardId && reward.reward_type !== birthdayReward.reward_type),
         );
+      } finally {
+        setClaimingRewardIds((current) => {
+          const next = new Set(current);
+          next.delete(rewardId);
+          return next;
+        });
       }
 
       return;
     }
 
-    setLocalRewards((current) => current.map((reward) => (reward.id === rewardId ? { ...reward, status: "claimed" } : reward)));
+    const existingReward = localRewards.find((reward) => reward.id === rewardId);
+
+    if (!existingReward || existingReward.status !== "available") {
+      setClaimingRewardIds((current) => {
+        const next = new Set(current);
+        next.delete(rewardId);
+        return next;
+      });
+      return;
+    }
+
+    setLocalRewards((current) =>
+      current.map((reward) =>
+        reward.id === rewardId
+          ? { ...reward, status: "claimed", claimed_at: new Date().toISOString() }
+          : reward,
+      ),
+    );
 
     try {
       const response = await fetch("/api/reward/claim", {
@@ -1277,9 +1322,37 @@ export function ClientDashboard({
         body: JSON.stringify({ reward_id: rewardId, rewardId }),
       });
 
-      if (!response.ok) throw new Error("Failed to claim reward");
+      const json = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(json?.error ?? "Failed to claim reward");
+      }
+
+      if (json?.reward) {
+        const claimedReward = json.reward as ClientReward;
+        seenRewardIdsRef.current.add(claimedReward.id);
+        setLocalRewards((current) =>
+          current.map((reward) =>
+            reward.id === rewardId
+              ? { ...reward, ...claimedReward, status: "claimed" }
+              : reward,
+          ),
+        );
+      }
+
+      router.refresh();
     } catch {
-      setLocalRewards((current) => current.map((reward) => (reward.id === rewardId ? { ...reward, status: "available" } : reward)));
+      setLocalRewards((current) =>
+        current.map((reward) =>
+          reward.id === rewardId ? { ...reward, status: "available", claimed_at: null } : reward,
+        ),
+      );
+    } finally {
+      setClaimingRewardIds((current) => {
+        const next = new Set(current);
+        next.delete(rewardId);
+        return next;
+      });
     }
   }
 
