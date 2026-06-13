@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import type { Profile } from "@/types";
 
 type SportType = "football" | "basketball";
-type MatchFilter = "today" | "week" | "month";
+type MatchFilter = "all" | "today" | "week" | "month" | "ended";
 
 type Tournament = {
   id: string;
@@ -156,6 +156,9 @@ function localDayStart(date: Date) {
 }
 
 function isMatchInFilter(match: PredictionMatchRow, filter: MatchFilter) {
+  if (filter === "all") return true;
+  if (filter === "ended") return matchStatus(match).toLowerCase() === "closed";
+
   const kickoff = new Date(match.kickoff_at);
 
   if (Number.isNaN(kickoff.getTime())) return false;
@@ -199,7 +202,7 @@ export function PredictionsAdmin({
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [expandedMatchIds, setExpandedMatchIds] = useState<Set<string>>(() => new Set());
   const [createFormOpen, setCreateFormOpen] = useState(false);
-  const [matchFilter, setMatchFilter] = useState<MatchFilter>("today");
+  const [matchFilter, setMatchFilter] = useState<MatchFilter>("all");
   const [saving, setSaving] = useState(false);
   const [savingMatchId, setSavingMatchId] = useState<string | null>(null);
   const [downloadingQrId, setDownloadingQrId] = useState<string | null>(null);
@@ -705,8 +708,8 @@ export function PredictionsAdmin({
           className="mb-4 p-2 shadow-[0_16px_42px_rgba(35,48,39,0.13)] backdrop-blur-2xl"
           style={{ borderRadius: 999, background: GLASS_CARD }}
         >
-          <div className="grid grid-cols-3 gap-2">
-            {(["today", "week", "month"] as MatchFilter[]).map((filter) => (
+          <div className="grid grid-cols-5 gap-1.5">
+            {(["all", "today", "week", "month", "ended"] as MatchFilter[]).map((filter) => (
               <button
                 key={filter}
                 type="button"
@@ -717,7 +720,7 @@ export function PredictionsAdmin({
                     : "bg-white/10 text-white/68"
                 }`}
               >
-                {filter === "today" ? "Today" : filter === "week" ? "This week" : "This month"}
+                {filter === "all" ? "All" : filter === "today" ? "Today" : filter === "week" ? "This week" : filter === "month" ? "This month" : "Ended"}
               </button>
             ))}
           </div>
@@ -735,11 +738,11 @@ export function PredictionsAdmin({
               match.tournament_name ?? match.prediction_tournaments?.name ?? null;
 
             return (
-              <div key={match.id} className="space-y-2">
-                <article
-                  className="border border-white/20 p-4 shadow-[0_18px_54px_rgba(35,48,39,0.16)] backdrop-blur-2xl"
-                  style={{ borderRadius: 24, background: GLASS_CARD }}
-                >
+              <article
+                key={match.id}
+                className="border border-white/20 p-4 shadow-[0_18px_54px_rgba(35,48,39,0.16)] backdrop-blur-2xl"
+                style={{ borderRadius: 24, background: GLASS_CARD }}
+              >
                 <div className="mb-4 flex w-full items-start justify-between gap-3">
                   <button
                     type="button"
@@ -927,17 +930,7 @@ export function PredictionsAdmin({
                 >
                   Copy link
                 </button>
-                </article>
-
-                <a
-                  href="https://wissamdesigns.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block px-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/58 transition hover:text-[#ffd66b]"
-                >
-                  Powered by wissamdesigns.com
-                </a>
-              </div>
+              </article>
             );
           })}
 

@@ -1,109 +1,69 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
-export type AdminSidebarTab =
-  | "Overview"
-  | "Gifts"
-  | "Birthdays"
-  | "Loyalty Program";
+export type AdminActiveKey =
+  | "overview"
+  | "activity"
+  | "users"
+  | "gifts"
+  | "birthdays"
+  | "loyalty-program"
+  | "comment-cards"
+  | "news"
+  | "games";
 
 type AdminSidebarItem = {
+  key: AdminActiveKey;
   label: string;
   icon: string;
   href: string;
-  tab?: AdminSidebarTab;
-  activeKey: string;
 };
 
 type AdminSidebarProps = {
-  active?: string;
-  currentTab?: AdminSidebarTab;
-  onTabChange?: (tab: AdminSidebarTab) => void;
+  active?: AdminActiveKey | string;
   onBeforeNavigate?: () => void;
   onLogout?: () => void | Promise<void>;
 };
 
 const ADMIN_SIDEBAR_ITEMS: AdminSidebarItem[] = [
-  {
-    label: "Dashboard",
-    icon: "⌂",
-    href: "/admin",
-    tab: "Overview",
-    activeKey: "dashboard",
-  },
-  {
-    label: "Activity",
-    icon: "↯",
-    href: "/admin/activity",
-    activeKey: "activity",
-  },
-  {
-    label: "Customer behavior",
-    icon: "👤",
-    href: "/admin/users",
-    activeKey: "users",
-  },
-  {
-    label: "Comment Cards",
-    icon: "✎",
-    href: "/admin/comment-cards",
-    activeKey: "comment-cards",
-  },
-  {
-    label: "Birthdays",
-    icon: "🎂",
-    href: "/admin?tab=Birthdays",
-    tab: "Birthdays",
-    activeKey: "birthdays",
-  },
-  {
-    label: "Gifts",
-    icon: "🎁",
-    href: "/admin?tab=Gifts",
-    tab: "Gifts",
-    activeKey: "gifts",
-  },
-  {
-    label: "Loyalty Program",
-    icon: "★",
-    href: "/admin?tab=Loyalty+Program",
-    tab: "Loyalty Program",
-    activeKey: "loyalty-program",
-  },
-  {
-    label: "Games",
-    icon: "🎮",
-    href: "/admin/games",
-    activeKey: "games",
-  },
+  { key: "overview", label: "Dashboard", icon: "⌂", href: "/admin" },
+  { key: "activity", label: "Activity", icon: "↯", href: "/admin/activity" },
+  { key: "news", label: "News", icon: "📣", href: "/admin/news" },
+  { key: "users", label: "Customer behavior", icon: "👤", href: "/admin/users" },
+  { key: "comment-cards", label: "Comment Cards", icon: "✎", href: "/admin/comment-cards" },
+  { key: "gifts", label: "Gifts", icon: "🎁", href: "/admin/gifts" },
+  { key: "birthdays", label: "Birthdays", icon: "🎂", href: "/admin/birthdays" },
+  { key: "loyalty-program", label: "Loyalty Program", icon: "★", href: "/admin/loyalty" },
+  { key: "games", label: "Games", icon: "🎮", href: "/admin/predictions" },
 ];
 
-function inferActiveKey(pathname: string, currentTab?: AdminSidebarTab) {
-  if (pathname === "/admin/activity") return "activity";
-  if (pathname === "/admin/users") return "users";
-  if (pathname === "/admin/comment-cards") return "comment-cards";
-  if (pathname === "/admin/games") return "games";
-
-  if (currentTab === "Birthdays") return "birthdays";
-  if (currentTab === "Gifts") return "gifts";
-  if (currentTab === "Loyalty Program") return "loyalty-program";
-
-  return "dashboard";
+function inferActiveKey(pathname: string): AdminActiveKey {
+  if (pathname.startsWith("/admin/activity")) return "activity";
+  if (pathname.startsWith("/admin/news")) return "news";
+  if (pathname.startsWith("/admin/users")) return "users";
+  if (pathname.startsWith("/admin/comment-cards")) return "comment-cards";
+  if (pathname.startsWith("/admin/gifts")) return "gifts";
+  if (pathname.startsWith("/admin/birthdays")) return "birthdays";
+  if (pathname.startsWith("/admin/loyalty")) return "loyalty-program";
+  if (
+    pathname.startsWith("/admin/predictions") ||
+    pathname.startsWith("/admin/games") ||
+    pathname.startsWith("/admin/game-links")
+  ) {
+    return "games";
+  }
+  return "overview";
 }
 
-export function AdminSidebar({
-  active,
-  currentTab,
-  onTabChange,
-  onBeforeNavigate,
-  onLogout,
-}: AdminSidebarProps) {
+export function AdminSidebar({ active, onBeforeNavigate, onLogout }: AdminSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const activeKey = active ?? inferActiveKey(pathname, currentTab);
+  const activeKey = (active as AdminActiveKey | undefined) ?? inferActiveKey(pathname);
 
   function itemClass(isActive: boolean) {
     return `mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${
@@ -123,9 +83,15 @@ export function AdminSidebar({
     }`;
   }
 
-  function handleTabClick(tab: AdminSidebarTab) {
-    onBeforeNavigate?.();
-    onTabChange?.(tab);
+  async function handleLogout() {
+    if (onLogout) {
+      await onLogout();
+      return;
+    }
+
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.replace("/login");
   }
 
   return (
@@ -141,9 +107,7 @@ export function AdminSidebar({
       >
         {isOpen ? (
           <div className="min-w-0">
-            <div className="text-[19px] font-black leading-none text-white">
-              Dashboard
-            </div>
+            <div className="text-[19px] font-black leading-none text-white">Dashboard</div>
             <div className="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
               PRO&apos;s Admin
             </div>
@@ -161,67 +125,35 @@ export function AdminSidebar({
         </button>
       </div>
 
-      <nav className="flex-1 px-3 py-4">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         {ADMIN_SIDEBAR_ITEMS.map((item) => {
-          const isActive = activeKey === item.activeKey;
-          const label = isOpen ? item.label : null;
-
-          if (item.tab && onTabChange && pathname === "/admin") {
-            return (
-              <button
-                key={item.activeKey}
-                type="button"
-                title={item.label}
-                onClick={() => handleTabClick(item.tab!)}
-                className={itemClass(isActive)}
-              >
-                <span className={iconClass(isActive)}>{item.icon}</span>
-                {label}
-              </button>
-            );
-          }
-
+          const isActive = activeKey === item.key;
           return (
             <Link
-              key={item.activeKey}
+              key={item.key}
               href={item.href}
               title={item.label}
               onClick={onBeforeNavigate}
               className={itemClass(isActive)}
             >
               <span className={iconClass(isActive)}>{item.icon}</span>
-              {label}
+              {isOpen ? item.label : null}
             </Link>
           );
         })}
       </nav>
 
       <div className="border-t border-white/8 px-3 py-5">
-        {onLogout ? (
-          <button
-            type="button"
-            onClick={() => void onLogout()}
-            className={`mb-4 flex w-full items-center rounded-none bg-transparent py-2 text-left text-[12px] font-black text-white/86 transition hover:text-white ${
-              isOpen ? "justify-start px-4" : "justify-center px-0"
-            }`}
-            title="Logout"
-          >
-            {isOpen ? "Logout" : "⎋"}
-          </button>
-        ) : null}
-
-        {isOpen ? (
-          <a
-            href="https://wissamdesigns.com"
-            target="_blank"
-            rel="noreferrer"
-            className="block text-left text-[11px] font-black uppercase leading-5 text-[#ffd66b] transition hover:text-white"
-          >
-            © WISSAMDESIGNS.COM
-          </a>
-        ) : (
-          <div className="text-center text-[14px] font-black text-[#ffd66b]">©</div>
-        )}
+        <button
+          type="button"
+          onClick={() => void handleLogout()}
+          className={`mb-4 flex w-full items-center rounded-none bg-transparent py-2 text-left text-[12px] font-black text-white/86 transition hover:text-white ${
+            isOpen ? "justify-start px-4" : "justify-center px-0"
+          }`}
+          title="Logout"
+        >
+          {isOpen ? "Logout" : "⎋"}
+        </button>
       </div>
     </aside>
   );

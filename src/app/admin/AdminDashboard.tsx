@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
-import { AdminSidebar } from "@/components/AdminSidebar";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 import type { Profile, Reward, StampTransaction, UserRole } from "@/types";
 
@@ -170,7 +169,6 @@ type CommentCardFilter =
   | "low_rating"
   | "has_comments"
   | "today"
-  | "yesterday"
   | "week"
   | "month";
 
@@ -186,6 +184,15 @@ type CommentCardSortKey =
   | "last_contacted";
 
 type SortDirection = "asc" | "desc";
+
+interface Props {
+  profile: Profile;
+  users?: AdminUser[];
+  recentTxns?: StampTransaction[];
+  recentRewards?: Reward[];
+  metrics: Metrics;
+  initialTab?: Tab;
+}
 
 const ALL_TABS = [
   "Overview",
@@ -205,17 +212,6 @@ const DASHBOARD_TABS = [
 
 type Tab = (typeof ALL_TABS)[number];
 type DashboardTab = (typeof DASHBOARD_TABS)[number];
-
-
-
-interface Props {
-  profile: Profile;
-  users?: AdminUser[];
-  recentTxns?: StampTransaction[];
-  recentRewards?: Reward[];
-  metrics: Metrics;
-  initialTab?: Tab;
-}
 
 const PAGE_BG =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
@@ -380,6 +376,9 @@ function MobileAdminDashboard({
     recentTxns ?? [],
   );
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
+  const [commentCards, setCommentCards] = useState<CommentCardEntry[]>([]);
+  const [commentSearch, setCommentSearch] = useState("");
+  const [commentFilter, setCommentFilter] = useState<CommentCardFilter>("all");
   const [profileNamesById, setProfileNamesById] = useState<
     Record<string, string>
   >({});
@@ -653,7 +652,7 @@ function MobileAdminDashboard({
       const fiveDaysAgo = new Date();
       fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
-      const [txnResult, rewardResult] = await Promise.all([
+      const [txnResult, rewardResult, commentCardResult] = await Promise.all([
         supabase
           .from("stamp_transactions")
           .select("*")
@@ -668,6 +667,12 @@ function MobileAdminDashboard({
           .gte("created_at", fiveDaysAgo.toISOString())
           .order("created_at", { ascending: false })
           .limit(50),
+
+        supabase
+          .from("comment_cards")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(300),
       ]);
 
       if (!isMounted) return;
@@ -680,6 +685,16 @@ function MobileAdminDashboard({
 
       if (rewardResult.data) {
         setGiftRows(rewards);
+      }
+
+      if (commentCardResult.data) {
+        setCommentCards(
+          (commentCardResult.data ?? []) as unknown as CommentCardEntry[],
+        );
+      }
+
+      if (commentCardResult.error) {
+        console.error("Could not load comment cards", commentCardResult.error);
       }
 
       if (isMounted) {
@@ -865,6 +880,91 @@ function MobileAdminDashboard({
     }
   }
 
+  const mobileClientUsersByPhone = useMemo(() => {
+    const map = new Map<string, AdminUser>();
+
+    users.forEach((user) => {
+      if (user.role !== "client") return;
+      const key = normalizePhoneForMatch(user.phone);
+      if (!key) return;
+      map.set(key, user);
+    });
+
+    return map;
+  }, [users]);
+
+  const mobileCommentCardRows = useMemo(() => {
+    const search = commentSearch.trim().toLowerCase();
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startWeek = new Date(startToday);
+    startWeek.setDate(startToday.getDate() - ((startToday.getDay() + 6) % 7));
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    return commentCards
+      .map((card) => {
+        const phoneKey = normalizePhoneForMatch(card.phone);
+        const member = phoneKey ? (mobileClientUsersByPhone.get(phoneKey) ?? null) : null;
+        const ratings = [
+          card.experience_rating,
+          card.food_rating,
+          card.service_rating,
+          card.cleanliness_rating,
+          card.visit_again_rating,
+        ].map((value) => (Number.isFinite(Number(value)) ? Number(value) : 0));
+        const averageRating = ratings.length
+          ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length
+          : 0;
+        const submittedAt = new Date(card.created_at);
+        const submittedTime = Number.isNaN(submittedAt.getTime())
+          ? null
+          : submittedAt;
+        const age = getAgeFromBirthday(card.birthday);
+
+        return { card, member, averageRating, submittedTime, age };
+      })
+      .filter((row) => {
+        if (commentFilter === "registered" && !row.member) return false;
+        if (commentFilter === "not_registered" && row.member) return false;
+        if (commentFilter === "five_star" && row.averageRating < 5) return false;
+        if (commentFilter === "low_rating" && row.averageRating >= 4) return false;
+        if (commentFilter === "has_comments" && !row.card.comments?.trim()) return false;
+        if (commentFilter === "today" && (!row.submittedTime || row.submittedTime < startToday)) return false;
+        if (commentFilter === "week" && (!row.submittedTime || row.submittedTime < startWeek)) return false;
+        if (commentFilter === "month" && (!row.submittedTime || row.submittedTime < startMonth)) return false;
+
+        if (!search) return true;
+
+        return [
+          row.card.full_name,
+          row.card.phone,
+          desktopAgeLabel(row.age),
+          row.card.heard_about_us,
+          row.card.comments,
+          row.member?.full_name,
+          row.member ? "registered member" : "not registered",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(search);
+      });
+  }, [commentCards, commentFilter, commentSearch, mobileClientUsersByPhone]);
+
+  const mobileCommentSummary = useMemo(() => {
+    const total = mobileCommentCardRows.length;
+    const registered = mobileCommentCardRows.filter((row) => row.member).length;
+    const lowRating = mobileCommentCardRows.filter((row) => row.averageRating < 4).length;
+    const average = total
+      ? (
+          mobileCommentCardRows.reduce((sum, row) => sum + row.averageRating, 0) /
+          total
+        ).toFixed(1)
+      : "0.0";
+
+    return { total, registered, lowRating, average };
+  }, [mobileCommentCardRows]);
+
   const filteredUsers = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
 
@@ -1018,6 +1118,15 @@ function MobileAdminDashboard({
               Activity
             </h1>
           </section>
+        ) : tab === "Comment Cards" ? (
+          <section className="mb-5 rounded-[22px] bg-[#718078] px-5 py-5 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
+            <h1 className="text-[24px] font-black leading-none tracking-[-0.04em] text-white">
+              Comment Cards
+            </h1>
+            <p className="mt-2 text-[12px] font-bold leading-5 text-white/68">
+              Review feedback, ratings, and follow up with customers.
+            </p>
+          </section>
         ) : tab === "Loyalty Program" ? (
           <section className="mb-5 rounded-[22px] bg-[#718078] px-5 py-5 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
             <h1 className="text-[24px] font-black leading-none tracking-[-0.04em] text-white">
@@ -1140,6 +1249,92 @@ function MobileAdminDashboard({
                 </div>
               );
             })}
+          </section>
+        )}
+
+        {tab === "Comment Cards" && (
+          <section className="mb-12 space-y-4">
+            <div
+              className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
+              style={{ borderRadius: 24, background: GLASS_CARD }}
+            >
+              <input
+                value={commentSearch}
+                onChange={(event) => setCommentSearch(event.target.value)}
+                placeholder="Search name, phone, comment..."
+                className="h-11 w-full rounded-[16px] border-0 bg-white px-4 text-[12px] font-bold text-[#365665] outline-none placeholder:text-[#365665]/45"
+              />
+
+              <select
+                value={commentFilter}
+                onChange={(event) =>
+                  setCommentFilter(event.target.value as CommentCardFilter)
+                }
+                className="mt-3 h-11 w-full rounded-[16px] border-0 bg-white px-4 text-[12px] font-black text-[#365665] outline-none"
+              >
+                <option value="all">All Feedback</option>
+                <option value="registered">Registered Members</option>
+                <option value="not_registered">Not Registered</option>
+                <option value="five_star">5 Star Reviews</option>
+                <option value="low_rating">Needs Attention</option>
+                <option value="has_comments">Has Comments</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <MetricCard label="Total Feedback" value={mobileCommentSummary.total} />
+              <MetricCard label="Registered" value={mobileCommentSummary.registered} />
+              <MetricCard label="Avg Rating" value={`${mobileCommentSummary.average}/5`} />
+              <MetricCard label="Needs Attention" value={mobileCommentSummary.lowRating} />
+            </div>
+
+            {mobileCommentCardRows.length === 0 ? (
+              <EmptyState text="No comment cards found." />
+            ) : null}
+
+            {mobileCommentCardRows.map((row) => (
+              <div
+                key={row.card.id}
+                className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
+                style={{ borderRadius: 24, background: GLASS_CARD }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-[16px] font-black text-white">
+                      {row.card.full_name || "Guest"}
+                    </div>
+                    <div className="mt-1 text-[11px] font-semibold text-white/60">
+                      {row.card.phone || "—"}
+                      {row.member ? " · Registered" : " · Not registered"}
+                    </div>
+                  </div>
+
+                  <span className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] ${row.averageRating < 4 ? "bg-red-500/18 text-red-100" : "bg-[#ffd66b] text-[#365665]"}`}>
+                    ★ {row.averageRating.toFixed(1)}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] font-bold text-white/70">
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-[0.15em] text-white/45">Heard From</div>
+                    <div className="mt-1 truncate">{row.card.heard_about_us || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-[0.15em] text-white/45">Submitted</div>
+                    <div className="mt-1 truncate">{formatDate(row.card.created_at)}</div>
+                  </div>
+                </div>
+
+                {row.card.comments?.trim() ? (
+                  <div className="mt-3 rounded-[16px] bg-white/10 p-3 text-[12px] font-semibold leading-5 text-white/78">
+                    {row.card.comments.trim()}
+                  </div>
+                ) : null}
+              </div>
+            ))}
           </section>
         )}
 
@@ -2929,7 +3124,9 @@ function DesktopAdminDashboard({
   initialTab = "Overview",
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const [tab, setTab] = useState<Tab>(() => initialTabFromCurrentRoute(initialTab as Tab));
+  const [tab, setTab] = useState<Tab>(() =>
+    initialTabFromCurrentRoute(initialTab as Tab),
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2939,7 +3136,6 @@ function DesktopAdminDashboard({
       window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
-
   const [users, setUsers] = useState<AdminUser[]>(initialUsers);
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>(
     recentTxns ?? [],
@@ -2970,7 +3166,7 @@ function DesktopAdminDashboard({
   const [quickGiftDescription, setQuickGiftDescription] = useState("");
   const [desktopVersionLabel, setDesktopVersionLabel] =
     useState("V2.0 07062026");
-  const [, setIsDesktopVersionEditing] = useState(false);
+  const [isDesktopVersionEditing, setIsDesktopVersionEditing] = useState(false);
   const [activityView, setActivityView] = useState<"activity" | "gifts">(
     "activity",
   );
@@ -2993,6 +3189,7 @@ function DesktopAdminDashboard({
   const [giftDashboardCategoryId, setGiftDashboardCategoryId] = useState("");
   const [giftDashboardExpiry, setGiftDashboardExpiry] = useState("");
   const [giftDashboardNote, setGiftDashboardNote] = useState("");
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | UserRole>("client");
   const [timeRange, setTimeRange] = useState<DesktopTimeRange>("today");
   const [commentCards, setCommentCards] = useState<CommentCardEntry[]>([]);
@@ -3002,8 +3199,6 @@ function DesktopAdminDashboard({
   >([]);
   const [commentSearch, setCommentSearch] = useState("");
   const [commentFilter, setCommentFilter] = useState<CommentCardFilter>("all");
-  const [isCommentFilterOpen, setIsCommentFilterOpen] = useState(false);
-  const commentFilterRef = useRef<HTMLDivElement | null>(null);
   const [commentSort, setCommentSort] = useState<{
     key: CommentCardSortKey;
     direction: SortDirection;
@@ -4362,6 +4557,7 @@ function DesktopAdminDashboard({
         supabase
           .from("stamp_transactions")
           .select("*")
+          .neq("action_type", "manual_adjustment")
           .order("created_at", { ascending: false })
           .limit(250),
 
@@ -4544,24 +4740,6 @@ function DesktopAdminDashboard({
     };
   }, [reportFiltersOpen]);
 
-  useEffect(() => {
-    if (!isCommentFilterOpen) return;
-
-    function closeCommentFilter(event: MouseEvent | TouchEvent) {
-      if (!commentFilterRef.current) return;
-      if (commentFilterRef.current.contains(event.target as Node)) return;
-      setIsCommentFilterOpen(false);
-    }
-
-    document.addEventListener("mousedown", closeCommentFilter);
-    document.addEventListener("touchstart", closeCommentFilter);
-
-    return () => {
-      document.removeEventListener("mousedown", closeCommentFilter);
-      document.removeEventListener("touchstart", closeCommentFilter);
-    };
-  }, [isCommentFilterOpen]);
-
   async function setRole(userId: string, role: UserRole) {
     const { error } = await supabase
       .from("profiles")
@@ -4645,7 +4823,7 @@ function DesktopAdminDashboard({
       const [categoryResult, stampResult, rewardResult] = await Promise.all([
         supabase
           .from("loyalty_categories")
-          .select("id, name, sort_order, average_price")
+          .select("id, name, sort_order")
           .eq("is_active", true)
           .order("sort_order", { ascending: true }),
 
@@ -4719,41 +4897,14 @@ function DesktopAdminDashboard({
       return;
     }
 
-    const transactionCreatedAt = new Date().toISOString();
-    const { data: insertedTxn, error: transactionError } = await supabase
-      .from("stamp_transactions")
-      .insert({
-        client_id: selectedUser.id,
-        category_id: categoryId,
-        action_type: "add_stamp",
-        stamp_count: 1,
-        staff_id: profile.id,
-        created_at: transactionCreatedAt,
-      })
-      .select("*")
-      .single();
-
-    if (transactionError) {
-      flash(`Stamp count changed, but lifetime was not updated: ${transactionError.message}`, "error");
-      setSelectedLoading(false);
-      return;
-    }
-
-    const newTxn = (insertedTxn ?? {
+    await supabase.from("stamp_transactions").insert({
       client_id: selectedUser.id,
       category_id: categoryId,
       action_type: "add_stamp",
       stamp_count: 1,
       staff_id: profile.id,
-      created_at: transactionCreatedAt,
-    }) as StampTransaction;
-
-    setActivityTxns((current) => [
-      newTxn,
-      ...current.filter(
-        (txn) => String((txn as unknown as Record<string, unknown>).id ?? "") !== String((newTxn as unknown as Record<string, unknown>).id ?? ""),
-      ),
-    ]);
+      created_at: new Date().toISOString(),
+    });
 
     if (nextCount >= 5) {
       const categoryName =
@@ -5320,7 +5471,81 @@ function DesktopAdminDashboard({
     flash("Gift deleted.");
   }
 
+  function giftHasRedeemActivity(reward: Reward) {
+    const rewardRecord = reward as unknown as Record<string, unknown>;
+    const clientId = String(reward.client_id ?? "");
+    const rewardId = String(reward.id ?? "");
+    const categoryId = String(rewardRecord.category_id ?? "");
+    const rewardName = giftDisplayName(reward).toLowerCase();
+    const rewardText = String(reward.reward_type ?? "").toLowerCase();
+    const issuedAtMs = new Date(
+      String(reward.earned_at ?? reward.created_at ?? ""),
+    ).getTime();
+
+    return activityTxns.some((txn) => {
+      const txnRecord = txn as unknown as Record<string, unknown>;
+      const action = String(txn.action_type ?? "").toLowerCase();
+
+      if (!/(reward|gift).*(redeem|used|confirm)|redeem|used|confirm/.test(action)) {
+        return false;
+      }
+
+      if (clientId && txn.client_id && txn.client_id !== clientId) return false;
+
+      const txnCreatedAtMs = new Date(String(txn.created_at ?? "")).getTime();
+      if (Number.isFinite(issuedAtMs) && Number.isFinite(txnCreatedAtMs)) {
+        if (txnCreatedAtMs + 60_000 < issuedAtMs) return false;
+      }
+
+      const txnRewardId = String(
+        txnRecord.reward_id ??
+          txnRecord.rewards_id ??
+          txnRecord.claimed_reward_id ??
+          txnRecord.related_reward_id ??
+          "",
+      );
+
+      if (rewardId && txnRewardId && txnRewardId === rewardId) return true;
+
+      const txnCategoryId = String(txnRecord.category_id ?? "");
+      if (categoryId && txnCategoryId && txnCategoryId === categoryId) return true;
+
+      const txnText = [
+        txnRecord.reward_type,
+        txnRecord.gift_name,
+        txnRecord.description,
+        txnRecord.note,
+        txnRecord.metadata,
+        categoryNamesById[txnCategoryId],
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return Boolean(
+        rewardName &&
+          rewardName !== "gift" &&
+          (txnText.includes(rewardName) || rewardText.includes(txnText)),
+      );
+    });
+  }
+
   function giftLeftInfo(reward: Reward) {
+    const record = reward as unknown as Record<string, unknown>;
+    const rawStatus = String(record.status ?? "").toLowerCase();
+    const hasRedeemMarker = Boolean(
+      record.redeemed_at ||
+        record.used_at ||
+        record.confirmed_at ||
+        record.completed_at ||
+        /redeemed|used|confirmed|completed/.test(rawStatus) ||
+        giftHasRedeemActivity(reward),
+    );
+
+    if (hasRedeemMarker) {
+      return { leftDays: null, label: "—", status: "Redeemed" };
+    }
+
     const expiry = rewardExpiryDate(reward);
     if (!expiry) return { leftDays: null, label: "—", status: "Available" };
     const days = desktopDaysUntil(expiry);
@@ -5359,8 +5584,28 @@ function DesktopAdminDashboard({
   }
 
   function giftStatusInfo(reward: Reward) {
-    const record = reward as PendingCommentCardGiftRow;
-    const rawStatus = String(reward.status || "").toLowerCase();
+    const record = reward as PendingCommentCardGiftRow & Record<string, unknown>;
+    const rawStatus = String(record.status || "").toLowerCase();
+    const hasRedeemMarker = Boolean(
+      record.redeemed_at ||
+        record.used_at ||
+        record.confirmed_at ||
+        record.completed_at ||
+        /redeemed|used|confirmed|completed/.test(rawStatus) ||
+        giftHasRedeemActivity(reward),
+    );
+    const hasClaimMarker = Boolean(
+      record.claimed_at ||
+        record.claimed_by ||
+        record.claimed_reward_id ||
+        rawStatus === "claimed",
+    );
+    const hasBounceMarker = Boolean(
+      record.bounced_at ||
+        record.returned_at ||
+        record.cancelled_at ||
+        /bounced|returned|cancelled/.test(rawStatus),
+    );
 
     if (record.__pending_comment_card && rawStatus === "pending") {
       return {
@@ -5369,12 +5614,25 @@ function DesktopAdminDashboard({
       };
     }
 
-    if (
-      rawStatus === "redeemed" ||
-      rawStatus === "claimed" ||
-      rawStatus === "used"
-    ) {
-      return { label: "Used", className: "bg-slate-400/18 text-slate-100" };
+    if (hasRedeemMarker) {
+      return {
+        label: "Redeemed",
+        className: "bg-slate-400/18 text-slate-100",
+      };
+    }
+
+    if (hasBounceMarker || (rawStatus === "available" && hasClaimMarker)) {
+      return {
+        label: "Bounced",
+        className: "bg-orange-400/20 text-orange-100",
+      };
+    }
+
+    if (hasClaimMarker) {
+      return {
+        label: "Claimed",
+        className: "bg-[#ffd66b]/22 text-[#ffd66b]",
+      };
     }
 
     const expiry = giftLeftInfo(reward);
@@ -5454,7 +5712,7 @@ function DesktopAdminDashboard({
       if (giftFilter === "games" && info.source !== "Games") return false;
       if (giftFilter === "available" && status.label !== "Available")
         return false;
-      if (giftFilter === "used" && status.label !== "Used") return false;
+      if (giftFilter === "used" && status.label !== "Redeemed") return false;
       if (giftFilter === "expired" && status.label !== "Expired") return false;
       if (giftFilter === "expiring" && status.label !== "Expiring Soon")
         return false;
@@ -5495,7 +5753,7 @@ function DesktopAdminDashboard({
   const giftDashboardSummary = useMemo(() => {
     const giftsSent = filteredGiftDashboardRows.length;
     const redeemed = filteredGiftDashboardRows.filter(
-      (reward) => giftStatusInfo(reward).label === "Used",
+      (reward) => giftStatusInfo(reward).label === "Redeemed",
     ).length;
     const giftValue = filteredGiftDashboardRows.reduce(
       (sum, reward) => sum + giftEstimatedValue(reward),
@@ -5573,7 +5831,7 @@ function DesktopAdminDashboard({
       if (rewards.length === 0) return "Not Sent";
 
       const labels = rewards.map((reward) => giftStatusInfo(reward).label.toLowerCase());
-      if (labels.length > 0 && labels.every((label) => label === "used")) return "Claimed";
+      if (labels.length > 0 && labels.every((label) => label === "used" || label === "redeemed")) return "Claimed";
       if (labels.some((label) => label === "expired")) return "Expired";
       return "Sent";
     };
@@ -5932,10 +6190,11 @@ function DesktopAdminDashboard({
         const record = txn as unknown as Record<string, unknown>;
         const categoryId =
           typeof record.category_id === "string" ? record.category_id : "";
+        const actionType = String(record.action_type ?? "");
 
-        if (!isAddStampTransaction(txn)) return 0;
+        if (actionType.includes("remove")) return 0;
 
-        return (categoryAveragePriceById[categoryId] ?? 0) * getStampTransactionQuantity(txn);
+        return categoryAveragePriceById[categoryId] ?? 0;
       };
 
       const visits = new Set(
@@ -6613,10 +6872,6 @@ function DesktopAdminDashboard({
       now.getMonth(),
       now.getDate(),
     );
-    const startTomorrow = new Date(startToday);
-    startTomorrow.setDate(startToday.getDate() + 1);
-    const startYesterday = new Date(startToday);
-    startYesterday.setDate(startToday.getDate() - 1);
     const startWeek = new Date(startToday);
     startWeek.setDate(startToday.getDate() - ((startToday.getDay() + 6) % 7));
     const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -6633,9 +6888,7 @@ function DesktopAdminDashboard({
           card.service_rating,
           card.cleanliness_rating,
           card.visit_again_rating,
-        ]
-          .map((value) => Number(value))
-          .filter((value) => Number.isFinite(value) && value > 0 && value <= 5);
+        ].map((value) => (Number.isFinite(Number(value)) ? Number(value) : 0));
         const averageRating = ratings.length
           ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length
           : 0;
@@ -6680,16 +6933,7 @@ function DesktopAdminDashboard({
           return false;
         if (
           commentFilter === "today" &&
-          (!row.submittedTime ||
-            row.submittedTime < startToday ||
-            row.submittedTime >= startTomorrow)
-        )
-          return false;
-        if (
-          commentFilter === "yesterday" &&
-          (!row.submittedTime ||
-            row.submittedTime < startYesterday ||
-            row.submittedTime >= startToday)
+          (!row.submittedTime || row.submittedTime < startToday)
         )
           return false;
         if (
@@ -6783,61 +7027,17 @@ function DesktopAdminDashboard({
     const total = commentCardRows.length;
     const registered = commentCardRows.filter((row) => row.member).length;
     const lowRating = commentCardRows.filter(
-      (row) => row.averageRating > 0 && row.averageRating < 4,
+      (row) => row.averageRating < 4,
     ).length;
-
-    const now = new Date();
-    const startToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const startWeek = new Date(startToday);
-    startWeek.setDate(startToday.getDate() - ((startToday.getDay() + 6) % 7));
-
-    const newThisWeek = commentCardRows.filter(
-      (row) => row.submittedTime && row.submittedTime >= startWeek,
-    ).length;
-
-    const giftRowsFromCommentCards = giftRows.filter((reward) =>
-      String(reward.reward_type ?? "")
-        .toLowerCase()
-        .includes("source comment cards"),
-    ).length;
-    const pendingGiftsFromCommentCards = pendingCommentCardGifts.filter(
-      (gift) => String(gift.status ?? "").toLowerCase() !== "cancelled",
-    ).length;
-    const giftsSent = giftRowsFromCommentCards + pendingGiftsFromCommentCards;
-
-    const sourceCounts = new Map<string, number>();
-    commentCardRows.forEach((row) => {
-      const source = String(row.card.heard_about_us || "").trim();
-      if (!source) return;
-      sourceCounts.set(source, (sourceCounts.get(source) ?? 0) + 1);
-    });
-
-    const topSource = [...sourceCounts.entries()].sort(
-      (first, second) => second[1] - first[1] || first[0].localeCompare(second[0]),
-    )[0]?.[0] ?? "—";
-
-    const ratedRows = commentCardRows.filter((row) => row.averageRating > 0);
-    const average = ratedRows.length
+    const average = total
       ? (
-          ratedRows.reduce((sum, row) => sum + row.averageRating, 0) /
-          ratedRows.length
+          commentCardRows.reduce((sum, row) => sum + row.averageRating, 0) /
+          total
         ).toFixed(1)
       : "0.0";
 
-    return {
-      total,
-      registered,
-      lowRating,
-      average,
-      newThisWeek,
-      giftsSent,
-      topSource,
-    };
-  }, [commentCardRows, giftRows, pendingCommentCardGifts]);
+    return { total, registered, lowRating, average };
+  }, [commentCardRows]);
 
   const selectedCommentCardRow = useMemo(() => {
     if (!selectedCommentCardId) return null;
@@ -7217,18 +7417,124 @@ function DesktopAdminDashboard({
       <Toast message={toast} tone={tone} />
 
       <div className="flex min-h-screen w-full gap-6 overflow-visible bg-transparent p-6 lg:min-h-screen">
-        <AdminSidebar
-          currentTab={
-            tab === "Birthdays" || tab === "Gifts" || tab === "Loyalty Program"
-              ? tab
-              : "Overview"
-          }
-          onTabChange={(nextTab) => {
-            setTab(nextTab);
-            setSelectedUser(null);
-          }}
-          onLogout={logout}
-        />
+        <aside
+          className={`hidden min-h-[calc(100vh-48px)] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.24)] backdrop-blur-2xl transition-all duration-300 lg:flex ${
+            isDesktopSidebarOpen ? "w-[238px]" : "w-[76px]"
+          }`}
+        >
+          <div
+            className={`flex h-20 items-center bg-white/5 ${isDesktopSidebarOpen ? "justify-between gap-3 px-5" : "justify-center px-3"}`}
+          >
+            {isDesktopSidebarOpen ? (
+              <div className="min-w-0">
+                <div className="text-[19px] font-black leading-none text-white">
+                  Dashboard
+                </div>
+                <div className="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
+                  PRO&apos;s Admin
+                </div>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => setIsDesktopSidebarOpen((current) => !current)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[20px] font-black text-[#365665] shadow-[0_12px_28px_rgba(255,214,107,0.2)] transition hover:scale-105"
+              title={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
+              aria-label={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
+            >
+              {isDesktopSidebarOpen ? "←" : "☰"}
+            </button>
+          </div>
+
+          <nav className="flex-1 overflow-y-auto px-3 py-4">
+            {([
+              { label: "Dashboard", tab: "Overview", href: "/admin", icon: tabIcon("Overview") },
+              { label: "Activity", tab: "Activity", href: "/admin/activity", icon: tabIcon("Activity") },
+              { label: "News", tab: "News", href: "/admin/news", icon: "📣" },
+              { label: "Customer behavior", tab: "Users", href: "/admin/users", icon: "👤" },
+              { label: "Comment Cards", tab: "Comment Cards", href: "/admin/comment-cards", icon: tabIcon("Comment Cards") },
+              { label: "Birthdays", tab: "Birthdays", href: "/admin/birthdays", icon: tabIcon("Birthdays") },
+              { label: "Gifts", tab: "Gifts", href: "/admin/gifts", icon: tabIcon("Gifts") },
+              { label: "Loyalty Program", tab: "Loyalty Program", href: "/admin/loyalty", icon: tabIcon("Loyalty Program") },
+              { label: "Games", tab: "Games", href: "/admin/predictions", icon: "🎮" },
+            ] as const).map((item) => {
+              const active = item.tab === tab;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={item.label}
+                  onClick={() => setSelectedUser(null)}
+                  className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"} ${active ? "bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)]" : "text-white/70 hover:bg-white/12 hover:text-white"}`}
+                >
+                  <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] ${active ? "bg-[#ffd66b] text-[#365665]" : "bg-white/12 text-white/72"}`}>{item.icon}</span>
+                  {isDesktopSidebarOpen ? item.label : null}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="border-t border-white/8 px-3 py-5">
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className={`mb-4 flex w-full items-center rounded-none bg-transparent py-2 text-left text-[12px] font-black text-white/86 transition hover:text-white ${
+                isDesktopSidebarOpen
+                  ? "justify-start px-4"
+                  : "justify-center px-0"
+              }`}
+              title="Logout"
+            >
+              {isDesktopSidebarOpen ? "Logout" : "⎋"}
+            </button>
+
+            {isDesktopSidebarOpen ? (
+              <div className="space-y-3 text-left">
+                <a
+                  href="https://wissamdesigns.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block text-left text-[11px] font-black uppercase leading-5 text-[#ffd66b] transition hover:text-white"
+                >
+                  © WISSAMDESIGNS.COM
+                </a>
+
+                {isDesktopVersionEditing ? (
+                  <input
+                    autoFocus
+                    defaultValue={desktopVersionLabel}
+                    onBlur={(event) =>
+                      saveDesktopVersionLabel(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        saveDesktopVersionLabel(event.currentTarget.value);
+                      }
+                      if (event.key === "Escape") {
+                        setIsDesktopVersionEditing(false);
+                      }
+                    }}
+                    className="block h-8 w-[150px] rounded-[12px] border border-white/18 bg-white px-3 text-left text-[10px] font-black uppercase tracking-[0.12em] text-[#102226] outline-none focus:border-[#ffd66b]"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onDoubleClick={() => setIsDesktopVersionEditing(true)}
+                    className="block rounded-[12px] px-0 py-2 text-left text-[10px] font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
+                    title="Double click to edit version"
+                  >
+                    {desktopVersionLabel}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="text-center text-[14px] font-black text-[#ffd66b]">
+                ©
+              </div>
+            )}
+          </div>
+        </aside>
 
         <section className="min-h-[calc(100vh-48px)] min-w-0 flex-1 overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl">
           <div className="px-5 py-6 lg:px-8">
@@ -7746,7 +8052,7 @@ function DesktopAdminDashboard({
                         ["comment_cards", "Comment Cards"],
                         ["games", "Games"],
                         ["available", "Available"],
-                        ["used", "Used"],
+                        ["used", "Redeemed"],
                         ["expired", "Expired"],
                         ["expiring", "Expiring Soon"],
                         ["pending", "Pending Registration"],
@@ -8484,75 +8790,25 @@ function DesktopAdminDashboard({
                       className="h-10 w-[320px] rounded-[13px] border-0 bg-white px-4 text-[12px] font-bold text-[#365665] outline-none placeholder:text-[#365665]/45"
                     />
 
-                    <div className="flex h-10 items-center rounded-[14px] bg-white/10 p-1 shadow-[0_14px_34px_rgba(20,30,26,0.12)]">
-                      {[
-                        ["today", "Today"],
-                        ["yesterday", "Yesterday"],
-                        ["week", "This week"],
-                        ["month", "This month"],
-                        ["all", "All"],
-                      ].map(([value, label]) => {
-                        const isActive = commentFilter === value;
-
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => setCommentFilter(value as CommentCardFilter)}
-                            className={`h-8 rounded-[11px] px-4 text-[11px] font-black transition ${
-                              isActive
-                                ? "bg-[#FFD66B] text-[#365665] shadow-[0_10px_20px_rgba(255,214,107,0.22)]"
-                                : "text-white hover:bg-white/10"
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div ref={commentFilterRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setIsCommentFilterOpen((open) => !open)}
-                        className="inline-flex h-10 items-center justify-center rounded-[13px] border border-white/24 bg-white/5 px-5 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-white/12"
-                      >
-                        Filter
-                      </button>
-
-                      {isCommentFilterOpen ? (
-                        <div className="absolute right-0 top-full z-50 mt-3 w-[220px] rounded-[18px] border border-white/12 bg-[#365665] p-2 shadow-[0_22px_55px_rgba(20,30,26,0.34)] backdrop-blur-2xl">
-                          {[
-                            ["registered", "Registered Members"],
-                            ["not_registered", "Not Registered"],
-                            ["five_star", "5 Star Reviews"],
-                            ["low_rating", "Needs Attention"],
-                            ["has_comments", "Has Comments"],
-                          ].map(([value, label]) => {
-                            const isActive = commentFilter === value;
-
-                            return (
-                              <button
-                                key={value}
-                                type="button"
-                                onClick={() => {
-                                  setCommentFilter(value as CommentCardFilter);
-                                  setIsCommentFilterOpen(false);
-                                }}
-                                className={`mb-1 flex h-10 w-full items-center justify-between rounded-[13px] px-3 text-left text-[11px] font-black transition last:mb-0 ${
-                                  isActive
-                                    ? "bg-[#FFD66B] text-[#365665]"
-                                    : "text-white hover:bg-white/10"
-                                }`}
-                              >
-                                <span>{label}</span>
-                                {isActive ? <span>✓</span> : null}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
+                    <select
+                      value={commentFilter}
+                      onChange={(event) =>
+                        setCommentFilter(
+                          event.target.value as CommentCardFilter,
+                        )
+                      }
+                      className="h-10 rounded-[13px] border-0 bg-white px-4 text-[12px] font-black text-[#365665] outline-none"
+                    >
+                      <option value="all">All Feedback</option>
+                      <option value="registered">Registered Members</option>
+                      <option value="not_registered">Not Registered</option>
+                      <option value="five_star">5 Star Reviews</option>
+                      <option value="low_rating">Needs Attention</option>
+                      <option value="has_comments">Has Comments</option>
+                      <option value="today">Today</option>
+                      <option value="week">This Week</option>
+                      <option value="month">This Month</option>
+                    </select>
 
                     <button
                       type="button"
@@ -8581,7 +8837,7 @@ function DesktopAdminDashboard({
 
                 <div
                   className="grid gap-2"
-                  style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+                  style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
                 >
                   <DesktopGiftSummaryCard
                     label="Total Feedback"
@@ -8598,18 +8854,6 @@ function DesktopAdminDashboard({
                   <DesktopGiftSummaryCard
                     label="Needs Attention"
                     value={commentCardSummary.lowRating}
-                  />
-                  <DesktopGiftSummaryCard
-                    label="New This Week"
-                    value={commentCardSummary.newThisWeek}
-                  />
-                  <DesktopGiftSummaryCard
-                    label="Gifts Sent"
-                    value={commentCardSummary.giftsSent}
-                  />
-                  <DesktopGiftSummaryCard
-                    label="Top Source"
-                    value={commentCardSummary.topSource}
                   />
                 </div>
 
@@ -9622,10 +9866,11 @@ function DesktopClientProfilePanel({
     const record = txn as unknown as Record<string, unknown>;
     const categoryId =
       typeof record.category_id === "string" ? record.category_id : "";
+    const actionType = String(record.action_type ?? "");
 
-    if (!isAddStampTransaction(txn)) return 0;
+    if (actionType.includes("remove")) return 0;
 
-    return (priceByCategoryId.get(categoryId) ?? 0) * getStampTransactionQuantity(txn);
+    return priceByCategoryId.get(categoryId) ?? 0;
   };
 
   const giftValueFor = (reward: Reward) => {

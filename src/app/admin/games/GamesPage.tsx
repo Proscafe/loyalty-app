@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Toast } from "@/components/Toast";
-import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
+import { createClient } from "@/lib/supabase/client";
+import * as AdminMobileFloatingMenuModule from "@/components/AdminMobileFloatingMenu";
 
 
 
@@ -43,6 +44,8 @@ type CsvRow = {
   closes_at: string;
 };
 
+type InitialMatchRow = Record<string, any>;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toPredictionDatePayloadValue(value?: string | null) {
@@ -79,6 +82,37 @@ function predictionLinkFor(code: string) {
   return `${publicUrl.replace(/\/$/, "")}/predict/${code}`;
 }
 
+const AdminMobileFloatingMenu =
+  (AdminMobileFloatingMenuModule as any).default ??
+  (AdminMobileFloatingMenuModule as any).AdminMobileFloatingMenu;
+
+function normalizeGameLinks(matches: any[]): GameLink[] {
+  const nowMs = Date.now();
+  return matches.map((match: any) => {
+    const openMs = new Date(match.opens_at ?? match.open_at ?? "").getTime();
+    const closeMs = new Date(match.closes_at ?? match.close_at ?? "").getTime();
+    const rawStatus = String(match.status ?? "").toLowerCase();
+    const isClosedByStatus = ["closed", "ended", "inactive", "completed"].includes(rawStatus);
+    const status = isClosedByStatus || match.is_active === false ? "Closed"
+      : Number.isFinite(openMs) && nowMs < openMs ? "Scheduled"
+      : Number.isFinite(closeMs) && nowMs > closeMs ? "Closed" : "Open";
+    return {
+      id: String(match.id),
+      title: `${match.home_team ?? match.team_1 ?? "Home"} vs ${match.away_team ?? match.team_2 ?? "Away"}`,
+      code: String(match.secret_code ?? match.code ?? ""),
+      sport: inferSportType(match) === "basketball" ? "Basketball" : "Football",
+      matchLabel: match.match_label || match.label || (match.sport_type === "basketball" ? "Basket" : "World Cup"),
+      kickoff: match.kickoff_at ?? match.match_time ?? match.date ?? null,
+      opensAt: match.opens_at ?? match.open_at ?? null,
+      closesAt: match.closes_at ?? match.close_at ?? null,
+      status,
+      players: Number(match.entries_count ?? match.players_count ?? match.players ?? 0),
+      tournamentId: match.tournament_id ?? match.prediction_tournaments?.id ?? null,
+      tournamentName: match.tournament_name ?? match.prediction_tournaments?.name ?? null,
+    };
+  }).filter((game) => game.id && game.code);
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function GameInput({ label, value, onChange, type = "text" }: {
@@ -107,10 +141,12 @@ function Panel({ children, className = "" }: { children: React.ReactNode; classN
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function GamesPage() {
+export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMatchRow[] }) {
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tone, setTone] = useState<"success" | "error">("success");
+  const [isMobileDateFilterOpen, setIsMobileDateFilterOpen] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
 
   // Game form
   const [gameKind, setGameKind] = useState<"football" | "basketball">("basketball");
@@ -130,8 +166,8 @@ export function GamesPage() {
   const [tournamentDeleteId, setTournamentDeleteId] = useState<string | null>(null);
 
   // Games list
-  const [createdGameLinks, setCreatedGameLinks] = useState<GameLink[]>([]);
-  const [gameDateFilter, setGameDateFilter] = useState<"all" | "today" | "week" | "month">("today");
+  const [createdGameLinks, setCreatedGameLinks] = useState<GameLink[]>(() => normalizeGameLinks(initialMatches));
+  const [gameDateFilter, setGameDateFilter] = useState<"all" | "today" | "week" | "month" | "ended">("today");
   const [gameSportFilter, setGameSportFilter] = useState<"all" | "football" | "basketball">("all");
   const [gameTournamentFilter, setGameTournamentFilter] = useState("all");
   const [gameSort, setGameSort] = useState<{ key: "sport" | "match" | "date" | "status" | "players"; direction: "asc" | "desc" }>({ key: "date", direction: "desc" });
@@ -154,32 +190,75 @@ export function GamesPage() {
 
   async function refreshGameLinks() {
     try {
-      const res = await fetch("/api/admin/prediction-matches");
-      const text = await res.text();
-      const json = text ? JSON.parse(text) as { matches?: any[]; error?: string } : {};
-      if (!res.ok) { flash(json.error ?? "Could not load games.", "error"); return; }
-      const nowMs = Date.now();
-      setCreatedGameLinks((json.matches ?? []).map((match: any) => {
-        const openMs = new Date(match.opens_at ?? "").getTime();
-        const closeMs = new Date(match.closes_at ?? "").getTime();
-        const status = match.is_active === false ? "Closed"
-          : Number.isFinite(openMs) && nowMs < openMs ? "Scheduled"
-          : Number.isFinite(closeMs) && nowMs > closeMs ? "Closed" : "Open";
-        return {
-          id: match.id,
-          title: `${match.home_team ?? "Home"} vs ${match.away_team ?? "Away"}`,
-          code: match.secret_code,
-          sport: inferSportType(match) === "basketball" ? "Basketball" : "Football",
-          matchLabel: match.match_label || (match.sport_type === "basketball" ? "Basket" : "World Cup"),
-          kickoff: match.kickoff_at ?? null,
-          opensAt: match.opens_at ?? null,
-          closesAt: match.closes_at ?? null,
-          status,
-          players: Number(match.entries_count ?? 0),
-          tournamentId: match.tournament_id ?? match.prediction_tournaments?.id ?? null,
-          tournamentName: match.tournament_name ?? match.prediction_tournaments?.name ?? null,
-        };
+      const loaded: any[] = [];
+      const apiUrls = ["/api/admin/prediction-matches", "/api/prediction-matches", "/api/admin/game-links"];
+
+      for (const url of apiUrls) {
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          const text = await res.text();
+          const json = text ? JSON.parse(text) as Record<string, any> : {};
+          if (!res.ok) continue;
+          const rows = Array.isArray(json.matches) ? json.matches
+            : Array.isArray(json.games) ? json.games
+            : Array.isArray(json.links) ? json.links
+            : Array.isArray(json.data) ? json.data
+            : [];
+          loaded.push(...rows);
+        } catch {
+          // Try the next source.
+        }
+      }
+
+      const { data: directPredictionMatches } = await supabase
+        .from("prediction_matches")
+        .select("*, prediction_tournaments(id, name, sport_type)")
+        .order("kickoff_at", { ascending: false })
+        .limit(250);
+
+      if (directPredictionMatches) loaded.push(...directPredictionMatches);
+
+      const { data: directPredictionGames } = await supabase
+        .from("prediction_games")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(250);
+
+      if (directPredictionGames) loaded.push(...directPredictionGames);
+
+      const unique = new Map<string, any>();
+      for (const row of loaded) {
+        const id = String(row?.id ?? "");
+        if (!id || unique.has(id)) continue;
+        unique.set(id, row);
+      }
+
+      const rows = Array.from(unique.values());
+      const ids = rows.map((row) => String(row.id ?? "")).filter(Boolean);
+      const playerCounts = new Map<string, Set<string>>();
+
+      async function collectPlayerCounts(column: "match_id" | "prediction_match_id") {
+        if (ids.length === 0) return;
+        const { data } = await supabase.from("prediction_entries").select(`${column}, client_id`).in(column, ids);
+        for (const entry of data ?? []) {
+          const matchId = String((entry as any)[column] ?? "");
+          if (!matchId) continue;
+          const clientId = String((entry as any).client_id ?? Math.random());
+          if (!playerCounts.has(matchId)) playerCounts.set(matchId, new Set());
+          playerCounts.get(matchId)?.add(clientId);
+        }
+      }
+
+      await collectPlayerCounts("match_id");
+      await collectPlayerCounts("prediction_match_id");
+
+      const withCounts = rows.map((row) => ({
+        ...row,
+        entries_count: playerCounts.get(String(row.id))?.size ?? row.entries_count ?? row.players_count ?? row.players ?? 0,
+        players_count: playerCounts.get(String(row.id))?.size ?? row.entries_count ?? row.players_count ?? row.players ?? 0,
       }));
+
+      setCreatedGameLinks(normalizeGameLinks(withCounts));
     } catch (err) {
       flash(err instanceof Error ? err.message : "Could not load games.", "error");
     }
@@ -200,7 +279,7 @@ export function GamesPage() {
   useEffect(() => {
     void refreshGameLinks();
     void refreshTournaments();
-  }, []);
+  }, [supabase]);
 
   // ── Tournament CRUD ──────────────────────────────────────────────────────────
 
@@ -474,6 +553,9 @@ export function GamesPage() {
     const filtered = createdGameLinks.filter((game) => {
       if (gameSportFilter !== "all" && game.sport.toLowerCase() !== gameSportFilter) return false;
       if (gameTournamentFilter !== "all" && game.tournamentId !== gameTournamentFilter) return false;
+      const isEnded = game.status.toLowerCase() === "closed" || game.status.toLowerCase() === "ended";
+      if (gameDateFilter === "ended") return isEnded;
+      if (isEnded) return false;
       if (gameDateFilter === "all") return true;
       const time = new Date(game.kickoff ?? "").getTime();
       if (!Number.isFinite(time)) return false;
@@ -500,10 +582,10 @@ export function GamesPage() {
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)] text-white" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
+    <main className="min-h-screen overflow-x-hidden bg-[#6f7c6f] text-white lg:bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
       <Toast message={toast} tone={tone} />
 
-      <div className="flex min-h-screen w-full gap-6 overflow-visible bg-transparent p-6 lg:min-h-screen">
+      <div className="flex min-h-screen w-full justify-center gap-0 overflow-visible bg-transparent p-0 sm:p-4 lg:justify-start lg:gap-6 lg:p-6 lg:min-h-screen">
 
         {/* Sidebar */}
         <aside className={`hidden min-h-[calc(100vh-48px)] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.24)] backdrop-blur-2xl transition-all duration-300 lg:flex ${isDesktopSidebarOpen ? "w-[238px]" : "w-[76px]"}`}>
@@ -528,32 +610,37 @@ export function GamesPage() {
                 <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>⌂</span>
                 {isDesktopSidebarOpen ? "Dashboard" : null}
               </Link>
-              <Link href="/admin?tab=Activity" title="Activity"
+              <Link href="/admin/activity" title="Activity"
                 className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
                 <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>↯</span>
                 {isDesktopSidebarOpen ? "Activity" : null}
+              </Link>
+              <Link href="/admin/news" title="News"
+                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
+                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>📣</span>
+                {isDesktopSidebarOpen ? "News" : null}
               </Link>
               <Link href="/admin/users" title="Customer behavior"
                 className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
                 <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>👤</span>
                 {isDesktopSidebarOpen ? "Customer behavior" : null}
               </Link>
-              <Link href="/admin?tab=Comment+Cards" title="Comment Cards"
+              <Link href="/admin/comment-cards" title="Comment Cards"
                 className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
                 <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>✎</span>
                 {isDesktopSidebarOpen ? "Comment Cards" : null}
               </Link>
-              <Link href="/admin?tab=Birthdays" title="Birthdays"
+              <Link href="/admin/birthdays" title="Birthdays"
                 className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
                 <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎂</span>
                 {isDesktopSidebarOpen ? "Birthdays" : null}
               </Link>
-              <Link href="/admin?tab=Gifts" title="Gifts"
+              <Link href="/admin/gifts" title="Gifts"
                 className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
                 <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎁</span>
                 {isDesktopSidebarOpen ? "Gifts" : null}
               </Link>
-              <Link href="/admin?tab=Loyalty+Program" title="Loyalty Program"
+              <Link href="/admin/loyalty" title="Loyalty Program"
                 className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
                 <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>★</span>
                 {isDesktopSidebarOpen ? "Loyalty Program" : null}
@@ -574,46 +661,86 @@ export function GamesPage() {
         </aside>
 
         {/* Content */}
-        <section className="min-h-[calc(100vh-48px)] min-w-0 flex-1 overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl">
-          <div className="px-5 py-6 lg:px-8">
+        <section className="min-h-screen w-full max-w-[376px] min-w-0 overflow-hidden bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl sm:max-w-none sm:rounded-[30px] lg:min-h-[calc(100vh-48px)]">
+          <div className="px-5 py-5 sm:px-5 sm:py-6 lg:px-8">
+
+        {/* Mobile app header */}
+        <div className="mb-5 flex h-[70px] items-center justify-between rounded-[18px] border border-white/10 bg-white/10 px-6 shadow-[0_18px_44px_rgba(35,54,47,0.18)] backdrop-blur-2xl sm:hidden">
+          <Link href="/admin" aria-label="Go to admin dashboard" className="flex items-center">
+            <img src="/apple-icon.png" alt="PRO&apos;s" className="h-[46px] w-auto object-contain" />
+          </Link>
+          <Link href="/profile" aria-label="Open profile" className="flex h-10 w-10 items-center justify-center rounded-full text-[#ffd66b] transition hover:bg-white/10">
+            <svg viewBox="0 0 25 28" className="h-[27.6px] w-[24.9px]" fill="currentColor" aria-hidden="true">
+              <path d="M12.45 13.6c3.38 0 6.12-2.82 6.12-6.3S15.83 1 12.45 1 6.33 3.82 6.33 7.3s2.74 6.3 6.12 6.3Z" />
+              <path d="M23.52 26.8c0-5.98-4.96-10.82-11.07-10.82S1.38 20.82 1.38 26.8h22.14Z" />
+            </svg>
+          </Link>
+        </div>
 
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-[28px] font-black tracking-[-0.04em] text-white">Create Game</h1>
-            <p className="mt-0.5 text-[12px] font-bold text-white/65">Manage links, QR codes, players, scores, and leaderboards.</p>
+        <div className="mb-5 sm:mb-6">
+          <div className="flex items-center justify-between gap-3 rounded-[18px] bg-white/10 px-4 py-5 shadow-[0_22px_60px_rgba(35,54,47,0.16)] backdrop-blur-2xl sm:hidden">
+            <h1 className="min-w-0 text-[27px] font-black leading-[1.2] tracking-[-0.05em] text-white">
+              Create <span className="text-[#ffd66b]">Game</span>
+            </h1>
+            <button
+              type="button"
+              onClick={() => setGameCreateOpen(true)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-[16px] font-black leading-none text-white transition hover:bg-white/18"
+              aria-label="Create game link"
+            >
+              +
+            </button>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setTournamentPopupOpen(true)} className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">Add Tournament</button>
-            <button type="button" onClick={() => { setCsvImportOpen(true); setCsvPreview([]); setCsvErrors([]); setCsvFileName(""); }} className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">Upload CSV</button>
-            {sortedGameLinks.length > 0 && (
-              <button type="button" onClick={() => void downloadAllQrs()} className="flex items-center gap-2 rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3m0 4h4v-4m-4 0v4" /></svg>
-                Download QRs ({sortedGameLinks.length})
-              </button>
-            )}
-            <button type="button" onClick={() => setGameCreateOpen(true)} className="rounded-full bg-[#ffd66b] px-6 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]">Create Link</button>
+
+          <div className="hidden items-center justify-between gap-4 sm:flex">
+            <div>
+              <h1 className="text-[28px] font-black tracking-[-0.04em] text-white">Create Game</h1>
+              <p className="mt-0.5 text-[12px] font-bold text-white/65">Manage links, QR codes, players, scores, and leaderboards.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setTournamentPopupOpen(true)} className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">Add Tournament</button>
+              <button type="button" onClick={() => { setCsvImportOpen(true); setCsvPreview([]); setCsvErrors([]); setCsvFileName(""); }} className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">Upload CSV</button>
+              {sortedGameLinks.length > 0 && (
+                <button type="button" onClick={() => void downloadAllQrs()} className="flex items-center gap-2 rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3m0 4h4v-4m-4 0v4" /></svg>
+                  Download QRs ({sortedGameLinks.length})
+                </button>
+              )}
+              <button type="button" onClick={() => setGameCreateOpen(true)} className="rounded-full bg-[#ffd66b] px-6 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] shadow-[0_18px_40px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]">Create Link</button>
+            </div>
           </div>
         </div>
 
         {/* Filters + table */}
-        <Panel className="!p-4">
+        <Panel className="!rounded-[28px] !bg-white/10 !p-4 pb-28 sm:pb-4">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {(["today", "week", "month", "all"] as const).map((v) => (
-                <button key={v} type="button" onClick={() => setGameDateFilter(v)}
-                  className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${gameDateFilter === v ? "bg-[#ffd66b] text-[#365665]" : "bg-white/10 text-white/70 hover:bg-white/16 hover:text-[#ffd66b]"}`}>
-                  {v === "today" ? "Today" : v === "week" ? "This week" : v === "month" ? "This month" : "All"}
-                </button>
-              ))}
+            <div className="w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setIsMobileDateFilterOpen(true)}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.14em] text-[#365665] shadow-[0_14px_30px_rgba(255,214,107,0.16)] sm:hidden"
+                aria-label="Choose date filter"
+              >
+                <span className="leading-none">{gameDateFilter === "all" ? "All" : gameDateFilter === "today" ? "Today" : gameDateFilter === "week" ? "This week" : gameDateFilter === "month" ? "This month" : "Ended"}</span>
+                <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 translate-y-[0.5px]" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z" clipRule="evenodd" /></svg>
+              </button>
+              <div className="hidden flex-wrap items-center gap-2 sm:flex">
+                {(["all", "today", "week", "month", "ended"] as const).map((v) => (
+                  <button key={v} type="button" onClick={() => setGameDateFilter(v)}
+                    className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition sm:px-4 ${gameDateFilter === v ? "bg-[#ffd66b] text-[#365665]" : "bg-white/10 text-white/70 hover:bg-white/16 hover:text-[#ffd66b]"}`}>
+                    {v === "all" ? "All" : v === "today" ? "Today" : v === "week" ? "This week" : v === "month" ? "This month" : "Ended"}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <select value={gameSportFilter} onChange={(e) => setGameSportFilter(e.target.value as any)} className="h-10 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none">
+            <div className="hidden w-full flex-wrap items-center gap-2 sm:flex sm:w-auto">
+              <select value={gameSportFilter} onChange={(e) => setGameSportFilter(e.target.value as any)} className="h-10 flex-1 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none sm:flex-none">
                 <option value="all">All sports</option>
                 <option value="football">Football</option>
                 <option value="basketball">Basketball</option>
               </select>
-              <select value={gameTournamentFilter} onChange={(e) => setGameTournamentFilter(e.target.value)} className="h-10 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none">
+              <select value={gameTournamentFilter} onChange={(e) => setGameTournamentFilter(e.target.value)} className="h-10 flex-1 rounded-full border border-white/20 bg-white px-4 text-[11px] font-black text-[#365665] outline-none sm:flex-none">
                 <option value="all">All tournaments</option>
                 {predictionTournaments.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
@@ -621,9 +748,48 @@ export function GamesPage() {
           </div>
 
           {sortedGameLinks.length === 0 ? (
-            <p className="rounded-[18px] border border-white/18 bg-white/10 p-4 text-[13px] font-bold text-white/70">No created games yet.</p>
+            <p className="rounded-[18px] border border-white/18 bg-white/10 p-4 text-center text-[13px] font-bold text-white/70">No games for this filter.</p>
           ) : (
-            <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/8">
+            <>
+              <div className="space-y-4 md:hidden">
+                {sortedGameLinks.map((game) => (
+                  <div key={game.id} role="button" tabIndex={0}
+                    onClick={() => { window.location.href = `/admin/game-links/${game.id}`; }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.location.href = `/admin/game-links/${game.id}`; } }}
+                    className="w-full rounded-[22px] border border-white/80 bg-transparent p-4 pb-5 text-[12px] font-bold text-white/78 transition hover:bg-white/8">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-black uppercase tracking-[0.14em] text-[#ffd66b]">{game.sport}</div>
+                        <div className="mt-1 break-words text-[15px] font-black leading-tight text-white">{game.title}</div>
+                        <div className="mt-1 truncate text-[10px] font-bold text-white/70">{game.matchLabel}</div>
+                      </div>
+                      <div className="shrink-0 pt-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-white">
+                        {game.status}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-[11px]">
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.14em] text-white">Date</div>
+                        <div className="mt-1 whitespace-pre-line text-white/88">{formatDate(game.kickoff)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.14em] text-white">Players</div>
+                        <div className="mt-1 tabular-nums text-white/88">{game.players}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-[10px] font-black uppercase tracking-[0.14em] text-white">Tournament</div>
+                        <div className="mt-1 truncate text-white/65">{game.tournamentName ?? "—"}</div>
+                      </div>
+                    </div>
+                    <div className="mt-6 grid grid-cols-3 gap-2 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" onClick={() => void copyLink(game.code)} className="flex h-8 items-center justify-center rounded-full text-[10px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-white/10">Copy</button>
+                      <button type="button" onClick={() => void downloadQr(game.code, game.title)} className="flex h-8 items-center justify-center rounded-full text-[10px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-white/10">QR</button>
+                      <a href={predictionLinkFor(game.code)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex h-8 items-center justify-center rounded-full text-[10px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-white/10">Open</a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-hidden rounded-[22px] border border-white/18 bg-white/8 md:block">
               <div className="grid grid-cols-[0.7fr_1fr_1.35fr_0.9fr_0.7fr_0.5fr_0.48fr_0.48fr_0.48fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
                 {[["sport","Sport"],["match","Match Name"],["date","Date"],["status","Status"],["players","Players"]].map(([key, label]) => (
                   <button key={key} type="button" onClick={() => sortGames(key as any)} className="text-left">{label}</button>
@@ -663,10 +829,43 @@ export function GamesPage() {
                 ))}
               </div>
             </div>
+            </>
           )}
         </Panel>
           </div>
         </section>
+
+      {/* Mobile floating menu */}
+      <div className="lg:hidden">
+        {isMobileDateFilterOpen && (
+          <div
+            className="fixed inset-0 z-[55] flex items-end justify-center bg-black/35 px-5 pb-24 backdrop-blur-sm sm:hidden"
+            onClick={() => setIsMobileDateFilterOpen(false)}
+          >
+            <div
+              className="w-full max-w-[320px] rounded-[26px] border border-white/14 bg-[#7f8d82] p-3 shadow-[0_24px_70px_rgba(35,54,47,0.32)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {(["all", "today", "week", "month", "ended"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => {
+                    setGameDateFilter(v);
+                    setIsMobileDateFilterOpen(false);
+                  }}
+                  className={`mb-2 flex h-12 w-full items-center justify-between rounded-full px-5 text-[11px] font-black uppercase tracking-[0.14em] transition last:mb-0 ${gameDateFilter === v ? "bg-white text-[#365665]" : "bg-[#ffd66b] text-[#365665]"}`}
+                >
+                  <span>{v === "all" ? "All" : v === "today" ? "Today" : v === "week" ? "This week" : v === "month" ? "This month" : "Ended"}</span>
+                  {gameDateFilter === v ? <span>✓</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {AdminMobileFloatingMenu ? <AdminMobileFloatingMenu active="games" /> : null}
+      </div>
 
       {/* Hidden CSV input */}
       <input ref={csvFileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFileChange} />
@@ -810,7 +1009,6 @@ export function GamesPage() {
         </div>
       )}
       </div>
-      <AdminMobileFloatingMenu active="games" />
     </main>
   );
 }

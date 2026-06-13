@@ -1,128 +1,101 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
 
 type AdminMobileFloatingMenuProps = {
-  active?: string;
+  active?: "overview" | "activity" | "users" | "loyalty-program" | "comment-cards" | "games" | "gifts" | "birthdays" | "news";
   onBeforeNavigate?: () => void;
+  className?: string;
 };
 
 const MENU_ITEMS = [
-  {
-    label: "Overview",
-    icon: "⌂",
-    href: "/admin",
-    activeKey: "overview",
-  },
-  {
-    label: "Activity",
-    icon: "↯",
-    href: "/admin/activity",
-    activeKey: "activity",
-  },
-  {
-    label: "Users",
-    icon: "♟",
-    href: "/admin/users",
-    activeKey: "users",
-  },
-  {
-    label: "Loyalty Program",
-    icon: "★",
-    href: "/admin?tab=Loyalty+Program",
-    activeKey: "loyalty-program",
-  },
-  {
-    label: "Comment Card",
-    icon: "✎",
-    href: "/admin/comment-cards",
-    activeKey: "comment-cards",
-  },
-  {
-    label: "Games",
-    icon: "🎮",
-    href: "/admin/predictions",
-    activeKey: "games",
-  },
-];
+  { key: "overview", label: "Overview", icon: "⌂", href: "/admin" },
+  { key: "activity", label: "Activity", icon: "↯", href: "/admin/activity" },
+  { key: "users", label: "Users", icon: "♟", href: "/admin/users" },
+  { key: "loyalty-program", label: "Loyalty", icon: "★", href: "/admin/loyalty" },
+  { key: "comment-cards", label: "Comment Card", icon: "✎", href: "/admin/comment-cards" },
+  { key: "games", label: "Games", icon: "🎮", href: "/admin/games" },
+  { key: "gifts", label: "Gifts", icon: "🎁", href: "/admin/gifts" },
+  { key: "birthdays", label: "Birthdays", icon: "🎂", href: "/admin/birthdays" },
+  { key: "news", label: "News", icon: "📣", href: "/admin/news" },
+] as const;
 
-function getActiveKey(pathname: string) {
-  if (pathname === "/admin") return "overview";
-  if (pathname.startsWith("/admin/activity")) return "activity";
-  if (pathname.startsWith("/admin/users")) return "users";
-  if (pathname.startsWith("/admin/comment-cards")) return "comment-cards";
-  if (pathname.startsWith("/admin/predictions")) return "games";
-  if (pathname.startsWith("/admin/games")) return "games";
-
+function inferActiveFromPath(pathname: string) {
+  if (pathname === "/admin/activity") return "activity";
+  if (pathname === "/admin/users") return "users";
+  if (pathname === "/admin/loyalty") return "loyalty-program";
+  if (pathname === "/admin/comment-cards") return "comment-cards";
+  if (pathname === "/admin/games" || pathname === "/admin/predictions" || pathname.startsWith("/admin/game-links")) return "games";
+  if (pathname === "/admin/gifts") return "gifts";
+  if (pathname === "/admin/birthdays") return "birthdays";
+  if (pathname === "/admin/news") return "news";
   return "overview";
 }
 
 export function AdminMobileFloatingMenu({
   active,
   onBeforeNavigate,
+  className = "",
 }: AdminMobileFloatingMenuProps) {
   const pathname = usePathname();
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const activeKey = active ?? getActiveKey(pathname);
+  const activeKey = useMemo(
+    () => active ?? inferActiveFromPath(pathname),
+    [active, pathname],
+  );
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent | TouchEvent) {
-      if (!isOpen) return;
+    if (!isOpen) return;
 
-      const target = event.target as Node;
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      const target = event.target as Node | null;
+      if (!target || !menuRef.current) return;
 
-      if (menuRef.current && !menuRef.current.contains(target)) {
+      if (!menuRef.current.contains(target)) {
         setIsOpen(false);
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
 
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
     };
   }, [isOpen]);
 
   return (
     <div
       ref={menuRef}
-      className="fixed bottom-5 right-4 z-50 flex flex-col items-end lg:hidden"
+      className={`fixed bottom-5 right-4 z-50 flex flex-col items-end lg:hidden ${className}`}
     >
       {isOpen ? (
         <div className="mb-3 flex flex-col items-end gap-2">
           {MENU_ITEMS.map((item) => {
-            const isActive = activeKey === item.activeKey;
+            const isActive = activeKey === item.key;
 
             return (
               <Link
-                key={item.activeKey}
+                key={item.key}
                 href={item.href}
                 onClick={() => {
-                  setIsOpen(false);
                   onBeforeNavigate?.();
+                  setIsOpen(false);
                 }}
-                className={`group flex h-12 min-w-[164px] items-center justify-start gap-2 rounded-full border px-5 text-[11px] font-black shadow-[0_16px_34px_rgba(20,30,26,0.22)] backdrop-blur-2xl transition active:scale-[0.98] ${
+                className={`group flex h-11 min-w-[154px] items-center justify-start gap-2 rounded-full px-4 text-[11px] font-black shadow-[0_14px_34px_rgba(20,30,26,0.24)] transition active:scale-[0.98] ${
                   isActive
-                    ? "border-white/70 bg-white text-[#61716b]"
-                    : "border-[#FFD66B]/60 bg-[#FFD66B] text-[#61716b] hover:bg-[#FFD66B]"
+                    ? "bg-white text-[#61716b]"
+                    : "bg-[#ffd66b] text-[#61716b] hover:bg-[#ffe08a]"
                 }`}
               >
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] ${
-                    isActive
-                      ? "bg-[#FFD66B] text-[#61716b]"
-                      : "bg-white/35 text-[#61716b]"
-                  }`}
-                >
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] text-[#61716b] ${isActive ? "bg-[#ffd66b]" : "bg-white/24"}`}>
                   {item.icon}
                 </span>
-
                 <span className="whitespace-nowrap">{item.label}</span>
               </Link>
             );
@@ -132,8 +105,8 @@ export function AdminMobileFloatingMenu({
 
       <button
         type="button"
-        onClick={() => setIsOpen((current) => !current)}
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-[#FFD66B] text-[28px] font-black text-[#61716b] shadow-[0_18px_42px_rgba(20,30,26,0.28)] transition active:scale-95"
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ffd66b] text-[28px] font-black text-[#61716b] shadow-[0_18px_42px_rgba(20,30,26,0.28)] transition active:scale-95"
         aria-label={isOpen ? "Close admin menu" : "Open admin menu"}
       >
         {isOpen ? "×" : "☰"}

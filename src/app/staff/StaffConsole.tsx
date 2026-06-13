@@ -7,7 +7,13 @@ import { motion } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import { Toast } from "@/components/Toast";
 import { createClient } from "@/lib/supabase/client";
-import type { AddStampResult, ClientStamp, LoyaltyCategory, Profile, Reward } from "@/types";
+import type {
+  AddStampResult,
+  ClientStamp,
+  LoyaltyCategory,
+  Profile,
+  Reward,
+} from "@/types";
 
 interface Props {
   profile: Profile;
@@ -16,6 +22,15 @@ interface Props {
 
 type ClaimedReward = Reward & {
   client?: Profile;
+};
+
+type StaffAnnouncement = {
+  id: string;
+  title: string | null;
+  body: string | null;
+  is_active: boolean | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 };
 
 const pageGradient =
@@ -27,7 +42,9 @@ type PushStatus = "idle" | "unsupported" | "blocked" | "enabled" | "error";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = `${base64String}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const base64 = `${base64String}${padding}`
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
 
@@ -38,13 +55,16 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-
-
 // Loads jsQR as a fallback for browsers without BarcodeDetector (Safari, Firefox)
 function loadJsQrScript(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    if ((window as any).jsQR) { resolve(); return; }
-    const existing = document.getElementById("pros-jsqr-script") as HTMLScriptElement | null;
+    if ((window as any).jsQR) {
+      resolve();
+      return;
+    }
+    const existing = document.getElementById(
+      "pros-jsqr-script",
+    ) as HTMLScriptElement | null;
     if (existing) {
       existing.addEventListener("load", () => resolve(), { once: true });
       existing.addEventListener("error", () => reject(), { once: true });
@@ -132,20 +152,33 @@ function UniversalStableQrScanner({
       (detectorRef.current.detect(video) as Promise<any[]>)
         .then((barcodes) => {
           const val = String(barcodes?.[0]?.rawValue ?? "").trim();
-          if (val) { void finishWithResult(val); } else { doNextFrame(); }
+          if (val) {
+            void finishWithResult(val);
+          } else {
+            doNextFrame();
+          }
         })
         .catch(doNextFrame);
     } else {
       // Path B: jsQR canvas decode (Safari / Firefox fallback)
       const canvas = canvasRef.current;
-      if (!canvas) { doNextFrame(); return; }
+      if (!canvas) {
+        doNextFrame();
+        return;
+      }
       const vw = video.videoWidth;
       const vh = video.videoHeight;
-      if (!vw || !vh) { doNextFrame(); return; }
+      if (!vw || !vh) {
+        doNextFrame();
+        return;
+      }
       canvas.width = vw;
       canvas.height = vh;
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) { doNextFrame(); return; }
+      if (!ctx) {
+        doNextFrame();
+        return;
+      }
       ctx.drawImage(video, 0, 0, vw, vh);
       const imageData = ctx.getImageData(0, 0, vw, vh);
       const result = (window as any).jsQR?.(imageData.data, vw, vh, {
@@ -175,13 +208,20 @@ function UniversalStableQrScanner({
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
 
       streamRef.current = stream;
       const video = videoRef.current;
-      if (!video) { setStatus("Scanner view not ready — please try again."); return; }
+      if (!video) {
+        setStatus("Scanner view not ready — please try again.");
+        return;
+      }
 
       video.srcObject = stream;
       video.setAttribute("playsinline", "true");
@@ -209,14 +249,16 @@ function UniversalStableQrScanner({
         }
       }
     } catch {
-      setStatus("Camera permission blocked. Allow camera access and tap Restart.");
+      setStatus(
+        "Camera permission blocked. Allow camera access and tap Restart.",
+      );
     }
   }, [scanLoop, stopEverything]);
 
   useEffect(() => {
     void startCamera();
     return () => stopEverything();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -304,6 +346,56 @@ function StaffConsole({ profile, categories }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"success" | "error">("success");
   const [pushStatus, setPushStatus] = useState<PushStatus>("idle");
+  const [announcement, setAnnouncement] = useState<StaffAnnouncement | null>(
+    null,
+  );
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+
+  const loadStaffAnnouncement = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("staff_announcements")
+      .select("id, title, body, is_active, updated_at, created_at")
+      .eq("audience", "staff")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Could not load staff announcement", error);
+      return;
+    }
+
+    const row = data as StaffAnnouncement | null;
+    if (row?.is_active && (row.title?.trim() || row.body?.trim())) {
+      setAnnouncement(row);
+    } else {
+      setAnnouncement(null);
+      setAnnouncementOpen(false);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    void loadStaffAnnouncement();
+
+    const channel = supabase
+      .channel("staff-announcements-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "staff_announcements",
+          filter: "audience=eq.staff",
+        },
+        () => {
+          void loadStaffAnnouncement();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadStaffAnnouncement, supabase]);
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -317,18 +409,30 @@ function StaffConsole({ profile, categories }: Props) {
     return map;
   }, [stamps]);
 
-  const flash = useCallback((message: string, tone: "success" | "error" = "success") => {
-    setToastTone(tone);
-    setToast(message);
-    setTimeout(() => setToast(null), 2200);
-  }, []);
+  const flash = useCallback(
+    (message: string, tone: "success" | "error" = "success") => {
+      setToastTone(tone);
+      setToast(message);
+      setTimeout(() => setToast(null), 2200);
+    },
+    [],
+  );
 
   const enableClaimNotifications = useCallback(
     async (showFeedback = true) => {
       try {
-        if (!VAPID_PUBLIC_KEY || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        if (
+          !VAPID_PUBLIC_KEY ||
+          !("serviceWorker" in navigator) ||
+          !("PushManager" in window) ||
+          !("Notification" in window)
+        ) {
           setPushStatus("unsupported");
-          if (showFeedback) flash("Push notifications are not supported on this device.", "error");
+          if (showFeedback)
+            flash(
+              "Push notifications are not supported on this device.",
+              "error",
+            );
           return;
         }
 
@@ -340,14 +444,19 @@ function StaffConsole({ profile, categories }: Props) {
 
         if (permission !== "granted") {
           setPushStatus("blocked");
-          if (showFeedback) flash("Notifications are blocked. Enable them from your browser settings.", "error");
+          if (showFeedback)
+            flash(
+              "Notifications are blocked. Enable them from your browser settings.",
+              "error",
+            );
           return;
         }
 
         const registration = await navigator.serviceWorker.register("/sw.js");
         const readyRegistration = await navigator.serviceWorker.ready;
 
-        let subscription = await readyRegistration.pushManager.getSubscription();
+        let subscription =
+          await readyRegistration.pushManager.getSubscription();
 
         if (!subscription) {
           subscription = await readyRegistration.pushManager.subscribe({
@@ -373,7 +482,13 @@ function StaffConsole({ profile, categories }: Props) {
       } catch (error) {
         console.error("Push subscription failed", error);
         setPushStatus("error");
-        if (showFeedback) flash(error instanceof Error ? error.message : "Could not enable claim alerts.", "error");
+        if (showFeedback)
+          flash(
+            error instanceof Error
+              ? error.message
+              : "Could not enable claim alerts.",
+            "error",
+          );
       }
     },
     [flash],
@@ -390,7 +505,6 @@ function StaffConsole({ profile, categories }: Props) {
 
   const loadClaimedRewards = useCallback(async () => {
     await cleanupRewardTimers();
-    
 
     const { data: rewardRows, error } = await supabase
       .from("rewards")
@@ -404,16 +518,23 @@ function StaffConsole({ profile, categories }: Props) {
     }
 
     const rewardsToApprove = (rewardRows ?? []) as Reward[];
-    const clientIds = Array.from(new Set(rewardsToApprove.map((reward) => reward.client_id)));
+    const clientIds = Array.from(
+      new Set(rewardsToApprove.map((reward) => reward.client_id)),
+    );
 
     if (clientIds.length === 0) {
       setClaimedRewards([]);
       return;
     }
 
-    const { data: clientRows } = await supabase.from("profiles").select("*").in("id", clientIds);
+    const { data: clientRows } = await supabase
+      .from("profiles")
+      .select("*")
+      .in("id", clientIds);
     const clientById = new Map<string, Profile>();
-    ((clientRows ?? []) as Profile[]).forEach((row) => clientById.set(row.id, row));
+    ((clientRows ?? []) as Profile[]).forEach((row) =>
+      clientById.set(row.id, row),
+    );
 
     setClaimedRewards(
       rewardsToApprove.map((reward) => ({
@@ -426,7 +547,6 @@ function StaffConsole({ profile, categories }: Props) {
   const refreshSelectedClient = useCallback(
     async (clientId: string) => {
       await cleanupRewardTimers();
-      
 
       const [{ data: nextStamps }, { data: nextRewards }] = await Promise.all([
         supabase.from("client_stamps").select("*").eq("client_id", clientId),
@@ -447,7 +567,9 @@ function StaffConsole({ profile, categories }: Props) {
   const runSearch = useCallback(
     async (searchValue: string) => {
       setSearching(true);
-      const res = await fetch(`/api/client/search?q=${encodeURIComponent(searchValue)}`);
+      const res = await fetch(
+        `/api/client/search?q=${encodeURIComponent(searchValue)}`,
+      );
       const json = await readApiResponse<{ results?: Profile[] }>(res);
       setSearching(false);
 
@@ -488,7 +610,8 @@ function StaffConsole({ profile, categories }: Props) {
       if (fromQuery) return fromQuery.trim().replace(/^#/, "");
 
       const lastPathPart = url.pathname.split("/").filter(Boolean).pop();
-      if (lastPathPart) return decodeURIComponent(lastPathPart).trim().replace(/^#/, "");
+      if (lastPathPart)
+        return decodeURIComponent(lastPathPart).trim().replace(/^#/, "");
     } catch {
       // QR is usually a plain client code.
     }
@@ -507,11 +630,19 @@ function StaffConsole({ profile, categories }: Props) {
       }
 
       try {
-        const res = await fetch(`/api/client/scan?code=${encodeURIComponent(code)}`, { cache: "no-store" });
+        const res = await fetch(
+          `/api/client/scan?code=${encodeURIComponent(code)}`,
+          { cache: "no-store" },
+        );
         const json = await readApiResponse<{ client?: Profile }>(res);
 
         if (!res.ok || !json.client) {
-          flash(json.error ? `${json.error}: ${code}` : `Client not found for QR: ${code}`, "error");
+          flash(
+            json.error
+              ? `${json.error}: ${code}`
+              : `Client not found for QR: ${code}`,
+            "error",
+          );
           setScanning(false);
           return;
         }
@@ -524,7 +655,7 @@ function StaffConsole({ profile, categories }: Props) {
         setQuery("");
         setSelectedCategories([]);
         setShowPasswordEditor(false);
-          setNewPassword("");
+        setNewPassword("");
         await refreshSelectedClient(foundClient.id);
         await loadClaimedRewards();
 
@@ -537,7 +668,10 @@ function StaffConsole({ profile, categories }: Props) {
         window.scrollTo({ top: 0, behavior: "smooth" });
         flash(`Opened ${foundClient.full_name}.`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Could not open scanned client.";
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not open scanned client.";
         flash(message, "error");
         setScanning(false);
       }
@@ -557,7 +691,9 @@ function StaffConsole({ profile, categories }: Props) {
     );
   }
 
-  async function readApiResponse<T = any>(res: Response): Promise<T & { error?: string }> {
+  async function readApiResponse<T = any>(
+    res: Response,
+  ): Promise<T & { error?: string }> {
     const contentType = res.headers.get("content-type") ?? "";
 
     if (contentType.includes("application/json")) {
@@ -596,7 +732,10 @@ function StaffConsole({ profile, categories }: Props) {
     setBusy(false);
 
     if (!res.ok) {
-      flash(json.error ?? `Could not update password. Status ${res.status}`, "error");
+      flash(
+        json.error ?? `Could not update password. Status ${res.status}`,
+        "error",
+      );
       return;
     }
 
@@ -651,7 +790,9 @@ function StaffConsole({ profile, categories }: Props) {
       return;
     }
 
-    flash(`Stamp added to ${addedCount} ${addedCount === 1 ? "category" : "categories"}.`);
+    flash(
+      `Stamp added to ${addedCount} ${addedCount === 1 ? "category" : "categories"}.`,
+    );
   }
 
   async function confirmReward(rewardId: string) {
@@ -670,7 +811,9 @@ function StaffConsole({ profile, categories }: Props) {
     }
 
     setRewards((prev) => prev.filter((reward) => reward.id !== rewardId));
-    setClaimedRewards((prev) => prev.filter((reward) => reward.id !== rewardId));
+    setClaimedRewards((prev) =>
+      prev.filter((reward) => reward.id !== rewardId),
+    );
     flash("Reward confirmed.");
 
     if (client) await refreshSelectedClient(client.id);
@@ -704,9 +847,13 @@ function StaffConsole({ profile, categories }: Props) {
 
     const rewardChannel = supabase
       .channel("staff-claimed-rewards")
-      .on("postgres_changes", { event: "*", schema: "public", table: "rewards" }, () => {
-        void loadClaimedRewards();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "rewards" },
+        () => {
+          void loadClaimedRewards();
+        },
+      )
       .subscribe();
 
     return () => {
@@ -740,11 +887,14 @@ function StaffConsole({ profile, categories }: Props) {
       .replace(/ Item$/i, "")
       .trim();
 
-    if (/sandwiches/i.test(text)) return text.replace(/sandwiches/i, "Sandwich");
+    if (/sandwiches/i.test(text))
+      return text.replace(/sandwiches/i, "Sandwich");
     if (/desserts/i.test(text)) return text.replace(/desserts/i, "Dessert");
-    if (/main courses/i.test(text)) return text.replace(/main courses/i, "Main Course");
+    if (/main courses/i.test(text))
+      return text.replace(/main courses/i, "Main Course");
     if (/coffees/i.test(text)) return text.replace(/coffees/i, "Coffee");
-    if (/hookas|hookahs/i.test(text)) return text.replace(/hookas|hookahs/i, "Hooka");
+    if (/hookas|hookahs/i.test(text))
+      return text.replace(/hookas|hookahs/i, "Hooka");
 
     return text;
   }
@@ -761,7 +911,8 @@ function StaffConsole({ profile, categories }: Props) {
           <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-white/20">
             <Image
               src={
-                reward.reward_type === "20% Discount" || reward.reward_type === "Free Dessert"
+                reward.reward_type === "20% Discount" ||
+                reward.reward_type === "Free Dessert"
                   ? "/birthday-cake.png"
                   : "/gift.png"
               }
@@ -782,7 +933,12 @@ function StaffConsole({ profile, categories }: Props) {
               </div>
             )}
             <div className="mt-1 text-[12px] font-bold text-white/88">
-              Claimed {new Date((reward as any).claimed_at || reward.earned_at || reward.created_at).toLocaleDateString()}
+              Claimed{" "}
+              {new Date(
+                (reward as any).claimed_at ||
+                  reward.earned_at ||
+                  reward.created_at,
+              ).toLocaleDateString()}
             </div>
             <div className="mt-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#ffd66b]">
               Pending approval
@@ -803,9 +959,18 @@ function StaffConsole({ profile, categories }: Props) {
   };
 
   return (
-    <AppShell title="Staff Console" role={profile.role} pageBackground={pageGradient}>
+    <AppShell
+      title="Staff Console"
+      role={profile.role}
+      pageBackground={pageGradient}
+    >
       <Toast message={toast} tone={toastTone} />
-      {scanning && <UniversalStableQrScanner onResult={onScanResult} onClose={() => setScanning(false)} />}
+      {scanning && (
+        <UniversalStableQrScanner
+          onResult={onScanResult}
+          onClose={() => setScanning(false)}
+        />
+      )}
 
       <div className="mx-auto w-full max-w-md px-4 pb-12 pt-5 font-raleway text-white">
         {!client && (
@@ -823,10 +988,52 @@ function StaffConsole({ profile, categories }: Props) {
                 <h1 className="text-[28px] font-black leading-[1.05] tracking-[-0.04em] text-white">
                   Hello,
                   <br />
-                  <span className="text-[#ffd66b]">{profile.full_name || "Staff"}</span>
+                  <span className="text-[#ffd66b]">
+                    {profile.full_name || "Staff"}
+                  </span>
                 </h1>
               </div>
             </div>
+
+            {announcement && (
+              <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/14 shadow-[0_18px_44px_rgba(20,30,26,0.14)] backdrop-blur-2xl">
+                <button
+                  type="button"
+                  onClick={() => setAnnouncementOpen((current) => !current)}
+                  className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+                >
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">
+                      Announcements
+                    </div>
+                    <div className="mt-1 truncate text-[16px] font-black text-white">
+                      {announcement.title?.trim() || "Staff announcement"}
+                    </div>
+                  </div>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[18px] font-black text-[#365665]">
+                    {announcementOpen ? "−" : "+"}
+                  </span>
+                </button>
+
+                {announcementOpen && (
+                  <div className="border-t border-white/12 px-5 pb-5 pt-4">
+                    <p className="whitespace-pre-wrap text-[14px] font-bold leading-6 text-white/82">
+                      {announcement.body?.trim() || "No announcement text yet."}
+                    </p>
+                    {(announcement.updated_at || announcement.created_at) && (
+                      <div className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                        Updated{" "}
+                        {new Date(
+                          announcement.updated_at ||
+                            announcement.created_at ||
+                            "",
+                        ).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {pushStatus !== "enabled" && (
               <button
@@ -865,7 +1072,11 @@ function StaffConsole({ profile, categories }: Props) {
               </button>
             </div>
 
-            {searching && <div className="px-1 text-[12px] font-bold text-white/70">Searching...</div>}
+            {searching && (
+              <div className="px-1 text-[12px] font-bold text-white/70">
+                Searching...
+              </div>
+            )}
 
             <div className="space-y-3">
               {results.map((result) => (
@@ -876,7 +1087,9 @@ function StaffConsole({ profile, categories }: Props) {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-[18px] font-black text-white">{result.full_name}</div>
+                      <div className="truncate text-[18px] font-black text-white">
+                        {result.full_name}
+                      </div>
                       {(result.phone || result.id_number) && (
                         <div className="mt-1 truncate text-[13px] font-bold text-white/70">
                           {maskPhoneNumber(result.phone) || "No phone"}
@@ -904,7 +1117,9 @@ function StaffConsole({ profile, categories }: Props) {
             {claimedRewards.length > 0 && (
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between px-1">
-                  <h2 className="text-[21px] font-black text-white">Reward Claims</h2>
+                  <h2 className="text-[21px] font-black text-white">
+                    Reward Claims
+                  </h2>
                   <span className="rounded-full bg-white/16 px-3 py-1 text-[11px] font-black text-[#ffd66b]">
                     {claimedRewards.length} pending
                   </span>
@@ -962,12 +1177,11 @@ function StaffConsole({ profile, categories }: Props) {
                       type="button"
                       onClick={() => {
                         setShowPasswordEditor((value) => !value);
-                                        }}
+                      }}
                       className="rounded-full bg-[#ffd66b] px-4 py-2 text-[12px] font-black text-[#365665] shadow-[0_12px_26px_rgba(255,214,107,0.20)]"
                     >
                       Change password
                     </button>
-
                   </div>
 
                   {showPasswordEditor && (
@@ -979,7 +1193,9 @@ function StaffConsole({ profile, categories }: Props) {
                         <input
                           type="password"
                           value={newPassword}
-                          onChange={(event) => setNewPassword(event.target.value)}
+                          onChange={(event) =>
+                            setNewPassword(event.target.value)
+                          }
                           placeholder="New password"
                           className="min-w-0 flex-1 rounded-full bg-[#e7e9e3] px-4 py-3 text-[13px] font-black text-[#365665] outline-none placeholder:text-[#365665]/55"
                         />
@@ -994,7 +1210,6 @@ function StaffConsole({ profile, categories }: Props) {
                       </div>
                     </div>
                   )}
-
                 </div>
               </div>
             </section>
@@ -1002,7 +1217,9 @@ function StaffConsole({ profile, categories }: Props) {
             {rewards.length > 0 && (
               <section className="mb-5 space-y-3">
                 <div className="flex items-center justify-between px-1">
-                  <h2 className="text-[21px] font-black text-white">Reward Claims</h2>
+                  <h2 className="text-[21px] font-black text-white">
+                    Reward Claims
+                  </h2>
                   <span className="rounded-full bg-white/16 px-3 py-1 text-[11px] font-black text-[#ffd66b]">
                     {rewards.length} pending
                   </span>
@@ -1014,7 +1231,9 @@ function StaffConsole({ profile, categories }: Props) {
             <section className="mb-5">
               <div className="mb-3 flex items-end justify-between gap-3">
                 <div>
-                  <h2 className="text-[22px] font-black text-white">Select Categories</h2>
+                  <h2 className="text-[22px] font-black text-white">
+                    Select Categories
+                  </h2>
                   <p className="mt-1 text-[12px] font-semibold text-white/68">
                     Choose one or more categories.
                   </p>
@@ -1046,7 +1265,11 @@ function StaffConsole({ profile, categories }: Props) {
                       }`}
                     >
                       <div className="mb-3 flex items-center justify-between gap-3">
-                        <span className="text-[17px] font-black text-white">{category.name === "Desserts 2" ? "Hooka" : category.name}</span>
+                        <span className="text-[17px] font-black text-white">
+                          {category.name === "Desserts 2"
+                            ? "Hooka"
+                            : category.name}
+                        </span>
                         <span className="rounded-full bg-white/16 px-3 py-1 text-[12px] font-black tabular-nums text-[#ffd66b]">
                           {count}/5
                         </span>

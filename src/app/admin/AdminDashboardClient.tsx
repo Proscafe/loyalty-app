@@ -13,6 +13,7 @@ interface Metrics {
 
 interface Props {
   profile: Profile;
+  initialTab?: "Overview" | "Activity" | "Gifts" | "Birthdays" | "Comment Cards" | "Loyalty Program";
   users?: Profile[];
   recentTxns?: StampTransaction[];
   recentRewards?: Reward[];
