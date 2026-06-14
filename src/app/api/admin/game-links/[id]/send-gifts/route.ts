@@ -15,16 +15,6 @@ type GiftPayload = {
   description: string;
 };
 
-type EmailDebugRow = {
-  type: "admin" | "winner";
-  client_id?: string;
-  name?: string;
-  to?: string;
-  email_source?: "profiles.email" | "auth.email" | "missing";
-  status: "sent" | "skipped" | "failed";
-  detail: string;
-};
-
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -116,7 +106,7 @@ function winnerCategoryForEntry(match: any, entry: any) {
       ? entry.predicted_winner || (Number(entry.home_score ?? 0) >= Number(entry.away_score ?? 0) ? "home" : "away")
       : winnerForScores(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0));
 
-  if (actualWinner === "draw" || predictedWinner !== actualWinner) return null;
+  if (predictedWinner !== actualWinner) return null;
 
   if (match.sport_type === "basketball") {
     const actualMargin = Math.abs(actualHome - actualAway);
@@ -354,15 +344,15 @@ async function sendWithGmailSmtp({
   to: string;
   subject: string;
   text: string;
-}): Promise<string> {
-  const smtpUser = process.env.GMAIL_SMTP_USER || process.env.GMAIL_USER || process.env.SMTP_USER;
+}) {
+  const smtpUser = process.env.GMAIL_SMTP_USER || process.env.SMTP_USER;
   const smtpPassword = normalizeAppPassword(
-    process.env.GMAIL_SMTP_APP_PASSWORD || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASSWORD || "",
+    process.env.GMAIL_SMTP_APP_PASSWORD || process.env.SMTP_PASSWORD || "",
   );
 
   if (!smtpUser || !smtpPassword) {
     throw new Error(
-      "Gift email is not configured. Add GMAIL_SMTP_USER/GMAIL_SMTP_APP_PASSWORD or GMAIL_USER/GMAIL_APP_PASSWORD in Vercel.",
+      "Gift email is not configured. Add GMAIL_SMTP_USER and GMAIL_SMTP_APP_PASSWORD in Vercel.",
     );
   }
 
@@ -397,10 +387,8 @@ async function sendWithGmailSmtp({
       text,
     });
 
-    const acceptedResponse = await smtpCommand(socket, `${emailMessage}\r\n.`, [250]);
+    await smtpCommand(socket, `${emailMessage}\r\n.`, [250]);
     await smtpCommand(socket, "QUIT", [221]);
-
-    return acceptedResponse.trim();
   } finally {
     socket.destroy();
   }
@@ -433,24 +421,12 @@ export async function POST(req: Request, context: RouteContext) {
 
     const body = (await req.json().catch(() => ({}))) as {
       winner_client_ids?: string[];
-      gifts?: GiftPayload[];
-      randomize?: boolean;
     };
 
-    const winnerClientIds = Array.from(new Set((body.winner_client_ids ?? []).filter(Boolean)));
-    const gifts = (body.gifts ?? [])
-      .map((gift) => ({
-        label: clean(gift.label),
-        description: clean(gift.description),
-      }))
-      .filter((gift) => gift.label);
+    const winnerClientIds = Array.from(new Set((body.winner_client_ids ?? []).filter(Boolean))).slice(0, 3);
 
     if (winnerClientIds.length === 0) {
       return jsonError("Select winners first.", 400);
-    }
-
-    if (gifts.length === 0) {
-      return jsonError("Select at least one gift.", 400);
     }
 
     const { data: match } = await admin
@@ -460,6 +436,14 @@ export async function POST(req: Request, context: RouteContext) {
       .maybeSingle();
 
     if (!match) return jsonError("Game not found.", 404);
+
+    const matchGiftMarker = `prediction_match:${id}`;
+    const gifts = [
+      {
+        label: "Free Dessert",
+        description: `Free Dessert for ${match.home_team} vs ${match.away_team} prediction winner. ${matchGiftMarker}`,
+      },
+    ];
 
     const { data: entries, error: entriesError } = await admin
       .from("prediction_entries")
@@ -476,38 +460,27 @@ export async function POST(req: Request, context: RouteContext) {
 
     if (profilesError) return jsonError(profilesError.message, 400);
 
-    const profilesById = Object.fromEntries(
-      (profiles ?? []).map((row: any) => [
-        row.id,
-        { ...row, email_source: clean(row.email) ? "profiles.email" : "missing" },
-      ]),
-    );
+    const profilesById = Object.fromEntries((profiles ?? []).map((row: any) => [row.id, { ...row }]));
 
     await Promise.all(
       winnerClientIds.map(async (clientId) => {
-        const currentProfile = profilesById[clientId] ?? { id: clientId, email_source: "missing" };
+        const currentProfile = profilesById[clientId] ?? { id: clientId };
 
         if (clean(currentProfile.email)) {
-          profilesById[clientId] = { ...currentProfile, email_source: "profiles.email" };
+          profilesById[clientId] = currentProfile;
           return;
         }
 
         try {
-          const { data: authUserData, error: authLookupError } = await admin.auth.admin.getUserById(clientId);
+          const { data: authUserData } = await admin.auth.admin.getUserById(clientId);
           const authEmail = clean(authUserData?.user?.email);
 
           profilesById[clientId] = {
             ...currentProfile,
             email: authEmail || currentProfile.email || "",
-            email_source: authEmail ? "auth.email" : "missing",
-            auth_email_lookup_error: authLookupError?.message || "",
           };
-        } catch (error) {
-          profilesById[clientId] = {
-            ...currentProfile,
-            email_source: "missing",
-            auth_email_lookup_error: error instanceof Error ? error.message : "Auth email lookup failed.",
-          };
+        } catch {
+          profilesById[clientId] = currentProfile;
         }
       }),
     );
@@ -528,24 +501,54 @@ export async function POST(req: Request, context: RouteContext) {
       return jsonError("Create at least one active loyalty category before sending gifts.", 400);
     }
 
-    const rewardRows = (entries ?? []).flatMap((entry: any) =>
-      gifts.map((gift) => {
-        const description = gift.description || `Winner in ${match.sport_type === "basketball" ? "Basketball" : "Football"} Prediction`;
+    const { data: existingRewards, error: existingRewardsError } = await admin
+      .from("rewards")
+      .select("client_id, reward_type, description")
+      .in("client_id", winnerClientIds)
+      .eq("reward_type", "Free Dessert")
+      .ilike("description", `%${matchGiftMarker}%`);
 
-        return {
-          client_id: entry.client_id,
-          category_id: category.id,
-          reward_type: description ? `${gift.label} · ${description}` : gift.label,
-          status: "available",
-          earned_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-      }),
+    if (existingRewardsError) return jsonError(existingRewardsError.message, 400);
+
+    const alreadyRewardedClientIds = new Set(
+      (existingRewards ?? []).map((reward: any) => reward.client_id).filter(Boolean),
     );
 
-    const { error: rewardError } = await admin.from("rewards").insert(rewardRows);
+    const winnersForInsert = (entries ?? []).filter(
+      (entry: any) => !alreadyRewardedClientIds.has(entry.client_id),
+    );
 
-    if (rewardError) return jsonError(rewardError.message, 400);
+    const rewardRows = winnersForInsert.flatMap((entry: any) =>
+      gifts.map((gift) => ({
+        client_id: entry.client_id,
+        category_id: category.id,
+        reward_type: gift.label,
+        description: gift.description,
+        status: "available",
+        earned_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      })),
+    );
+
+    if (rewardRows.length > 0) {
+      const { error: rewardError } = await admin.from("rewards").insert(rewardRows);
+
+      if (rewardError) return jsonError(rewardError.message, 400);
+    }
+
+    if (rewardRows.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        rewards_created: 0,
+        already_sent: true,
+        gift_label: "Free Dessert",
+        locked_winner_client_ids: winnerClientIds,
+        admin_email_sent: false,
+        winner_emails_sent: 0,
+        winner_emails_skipped: 0,
+        email_errors: [],
+      });
+    }
 
     const csv = createWinnersCsv({
       match,
@@ -555,11 +558,10 @@ export async function POST(req: Request, context: RouteContext) {
     });
 
     const emailErrors: string[] = [];
-    const emailDebug: EmailDebugRow[] = [];
     let adminEmailSent = false;
 
     try {
-      const accepted = await sendWithGmailSmtp({
+      await sendWithGmailSmtp({
         to: "proscafe@gmail.com",
         subject: `Prediction winners - ${match.home_team} vs ${match.away_team}`,
         text: `Winners file for ${match.home_team} vs ${match.away_team}.
@@ -572,23 +574,9 @@ Winners: ${winnerClientIds.length}
 CSV:
 ${csv}`,
       });
-
       adminEmailSent = true;
-      emailDebug.push({
-        type: "admin",
-        to: "proscafe@gmail.com",
-        status: "sent",
-        detail: accepted || "Accepted by Gmail SMTP.",
-      });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Could not email winners file.";
-      emailErrors.push(`Admin email: ${detail}`);
-      emailDebug.push({
-        type: "admin",
-        to: "proscafe@gmail.com",
-        status: "failed",
-        detail,
-      });
+      emailErrors.push(error instanceof Error ? error.message : "Could not email winners file.");
     }
 
     let winnerEmailsSent = 0;
@@ -596,74 +584,43 @@ ${csv}`,
 
     for (const entry of entries ?? []) {
       const winnerProfile = profilesById[entry.client_id] ?? {};
-      const winnerName = clean(winnerProfile.full_name) || "Client";
       const winnerEmail = clean(winnerProfile.email);
-      const emailSource = winnerProfile.email_source === "auth.email" || winnerProfile.email_source === "profiles.email"
-        ? winnerProfile.email_source
-        : "missing";
 
       if (!winnerEmail) {
         winnerEmailsSkipped += 1;
-        emailDebug.push({
-          type: "winner",
-          client_id: entry.client_id,
-          name: winnerName,
-          email_source: "missing",
-          status: "skipped",
-          detail: winnerProfile.auth_email_lookup_error
-            ? `No email found. Auth lookup: ${winnerProfile.auth_email_lookup_error}`
-            : "No email found in profiles.email or Supabase Auth email.",
-        });
         continue;
       }
 
       try {
-        const accepted = await sendWithGmailSmtp({
+        await sendWithGmailSmtp({
           to: winnerEmail,
-          subject: "Congratulations - You Won a Gift From Pro's Cafe",
+          subject: "Congratulations — You Won a Gift From Pro's Cafe",
           text: createWinnerEmailText({
-            customerName: winnerName,
+            customerName: clean(winnerProfile.full_name) || "Client",
             match,
             giftNames: gifts.map((gift) => gift.label),
           }),
         });
 
         winnerEmailsSent += 1;
-        emailDebug.push({
-          type: "winner",
-          client_id: entry.client_id,
-          name: winnerName,
-          to: winnerEmail,
-          email_source: emailSource,
-          status: "sent",
-          detail: accepted || "Accepted by Gmail SMTP.",
-        });
       } catch (error) {
         winnerEmailsSkipped += 1;
-        const detail = error instanceof Error ? error.message : "Could not send winner email.";
-        emailErrors.push(`${winnerEmail}: ${detail}`);
-        emailDebug.push({
-          type: "winner",
-          client_id: entry.client_id,
-          name: winnerName,
-          to: winnerEmail,
-          email_source: emailSource,
-          status: "failed",
-          detail,
-        });
+        emailErrors.push(
+          `${winnerEmail}: ${error instanceof Error ? error.message : "Could not send winner email."}`,
+        );
       }
     }
 
     return NextResponse.json({
       ok: true,
       rewards_created: rewardRows.length,
+      already_sent: rewardRows.length === 0,
+      gift_label: "Free Dessert",
+      locked_winner_client_ids: winnerClientIds,
       admin_email_sent: adminEmailSent,
       winner_emails_sent: winnerEmailsSent,
       winner_emails_skipped: winnerEmailsSkipped,
-      email_errors: emailErrors.slice(0, 8),
-      email_debug: emailDebug,
-      smtp_from: process.env.GMAIL_SMTP_USER || process.env.GMAIL_USER || process.env.SMTP_USER || "missing",
-      smtp_configured: Boolean((process.env.GMAIL_SMTP_USER || process.env.GMAIL_USER || process.env.SMTP_USER) && (process.env.GMAIL_SMTP_APP_PASSWORD || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASSWORD)),
+      email_errors: emailErrors.slice(0, 3),
     });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Could not send gifts.", 500);

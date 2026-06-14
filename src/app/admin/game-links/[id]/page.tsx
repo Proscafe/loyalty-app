@@ -91,11 +91,27 @@ export default async function AdminGameLinkPage({ params }: PageProps) {
     (entry: any) => profileNames[entry.client_id]?.role === "client",
   );
 
+  let giftSentClientIds: string[] = [];
+
+  if (clientIds.length > 0) {
+    const { data: sentRewards } = await admin
+      .from("rewards")
+      .select("client_id, reward_type, description")
+      .in("client_id", clientIds)
+      .eq("reward_type", "Free Dessert")
+      .ilike("description", `%prediction_match:${id}%`);
+
+    giftSentClientIds = Array.from(
+      new Set((sentRewards ?? []).map((reward: any) => reward.client_id).filter(Boolean)),
+    );
+  }
+
   return (
     <GameLinkDetailsClient
       match={match}
       entries={clientEntries}
       profileNames={profileNames}
+      giftSentClientIds={giftSentClientIds}
     />
   );
 }

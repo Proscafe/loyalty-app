@@ -13,18 +13,25 @@ type MatchRow = {
   kickoff_at?: string | null;
   opens_at?: string | null;
   closes_at?: string | null;
-  home_score?: number | null;
-  away_score?: number | null;
+  home_score?: number | string | null;
+  away_score?: number | string | null;
+  final_home_score?: number | string | null;
+  final_away_score?: number | string | null;
   secret_code: string;
 };
 
 type EntryRow = {
   id: string;
   client_id: string;
-  home_score?: number | null;
-  away_score?: number | null;
+  home_score?: number | string | null;
+  away_score?: number | string | null;
+  predicted_home_score?: number | string | null;
+  predicted_away_score?: number | string | null;
+  prediction_home_score?: number | string | null;
+  prediction_away_score?: number | string | null;
   predicted_winner?: string | null;
-  predicted_margin?: number | null;
+  winner?: string | null;
+  predicted_margin?: number | string | null;
   points?: number | null;
   created_at?: string | null;
 };
@@ -53,6 +60,9 @@ type SendGiftResponse = {
   admin_email_sent?: boolean;
   winner_emails_sent?: number;
   winner_emails_skipped?: number;
+  locked_winner_client_ids?: string[];
+  already_sent?: boolean;
+  gift_label?: string;
   email_errors?: string[];
   email_debug?: SendGiftEmailDebugRow[];
   smtp_from?: string;
@@ -106,6 +116,46 @@ function toPredictionDatePayloadValue(value?: string | null) {
   return date.toISOString();
 }
 
+function toFiniteNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function matchHomeScore(match: MatchRow) {
+  return toFiniteNumber(match.home_score ?? match.final_home_score);
+}
+
+function matchAwayScore(match: MatchRow) {
+  return toFiniteNumber(match.away_score ?? match.final_away_score);
+}
+
+function entryHomeScore(entry: EntryRow) {
+  return toFiniteNumber(
+    entry.home_score ?? entry.predicted_home_score ?? entry.prediction_home_score,
+  ) ?? 0;
+}
+
+function entryAwayScore(entry: EntryRow) {
+  return toFiniteNumber(
+    entry.away_score ?? entry.predicted_away_score ?? entry.prediction_away_score,
+  ) ?? 0;
+}
+
+function normaliseWinnerValue(match: MatchRow, value?: string | null) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return null;
+
+  const home = String(match.home_team ?? "").trim().toLowerCase();
+  const away = String(match.away_team ?? "").trim().toLowerCase();
+
+  if (["home", "team_1", "team1", "1", home].includes(raw)) return "home";
+  if (["away", "team_2", "team2", "2", away].includes(raw)) return "away";
+  if (["draw", "tie", "x"].includes(raw)) return "draw";
+
+  return null;
+}
+
 function winnerForScores(home: number, away: number) {
   if (home > away) return "home";
   if (away > home) return "away";
@@ -137,51 +187,55 @@ function predictionText(match: MatchRow, entry: EntryRow) {
     return `${winner} by ${margin}`;
   }
 
-  return `${entry.home_score ?? 0} - ${entry.away_score ?? 0}`;
+  return `${entryHomeScore(entry)} - ${entryAwayScore(entry)}`;
 }
 
 function isResultSaved(match: MatchRow) {
-  return (
-    typeof match.home_score === "number" && typeof match.away_score === "number"
-  );
+  return matchHomeScore(match) !== null && matchAwayScore(match) !== null;
 }
 
 function entryPredictedWinner(match: MatchRow, entry: EntryRow) {
   if (inferSportType(match) === "basketball") {
-    if (
-      entry.predicted_winner === "home" ||
-      entry.predicted_winner === "away"
-    ) {
-      return entry.predicted_winner;
+    const explicitWinner = normaliseWinnerValue(
+      match,
+      entry.predicted_winner ?? entry.winner,
+    );
+
+    if (explicitWinner === "home" || explicitWinner === "away") {
+      return explicitWinner;
     }
 
-    return Number(entry.home_score ?? 0) >= Number(entry.away_score ?? 0)
-      ? "home"
-      : "away";
+    return entryHomeScore(entry) >= entryAwayScore(entry) ? "home" : "away";
   }
 
-  return winnerForScores(
-    Number(entry.home_score ?? 0),
-    Number(entry.away_score ?? 0),
+  const explicitWinner = normaliseWinnerValue(
+    match,
+    entry.predicted_winner ?? entry.winner,
   );
+
+  if (explicitWinner) return explicitWinner;
+
+  return winnerForScores(entryHomeScore(entry), entryAwayScore(entry));
 }
 
 function entryPredictedMargin(entry: EntryRow) {
-  return Number(
-    entry.predicted_margin ??
-      Math.max(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0)),
+  return (
+    toFiniteNumber(entry.predicted_margin) ??
+    Math.abs(entryHomeScore(entry) - entryAwayScore(entry))
   );
 }
 
 function winnerCategoryForEntry(match: MatchRow, entry: EntryRow) {
   if (!isResultSaved(match)) return null;
 
-  const actualHome = Number(match.home_score ?? 0);
-  const actualAway = Number(match.away_score ?? 0);
+  const actualHome = matchHomeScore(match);
+  const actualAway = matchAwayScore(match);
+
+  if (actualHome === null || actualAway === null) return null;
   const actualWinner = winnerForScores(actualHome, actualAway);
   const predictedWinner = entryPredictedWinner(match, entry);
 
-  if (actualWinner === "draw" || predictedWinner !== actualWinner) return null;
+  if (predictedWinner !== actualWinner) return null;
 
   if (inferSportType(match) === "basketball") {
     const actualMargin = Math.abs(actualHome - actualAway);
@@ -191,8 +245,7 @@ function winnerCategoryForEntry(match: MatchRow, entry: EntryRow) {
   }
 
   const exactScore =
-    Number(entry.home_score ?? 0) === actualHome &&
-    Number(entry.away_score ?? 0) === actualAway;
+    entryHomeScore(entry) === actualHome && entryAwayScore(entry) === actualAway;
 
   return exactScore ? "exact" : "team";
 }
@@ -282,14 +335,37 @@ function downloadQr(code: string, title: string) {
   anchor.click();
 }
 
+function sortEntriesByPointsThenName(
+  entries: EntryRow[],
+  profileNames: Record<string, { name: string; code: string; role?: string }>,
+) {
+  return entries.slice().sort((a, b) => {
+    const pointDiff = Number(b.points ?? 0) - Number(a.points ?? 0);
+    if (pointDiff !== 0) return pointDiff;
+
+    const aName = (profileNames[a.client_id]?.name ?? "Client").toLowerCase();
+    const bName = (profileNames[b.client_id]?.name ?? "Client").toLowerCase();
+
+    if (aName < bName) return -1;
+    if (aName > bName) return 1;
+
+    if (a.client_id < b.client_id) return -1;
+    if (a.client_id > b.client_id) return 1;
+
+    return 0;
+  });
+}
+
 export function GameLinkDetailsClient({
   match,
   entries,
   profileNames,
+  giftSentClientIds = [],
 }: {
   match: MatchRow;
   entries: EntryRow[];
   profileNames: Record<string, { name: string; code: string; role?: string }>;
+  giftSentClientIds?: string[];
 }) {
   const sportLabel =
     inferSportType(match) === "basketball" ? "Basketball" : "Football";
@@ -339,14 +415,10 @@ export function GameLinkDetailsClient({
   const [sendingGifts, setSendingGifts] = useState(false);
   const [sendResultPopupOpen, setSendResultPopupOpen] = useState(false);
   const [sendGiftResult, setSendGiftResult] = useState<SendGiftResponse | null>(null);
+  const [giftSentIds, setGiftSentIds] = useState<string[]>(giftSentClientIds);
 
   const sortedEntries = useMemo(() => {
-    return entries.slice().sort((a, b) => {
-      const aProfile = profileNames[a.client_id]?.name ?? "Client";
-      const bProfile = profileNames[b.client_id]?.name ?? "Client";
-
-      return aProfile.localeCompare(bProfile);
-    });
+    return sortEntriesByPointsThenName(entries, profileNames);
   }, [entries, profileNames]);
 
   const players = entries.length;
@@ -373,32 +445,8 @@ export function GameLinkDetailsClient({
   }, [entries, match]);
 
   const correctPredictionEntries = useMemo(() => {
-    const uniqueWinners = [
-      ...winnerGroups.exactWinners,
-      ...winnerGroups.teamWinners,
-    ].filter(
-      (entry, index, all) =>
-        all.findIndex((item) => item.client_id === entry.client_id) === index,
-    );
-
-    return uniqueWinners.slice().sort((a, b) => {
-      const aCategory = winnerCategoryForEntry(match, a) === "exact" ? 0 : 1;
-      const bCategory = winnerCategoryForEntry(match, b) === "exact" ? 0 : 1;
-
-      if (aCategory !== bCategory) return aCategory - bCategory;
-
-      const aName = (profileNames[a.client_id]?.name ?? "Client").toLowerCase();
-      const bName = (profileNames[b.client_id]?.name ?? "Client").toLowerCase();
-
-      if (aName < bName) return -1;
-      if (aName > bName) return 1;
-
-      if (a.client_id < b.client_id) return -1;
-      if (a.client_id > b.client_id) return 1;
-
-      return 0;
-    });
-  }, [match, profileNames, winnerGroups]);
+    return sortEntriesByPointsThenName(winnerGroups.exactWinners, profileNames);
+  }, [profileNames, winnerGroups.exactWinners]);
 
   const featuredWinners = useMemo(() => {
     const selectedEntries = selectedWinnerIds
@@ -413,18 +461,35 @@ export function GameLinkDetailsClient({
   }, [correctPredictionEntries, selectedWinnerIds]);
 
   const visibleFeaturedWinners = savedWinnersLoaded ? featuredWinners : [];
+  const giftsSentForSelected =
+    selectedWinnerIds.length > 0 &&
+    selectedWinnerIds.every((clientId) => giftSentIds.includes(clientId));
 
   useEffect(() => {
     const validClientIds = new Set(
       correctPredictionEntries.map((entry) => entry.client_id),
     );
+    const sentIds = giftSentClientIds
+      .filter((clientId) => validClientIds.has(clientId))
+      .slice(0, 3);
     const savedIds = readSavedWinnerIds(match.id)
       .filter((clientId) => validClientIds.has(clientId))
       .slice(0, 3);
+    const defaultLockedIds = correctPredictionEntries
+      .slice(0, 3)
+      .map((entry) => entry.client_id);
 
-    setSelectedWinnerIds(savedIds);
-    setSavedWinnersLoaded(true);
-  }, [correctPredictionEntries, match.id]);
+    const lockedIds = sentIds.length > 0 ? sentIds : savedIds.length > 0 ? savedIds : defaultLockedIds;
+
+    setSelectedWinnerIds((current) => {
+      const isSame =
+        current.length === lockedIds.length &&
+        current.every((clientId, index) => clientId === lockedIds[index]);
+
+      return isSame ? current : lockedIds;
+    });
+    setSavedWinnersLoaded((current) => (current ? current : true));
+  }, [correctPredictionEntries, giftSentClientIds, match.id]);
 
   useEffect(() => {
     if (!savedWinnersLoaded) return;
@@ -433,6 +498,8 @@ export function GameLinkDetailsClient({
   }, [match.id, savedWinnersLoaded, selectedWinnerIds]);
 
   function toggleWinner(clientId: string) {
+    if (resultSaved) return;
+
     setSelectedWinnerIds((current) =>
       current.includes(clientId)
         ? current.filter((id) => id !== clientId)
@@ -446,7 +513,7 @@ export function GameLinkDetailsClient({
     const candidates = correctPredictionEntries.slice();
 
     if (candidates.length === 0) {
-      setMessage("No right-team predictions available yet.");
+      setMessage("No exact-score winners available yet.");
       return;
     }
 
@@ -600,21 +667,8 @@ export function GameLinkDetailsClient({
   }
 
   async function sendGifts() {
-    const selectedGifts = giftOptions
-      .filter((gift) => gift.checked && gift.label.trim())
-      .map((gift) => ({
-        label: gift.label.trim(),
-        description:
-          gift.description.trim() || `Winner in ${sportLabel} Prediction`,
-      }));
-
     if (selectedWinnerIds.length === 0) {
       setMessage("Select at least one winner first.");
-      return;
-    }
-
-    if (selectedGifts.length === 0) {
-      setMessage("Select or add at least one gift first.");
       return;
     }
 
@@ -628,8 +682,6 @@ export function GameLinkDetailsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           winner_client_ids: selectedWinnerIds,
-          gifts: selectedGifts,
-          randomize: randomizeGifts,
         }),
       },
     );
@@ -654,6 +706,12 @@ export function GameLinkDetailsClient({
       });
       setSendResultPopupOpen(true);
       return;
+    }
+
+    if (json.locked_winner_client_ids?.length) {
+      setSelectedWinnerIds(json.locked_winner_client_ids.slice(0, 3));
+      setGiftSentIds((current) => Array.from(new Set([...current, ...json.locked_winner_client_ids!])));
+      writeSavedWinnerIds(match.id, json.locked_winner_client_ids.slice(0, 3));
     }
 
     setSendGiftResult(json);
@@ -764,37 +822,26 @@ export function GameLinkDetailsClient({
                     Correct predictions
                   </h2>
                   <p className="mt-1 text-[12px] font-bold text-white/62">
-                    Right team: {correctPredictionEntries.length} ·{" "}
+                    Right team: {winnerGroups.teamWinners.length} ·{" "}
                     {inferSportType(match) === "basketball"
                       ? "Right margin"
                       : "Right score"}
                     : {winnerGroups.exactWinners.length}
                   </p>
                   <p className="mt-2 text-[12px] font-bold text-[#ffd66b]">
-                    Randomize 3 from the right-team users, then send gifts to
-                    those selected winners.
+                    The selected 3 winners are locked for this result. Send Free Dessert gifts once.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={randomizeThreeGiftWinners}
-                    disabled={correctPredictionEntries.length === 0}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#ffd66b]/70 bg-white/10 text-[18px] font-black text-[#ffd66b] transition hover:bg-[#ffd66b] hover:text-[#365665] disabled:opacity-45"
-                    title="Shuffle and save 3 winners"
-                    aria-label="Shuffle and save 3 winners"
-                  >
-                    ⇄
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGiftPopupOpen(true)}
-                    disabled={selectedWinnerIds.length === 0}
+                    onClick={() => void sendGifts()}
+                    disabled={selectedWinnerIds.length === 0 || sendingGifts || giftsSentForSelected}
                     className="rounded-full bg-[#ffd66b] px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#365665] disabled:opacity-45"
-                    title="Send selected winners gifts"
+                    title="Send Free Dessert to locked winners"
                   >
-                    ✦ Send Gifts
+                    {giftsSentForSelected ? "✓ Gifts Sent" : sendingGifts ? "Sending..." : "✦ Send Gifts"}
                   </button>
                 </div>
               </div>
@@ -803,8 +850,11 @@ export function GameLinkDetailsClient({
                 <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
                   Selected gift winners
                 </div>
-                <div className="text-[11px] font-black text-[#ffd66b]">
-                  {selectedWinnerIds.length}/3 selected
+                <div className="text-right text-[11px] font-black text-[#ffd66b]">
+                  <div>{selectedWinnerIds.length}/3 selected</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-white/64">
+                    {giftsSentForSelected ? "Free Dessert sent" : "Free Dessert pending"}
+                  </div>
                 </div>
               </div>
 
@@ -825,7 +875,7 @@ export function GameLinkDetailsClient({
                       onClick={() => toggleWinner(entry.client_id)}
                       className={`rounded-[22px] border p-4 text-left transition ${colors[index % colors.length]} ${
                         selected ? "ring-2 ring-white/80" : ""
-                      }`}
+                      } ${resultSaved ? "cursor-default" : ""}`}
                     >
                       <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
                         Winner {index + 1}
@@ -846,7 +896,7 @@ export function GameLinkDetailsClient({
                   </div>
                 ) : visibleFeaturedWinners.length === 0 ? (
                   <div className="rounded-[22px] border border-white/16 bg-white/10 p-4 text-[13px] font-bold text-white/60 lg:col-span-3">
-                    No correct predictions yet.
+                    No exact-score winners available yet.
                   </div>
                 ) : null}
               </div>
@@ -880,7 +930,7 @@ export function GameLinkDetailsClient({
                         key={entry.id}
                         type="button"
                         onClick={() => toggleWinner(entry.client_id)}
-                        className={`flex items-center justify-between gap-3 rounded-[16px] border px-3 py-3 text-left transition ${
+                        className={`flex items-center justify-between gap-3 rounded-[16px] border px-3 py-3 text-left transition ${resultSaved ? "cursor-default" : ""} ${
                           selected
                             ? "border-[#ffd66b] bg-[#ffd66b]/14"
                             : "border-white/12 bg-white/7 hover:bg-white/12"
@@ -1224,25 +1274,13 @@ export function GameLinkDetailsClient({
               ))}
             </div>
 
-            <label className="mt-4 flex items-center justify-between rounded-[18px] border border-white/16 bg-white/10 px-4 py-3">
-              <span className="text-[12px] font-black uppercase tracking-[0.14em] text-white">
-                Randomize sending gifts
-              </span>
-              <input
-                type="checkbox"
-                checked={randomizeGifts}
-                onChange={(event) => setRandomizeGifts(event.target.checked)}
-                className="h-5 w-5"
-              />
-            </label>
-
             <button
               type="button"
               onClick={() => void sendGifts()}
               disabled={sendingGifts}
               className="mt-4 h-12 w-full rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] disabled:opacity-55"
             >
-              {sendingGifts ? "Sending..." : "Send Gifts + Email Winners File"}
+              {sendingGifts ? "Sending..." : "Send Free Dessert"}
             </button>
           </div>
         </div>

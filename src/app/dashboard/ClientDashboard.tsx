@@ -33,6 +33,7 @@ type ClientReward = {
   client_id?: string | null;
   category_id?: string | null;
   reward_type?: string | null;
+  description?: string | null;
   status?: "available" | "claimed" | "redeemed" | string;
   created_at?: string | null;
   earned_at?: string | null;
@@ -323,6 +324,72 @@ function getTodayStorageDate() {
 
 function getBirthdayPopupStorageKey(profileId: string) {
   return `pros-birthday-popup-shown-${profileId}-${getTodayStorageDate()}`;
+}
+
+function getRewardPopupStorageKey(profileId: string) {
+  return `pros-reward-popup-shown-${profileId}`;
+}
+
+function getGameGiftPopupStorageKey(profileId: string) {
+  return `pros-game-gift-popup-shown-${profileId}`;
+}
+
+function readStoredIdSet(key: string) {
+  if (typeof window === "undefined") return new Set<string>();
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set<string>(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function saveStoredId(key: string, id: string) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const current = readStoredIdSet(key);
+    current.add(id);
+    window.localStorage.setItem(key, JSON.stringify([...current].slice(-120)));
+  } catch {
+    // Local storage is only used to avoid repeating the popup.
+  }
+}
+
+function getShownRewardPopupIds(profileId: string) {
+  return readStoredIdSet(getRewardPopupStorageKey(profileId));
+}
+
+function saveShownRewardPopupId(profileId: string, rewardId: string) {
+  saveStoredId(getRewardPopupStorageKey(profileId), rewardId);
+}
+
+function getShownGameGiftPopupIds(profileId: string) {
+  return readStoredIdSet(getGameGiftPopupStorageKey(profileId));
+}
+
+function saveShownGameGiftPopupId(profileId: string, rewardId: string) {
+  saveStoredId(getGameGiftPopupStorageKey(profileId), rewardId);
+}
+
+function isAutoGameGiftReward(reward: ClientReward) {
+  const rewardType = cleanText(reward.reward_type).toLowerCase();
+  const description = cleanText(reward.description).toLowerCase();
+
+  return (
+    rewardType === "free dessert" &&
+    !reward.is_birthday_reward &&
+    (
+      description.includes("prediction_match:") ||
+      description.includes("exact score winner") ||
+      description.includes("football prediction") ||
+      description.includes("basketball prediction") ||
+      description.includes("game winner") ||
+      description.includes("match winner")
+    )
+  );
 }
 
 const BIRTHDAY_REWARD_TYPES = ["20% Discount", "Free Dessert"];
@@ -787,12 +854,48 @@ export function ClientDashboard({
   const [showGameScanCard, setShowGameScanCard] = useState(false);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
-    new Set(((rewards ?? initialRewards ?? []) as ClientReward[]).map((reward) => reward.id))
+    new Set(
+      ((rewards ?? initialRewards ?? []) as ClientReward[])
+        .filter((reward) => !isAutoGameGiftReward(reward))
+        .map((reward) => reward.id),
+    ),
   );
 
   useEffect(() => {
     setLocalRewards((rewards ?? initialRewards ?? []) as ClientReward[]);
   }, [rewards, initialRewards]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function refreshRewards() {
+      try {
+        const response = await fetch("/api/client/rewards", { cache: "no-store" });
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as { rewards?: ClientReward[] | null };
+        if (!isMounted || !Array.isArray(payload.rewards)) return;
+
+        setLocalRewards(payload.rewards);
+      } catch {
+        // Keep the current rewards if refresh fails.
+      }
+    }
+
+    void refreshRewards();
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshRewards();
+    }, 15000);
+
+    window.addEventListener("focus", refreshRewards);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshRewards);
+    };
+  }, []);
 
   useEffect(() => {
     let lastRefresh = Date.now();
@@ -1186,22 +1289,35 @@ export function ClientDashboard({
     const birthdayPopupKey = getBirthdayPopupStorageKey(profile.id);
     const birthdayPopupAlreadyShown =
       typeof window !== "undefined" && window.localStorage.getItem(birthdayPopupKey) === "true";
+    const shownRewardPopupIds = getShownRewardPopupIds(profile.id);
+    const shownGameGiftPopupIds = getShownGameGiftPopupIds(profile.id);
 
-    const newestReward = visibleRewards.find((reward) => {
+    function canShowRewardPopup(reward: ClientReward) {
+      const isAutoGameGift = isAutoGameGiftReward(reward);
+      const alreadyShownGameGift = isAutoGameGift && shownGameGiftPopupIds.has(reward.id);
+      const alreadyShownRegular = !isAutoGameGift && shownRewardPopupIds.has(reward.id);
       const isNew = !seenRewardIdsRef.current.has(reward.id);
 
-      if (!isNew || (reward.status !== "available" && reward.status !== "claimed")) {
-        return false;
-      }
-
-      if (reward.is_birthday_reward && birthdayPopupAlreadyShown) {
-        return false;
-      }
+      if (reward.status !== "available" && reward.status !== "claimed") return false;
+      if (isAutoGameGift && alreadyShownGameGift) return false;
+      if (!isAutoGameGift && alreadyShownRegular) return false;
+      if (!isAutoGameGift && !isNew) return false;
+      if (reward.is_birthday_reward && birthdayPopupAlreadyShown) return false;
 
       return true;
-    });
+    }
 
-    visibleRewards.forEach((reward) => seenRewardIdsRef.current.add(reward.id));
+    const newestReward =
+      visibleRewards.find((reward) => isAutoGameGiftReward(reward) && canShowRewardPopup(reward)) ||
+      visibleRewards.find((reward) => canShowRewardPopup(reward));
+
+    visibleRewards.forEach((reward) => {
+      const isAutoGameGift = isAutoGameGiftReward(reward);
+      const shown = isAutoGameGift ? shownGameGiftPopupIds.has(reward.id) : shownRewardPopupIds.has(reward.id);
+      if (!isAutoGameGift || shown) {
+        seenRewardIdsRef.current.add(reward.id);
+      }
+    });
 
     if (!newestReward) return;
 
@@ -1209,6 +1325,13 @@ export function ClientDashboard({
       window.localStorage.setItem(birthdayPopupKey, "true");
     }
 
+    if (isAutoGameGiftReward(newestReward)) {
+      saveShownGameGiftPopupId(profile.id, newestReward.id);
+    } else {
+      saveShownRewardPopupId(profile.id, newestReward.id);
+    }
+
+    seenRewardIdsRef.current.add(newestReward.id);
     setCelebrationReward(newestReward);
 
     if (celebrationTimerRef.current) {

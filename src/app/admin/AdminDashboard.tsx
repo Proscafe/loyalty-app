@@ -441,6 +441,7 @@ function MobileAdminDashboard({
     "football" | "basketball"
   >("basketball");
   const [mobileGameSaving, setMobileGameSaving] = useState(false);
+  const [mobileScoresUpdating, setMobileScoresUpdating] = useState(false);
   const [mobileGameForm, setMobileGameForm] = useState({
     home_team: "",
     away_team: "",
@@ -557,6 +558,48 @@ function MobileAdminDashboard({
       );
     } catch (error) {
       console.error(error);
+    }
+  }
+
+  async function updateMobileFootballScores() {
+    if (mobileScoresUpdating) return;
+
+    setMobileScoresUpdating(true);
+
+    try {
+      const response = await fetch(
+        "/api/cron/update-football-scores?secret=proscafe-score-cron-2026",
+        { method: "GET", cache: "no-store" },
+      );
+      const text = await response.text();
+      const json = text
+        ? (JSON.parse(text) as {
+            saved?: number;
+            errors?: number;
+            error?: string;
+          })
+        : {};
+
+      if (!response.ok) {
+        throw new Error(json.error || "Could not update scores.");
+      }
+
+      await refreshMobileGameLinks();
+
+      const savedCount = Number(json.saved ?? 0);
+      const errorCount = Number(json.errors ?? 0);
+
+      if (errorCount > 0) {
+        flash(`${errorCount} score update${errorCount === 1 ? "" : "s"} need review.`, "error");
+      } else if (savedCount > 0) {
+        flash(`${savedCount} score${savedCount === 1 ? "" : "s"} updated.`);
+      } else {
+        flash("No finished scores yet.");
+      }
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not update scores.", "error");
+    } finally {
+      setMobileScoresUpdating(false);
     }
   }
 
@@ -1134,6 +1177,25 @@ function MobileAdminDashboard({
             </h1>
           </section>
         ) : null}
+
+        {tab === "Overview" && (
+          <section
+            className="mb-5 flex items-center justify-between gap-3 overflow-hidden bg-white/10 px-5 py-4 shadow-[0_18px_44px_rgba(35,48,39,0.18)] backdrop-blur-2xl lg:hidden"
+            style={{ borderRadius: 22 }}
+          >
+            <h2 className="text-[20px] font-black leading-none tracking-[-0.04em] text-white">
+              Update Scores
+            </h2>
+            <button
+              type="button"
+              onClick={() => void updateMobileFootballScores()}
+              disabled={mobileScoresUpdating}
+              className="flex h-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.16em] text-[#2f453d] shadow-[0_16px_30px_rgba(255,214,107,0.2)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {mobileScoresUpdating ? "Updating..." : "Send Gifts"}
+            </button>
+          </section>
+        )}
 
         {tab === "Overview" && (
           <section className="mb-12 space-y-6">

@@ -21,6 +21,8 @@ type GameLink = {
   closesAt: string | null;
   status: string;
   players: number;
+  score: string;
+  gifts: string;
   tournamentId?: string | null;
   tournamentName?: string | null;
 };
@@ -77,6 +79,56 @@ function formatDate(value?: string | null) {
   return date.toLocaleString();
 }
 
+function formatSavedScore(match: any) {
+  const rawHome = match.home_score ?? match.homeScore ?? match.home_goals ?? match.homeGoals ?? null;
+  const rawAway = match.away_score ?? match.awayScore ?? match.away_goals ?? match.awayGoals ?? null;
+  const home = rawHome === null || rawHome === undefined || rawHome === "" ? null : Number(rawHome);
+  const away = rawAway === null || rawAway === undefined || rawAway === "" ? null : Number(rawAway);
+
+  if (Number.isFinite(home) && Number.isFinite(away)) {
+    return `${home}-${away}`;
+  }
+
+  const result = String(match.result ?? match.score ?? match.final_score ?? "").trim();
+  if (result && result !== "null" && result !== "undefined") return result;
+
+  return "—";
+}
+
+function formatGiftSummary(match: any) {
+  const rawCount =
+    match.gifts_count ??
+    match.gift_count ??
+    match.giftsSentCount ??
+    match.gifts_sent_count ??
+    match.sent_gifts_count ??
+    match.rewards_count ??
+    match.rewards_created ??
+    match.gift_winners_count ??
+    null;
+
+  const count = Number(rawCount);
+  if (Number.isFinite(count) && count > 0) {
+    return "Sent";
+  }
+
+  const rawStatus =
+    match.gifts_status ??
+    match.gift_status ??
+    match.gifts ??
+    match.gifts_sent ??
+    match.gift_sent ??
+    null;
+
+  if (rawStatus === true) return "Sent";
+  if (typeof rawStatus === "string") {
+    const text = rawStatus.trim();
+    if (text && text !== "0" && text.toLowerCase() !== "false") return text;
+  }
+
+  return "—";
+}
+
 function predictionLinkFor(code: string) {
   const publicUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.proscafe.net";
   return `${publicUrl.replace(/\/$/, "")}/predict/${code}`;
@@ -107,6 +159,8 @@ function normalizeGameLinks(matches: any[]): GameLink[] {
       closesAt: match.closes_at ?? match.close_at ?? null,
       status,
       players: Number(match.entries_count ?? match.players_count ?? match.players ?? 0),
+      score: formatSavedScore(match),
+      gifts: formatGiftSummary(match),
       tournamentId: match.tournament_id ?? match.prediction_tournaments?.id ?? null,
       tournamentName: match.tournament_name ?? match.prediction_tournaments?.name ?? null,
     };
@@ -157,6 +211,7 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
   });
   const [gameSaving, setGameSaving] = useState(false);
   const [gameCreateOpen, setGameCreateOpen] = useState(false);
+  const [scoreUpdating, setScoreUpdating] = useState(false);
 
   // Tournaments
   const [predictionTournaments, setPredictionTournaments] = useState<Tournament[]>([]);
@@ -184,6 +239,41 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
     setTone(t);
     setToast(message);
     setTimeout(() => setToast(null), 2200);
+  }
+
+  async function updateFootballScores() {
+    if (scoreUpdating) return;
+
+    setScoreUpdating(true);
+
+    try {
+      const res = await fetch(
+        "/api/cron/update-football-scores?secret=proscafe-score-cron-2026",
+        { cache: "no-store" },
+      );
+      const json = await res.json().catch(() => ({} as any));
+
+      if (!res.ok) {
+        throw new Error(json?.error || json?.message || "Could not update scores.");
+      }
+
+      const saved = Number(json?.saved ?? 0);
+      const errors = Number(json?.errors ?? 0);
+      const checked = Number(json?.checked ?? 0);
+
+      await refreshGameLinks();
+
+      if (errors > 0) {
+        flash(`Updated ${saved} scores. ${errors} errors.`, "error");
+        return;
+      }
+
+      flash(saved > 0 ? `Updated ${saved} score${saved === 1 ? "" : "s"}.` : `Checked ${checked} games. No new finished scores yet.`);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not update scores.", "error");
+    } finally {
+      setScoreUpdating(false);
+    }
   }
 
   // ── Data fetching ────────────────────────────────────────────────────────────
@@ -252,10 +342,57 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
       await collectPlayerCounts("match_id");
       await collectPlayerCounts("prediction_match_id");
 
+      const giftCounts = new Map<string, number>();
+
+      async function collectGiftCountsFromMatchColumn(column: string) {
+        if (ids.length === 0) return;
+        const { data, error } = await supabase
+          .from("rewards")
+          .select(`id, ${column}`)
+          .in(column, ids);
+
+        if (error || !data) return;
+
+        for (const reward of data as any[]) {
+          const matchId = String(reward[column] ?? "");
+          if (!matchId) continue;
+          giftCounts.set(matchId, (giftCounts.get(matchId) ?? 0) + 1);
+        }
+      }
+
+      async function collectGiftCountsFromDescriptionMarker() {
+        if (ids.length === 0) return;
+
+        const { data, error } = await supabase
+          .from("rewards")
+          .select("id, description, reward_type")
+          .eq("reward_type", "Free Dessert")
+          .ilike("description", "%prediction_match:%");
+
+        if (error || !data) return;
+
+        const idSet = new Set(ids);
+
+        for (const reward of data as any[]) {
+          const description = String(reward.description ?? "");
+          const marker = description.match(/prediction_match:([0-9a-fA-F-]+)/);
+          const matchId = marker?.[1] ?? "";
+          if (!matchId || !idSet.has(matchId)) continue;
+          giftCounts.set(matchId, (giftCounts.get(matchId) ?? 0) + 1);
+        }
+      }
+
+      await collectGiftCountsFromMatchColumn("match_id");
+      await collectGiftCountsFromMatchColumn("prediction_match_id");
+      await collectGiftCountsFromMatchColumn("prediction_game_id");
+      await collectGiftCountsFromMatchColumn("game_id");
+      await collectGiftCountsFromDescriptionMarker();
+
       const withCounts = rows.map((row) => ({
         ...row,
         entries_count: playerCounts.get(String(row.id))?.size ?? row.entries_count ?? row.players_count ?? row.players ?? 0,
         players_count: playerCounts.get(String(row.id))?.size ?? row.entries_count ?? row.players_count ?? row.players ?? 0,
+        gifts_count: giftCounts.get(String(row.id)) ?? row.gifts_count ?? row.gift_count ?? row.gifts_sent_count ?? row.rewards_count ?? row.rewards_created ?? 0,
       }));
 
       setCreatedGameLinks(normalizeGameLinks(withCounts));
@@ -701,6 +838,9 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setTournamentPopupOpen(true)} className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">Add Tournament</button>
               <button type="button" onClick={() => { setCsvImportOpen(true); setCsvPreview([]); setCsvErrors([]); setCsvFileName(""); }} className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">Upload CSV</button>
+              <button type="button" onClick={() => void updateFootballScores()} disabled={scoreUpdating} className="rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50">
+                {scoreUpdating ? "Updating..." : "Update Scores"}
+              </button>
               {sortedGameLinks.length > 0 && (
                 <button type="button" onClick={() => void downloadAllQrs()} className="flex items-center gap-2 rounded-full bg-white/14 px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/20">
                   <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3m0 4h4v-4m-4 0v4" /></svg>
@@ -790,10 +930,12 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
                 ))}
               </div>
               <div className="hidden overflow-hidden rounded-[22px] border border-white/18 bg-white/8 md:block">
-              <div className="grid grid-cols-[0.7fr_1fr_1.35fr_0.9fr_0.7fr_0.5fr_0.48fr_0.48fr_0.48fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
+              <div className="grid grid-cols-[0.62fr_1fr_1.25fr_0.78fr_0.58fr_0.58fr_0.68fr_0.5fr_0.42fr_0.42fr_0.42fr] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58">
                 {[["sport","Sport"],["match","Match Name"],["date","Date"],["status","Status"],["players","Players"]].map(([key, label]) => (
                   <button key={key} type="button" onClick={() => sortGames(key as any)} className="text-left">{label}</button>
                 ))}
+                <div className="text-left">Score</div>
+                <div className="text-left">Gifts</div>
                 <div className="text-left">Tournament</div>
                 <div>Copy</div><div>QR</div><div>Open</div>
               </div>
@@ -802,7 +944,7 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
                   <div key={game.id} role="button" tabIndex={0}
                     onClick={() => { window.location.href = `/admin/game-links/${game.id}`; }}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.location.href = `/admin/game-links/${game.id}`; } }}
-                    className="grid cursor-pointer grid-cols-[0.7fr_1fr_1.35fr_0.9fr_0.7fr_0.5fr_0.48fr_0.48fr_0.48fr] items-center gap-3 border-b border-white/10 px-4 py-4 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10">
+                    className="grid cursor-pointer grid-cols-[0.62fr_1fr_1.25fr_0.78fr_0.58fr_0.58fr_0.68fr_0.5fr_0.42fr_0.42fr_0.42fr] items-center gap-3 border-b border-white/10 px-4 py-4 text-[12px] font-bold text-white/78 transition last:border-b-0 hover:bg-white/10">
                     <div className="font-black text-[#ffd66b]">{game.sport}</div>
                     <div className="min-w-0">
                       <div className="truncate text-[14px] font-black text-white">{game.title}</div>
@@ -815,6 +957,8 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
                       </span>
                     </div>
                     <div className="tabular-nums">{game.players}</div>
+                    <div className="tabular-nums text-white/88">{game.score}</div>
+                    <div className="truncate text-white/70">{game.gifts}</div>
                     <div className="truncate text-white/60">{game.tournamentName ?? "—"}</div>
                     <div onClick={(e) => e.stopPropagation()}>
                       <button type="button" onClick={() => void copyLink(game.code)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 text-[13px] text-white transition hover:bg-white/20" title="Copy link">⧉</button>
