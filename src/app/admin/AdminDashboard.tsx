@@ -196,7 +196,7 @@ interface Props {
 
 const ALL_TABS = [
   "Overview",
-  "Activity",
+  "Activity", // Split route only: /admin/activity. Dashboard no longer redirects to this tab.
   "Gifts",
   "Birthdays",
   "Comment Cards",
@@ -376,9 +376,6 @@ function MobileAdminDashboard({
     recentTxns ?? [],
   );
   const [giftRows, setGiftRows] = useState<Reward[]>(recentRewards ?? []);
-  const [commentCards, setCommentCards] = useState<CommentCardEntry[]>([]);
-  const [commentSearch, setCommentSearch] = useState("");
-  const [commentFilter, setCommentFilter] = useState<CommentCardFilter>("all");
   const [profileNamesById, setProfileNamesById] = useState<
     Record<string, string>
   >({});
@@ -441,7 +438,6 @@ function MobileAdminDashboard({
     "football" | "basketball"
   >("basketball");
   const [mobileGameSaving, setMobileGameSaving] = useState(false);
-  const [mobileScoresUpdating, setMobileScoresUpdating] = useState(false);
   const [mobileGameForm, setMobileGameForm] = useState({
     home_team: "",
     away_team: "",
@@ -561,48 +557,6 @@ function MobileAdminDashboard({
     }
   }
 
-  async function updateMobileFootballScores() {
-    if (mobileScoresUpdating) return;
-
-    setMobileScoresUpdating(true);
-
-    try {
-      const response = await fetch(
-        "/api/cron/update-football-scores?secret=proscafe-score-cron-2026",
-        { method: "GET", cache: "no-store" },
-      );
-      const text = await response.text();
-      const json = text
-        ? (JSON.parse(text) as {
-            saved?: number;
-            errors?: number;
-            error?: string;
-          })
-        : {};
-
-      if (!response.ok) {
-        throw new Error(json.error || "Could not update scores.");
-      }
-
-      await refreshMobileGameLinks();
-
-      const savedCount = Number(json.saved ?? 0);
-      const errorCount = Number(json.errors ?? 0);
-
-      if (errorCount > 0) {
-        flash(`${errorCount} score update${errorCount === 1 ? "" : "s"} need review.`, "error");
-      } else if (savedCount > 0) {
-        flash(`${savedCount} score${savedCount === 1 ? "" : "s"} updated.`);
-      } else {
-        flash("No finished scores yet.");
-      }
-    } catch (error) {
-      flash(error instanceof Error ? error.message : "Could not update scores.", "error");
-    } finally {
-      setMobileScoresUpdating(false);
-    }
-  }
-
   async function createMobileGameLink() {
     if (!mobileGameForm.home_team.trim() || !mobileGameForm.away_team.trim()) {
       flash("Add both teams first.", "error");
@@ -695,7 +649,7 @@ function MobileAdminDashboard({
       const fiveDaysAgo = new Date();
       fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
-      const [txnResult, rewardResult, commentCardResult] = await Promise.all([
+      const [txnResult, rewardResult] = await Promise.all([
         supabase
           .from("stamp_transactions")
           .select("*")
@@ -710,12 +664,6 @@ function MobileAdminDashboard({
           .gte("created_at", fiveDaysAgo.toISOString())
           .order("created_at", { ascending: false })
           .limit(50),
-
-        supabase
-          .from("comment_cards")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(300),
       ]);
 
       if (!isMounted) return;
@@ -728,16 +676,6 @@ function MobileAdminDashboard({
 
       if (rewardResult.data) {
         setGiftRows(rewards);
-      }
-
-      if (commentCardResult.data) {
-        setCommentCards(
-          (commentCardResult.data ?? []) as unknown as CommentCardEntry[],
-        );
-      }
-
-      if (commentCardResult.error) {
-        console.error("Could not load comment cards", commentCardResult.error);
       }
 
       if (isMounted) {
@@ -923,91 +861,6 @@ function MobileAdminDashboard({
     }
   }
 
-  const mobileClientUsersByPhone = useMemo(() => {
-    const map = new Map<string, AdminUser>();
-
-    users.forEach((user) => {
-      if (user.role !== "client") return;
-      const key = normalizePhoneForMatch(user.phone);
-      if (!key) return;
-      map.set(key, user);
-    });
-
-    return map;
-  }, [users]);
-
-  const mobileCommentCardRows = useMemo(() => {
-    const search = commentSearch.trim().toLowerCase();
-    const now = new Date();
-    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startWeek = new Date(startToday);
-    startWeek.setDate(startToday.getDate() - ((startToday.getDay() + 6) % 7));
-    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    return commentCards
-      .map((card) => {
-        const phoneKey = normalizePhoneForMatch(card.phone);
-        const member = phoneKey ? (mobileClientUsersByPhone.get(phoneKey) ?? null) : null;
-        const ratings = [
-          card.experience_rating,
-          card.food_rating,
-          card.service_rating,
-          card.cleanliness_rating,
-          card.visit_again_rating,
-        ].map((value) => (Number.isFinite(Number(value)) ? Number(value) : 0));
-        const averageRating = ratings.length
-          ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length
-          : 0;
-        const submittedAt = new Date(card.created_at);
-        const submittedTime = Number.isNaN(submittedAt.getTime())
-          ? null
-          : submittedAt;
-        const age = getAgeFromBirthday(card.birthday);
-
-        return { card, member, averageRating, submittedTime, age };
-      })
-      .filter((row) => {
-        if (commentFilter === "registered" && !row.member) return false;
-        if (commentFilter === "not_registered" && row.member) return false;
-        if (commentFilter === "five_star" && row.averageRating < 5) return false;
-        if (commentFilter === "low_rating" && row.averageRating >= 4) return false;
-        if (commentFilter === "has_comments" && !row.card.comments?.trim()) return false;
-        if (commentFilter === "today" && (!row.submittedTime || row.submittedTime < startToday)) return false;
-        if (commentFilter === "week" && (!row.submittedTime || row.submittedTime < startWeek)) return false;
-        if (commentFilter === "month" && (!row.submittedTime || row.submittedTime < startMonth)) return false;
-
-        if (!search) return true;
-
-        return [
-          row.card.full_name,
-          row.card.phone,
-          desktopAgeLabel(row.age),
-          row.card.heard_about_us,
-          row.card.comments,
-          row.member?.full_name,
-          row.member ? "registered member" : "not registered",
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(search);
-      });
-  }, [commentCards, commentFilter, commentSearch, mobileClientUsersByPhone]);
-
-  const mobileCommentSummary = useMemo(() => {
-    const total = mobileCommentCardRows.length;
-    const registered = mobileCommentCardRows.filter((row) => row.member).length;
-    const lowRating = mobileCommentCardRows.filter((row) => row.averageRating < 4).length;
-    const average = total
-      ? (
-          mobileCommentCardRows.reduce((sum, row) => sum + row.averageRating, 0) /
-          total
-        ).toFixed(1)
-      : "0.0";
-
-    return { total, registered, lowRating, average };
-  }, [mobileCommentCardRows]);
-
   const filteredUsers = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
 
@@ -1161,15 +1014,6 @@ function MobileAdminDashboard({
               Activity
             </h1>
           </section>
-        ) : tab === "Comment Cards" ? (
-          <section className="mb-5 rounded-[22px] bg-[#718078] px-5 py-5 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
-            <h1 className="text-[24px] font-black leading-none tracking-[-0.04em] text-white">
-              Comment Cards
-            </h1>
-            <p className="mt-2 text-[12px] font-bold leading-5 text-white/68">
-              Review feedback, ratings, and follow up with customers.
-            </p>
-          </section>
         ) : tab === "Loyalty Program" ? (
           <section className="mb-5 rounded-[22px] bg-[#718078] px-5 py-5 shadow-[0_18px_44px_rgba(20,30,26,0.16)]">
             <h1 className="text-[24px] font-black leading-none tracking-[-0.04em] text-white">
@@ -1177,25 +1021,6 @@ function MobileAdminDashboard({
             </h1>
           </section>
         ) : null}
-
-        {tab === "Overview" && (
-          <section
-            className="mb-5 flex items-center justify-between gap-3 overflow-hidden bg-white/10 px-5 py-4 shadow-[0_18px_44px_rgba(35,48,39,0.18)] backdrop-blur-2xl lg:hidden"
-            style={{ borderRadius: 22 }}
-          >
-            <h2 className="text-[20px] font-black leading-none tracking-[-0.04em] text-white">
-              Update Scores
-            </h2>
-            <button
-              type="button"
-              onClick={() => void updateMobileFootballScores()}
-              disabled={mobileScoresUpdating}
-              className="flex h-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.16em] text-[#2f453d] shadow-[0_16px_30px_rgba(255,214,107,0.2)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {mobileScoresUpdating ? "Updating..." : "Send Gifts"}
-            </button>
-          </section>
-        )}
 
         {tab === "Overview" && (
           <section className="mb-12 space-y-6">
@@ -1314,92 +1139,6 @@ function MobileAdminDashboard({
           </section>
         )}
 
-        {tab === "Comment Cards" && (
-          <section className="mb-12 space-y-4">
-            <div
-              className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
-              style={{ borderRadius: 24, background: GLASS_CARD }}
-            >
-              <input
-                value={commentSearch}
-                onChange={(event) => setCommentSearch(event.target.value)}
-                placeholder="Search name, phone, comment..."
-                className="h-11 w-full rounded-[16px] border-0 bg-white px-4 text-[12px] font-bold text-[#365665] outline-none placeholder:text-[#365665]/45"
-              />
-
-              <select
-                value={commentFilter}
-                onChange={(event) =>
-                  setCommentFilter(event.target.value as CommentCardFilter)
-                }
-                className="mt-3 h-11 w-full rounded-[16px] border-0 bg-white px-4 text-[12px] font-black text-[#365665] outline-none"
-              >
-                <option value="all">All Feedback</option>
-                <option value="registered">Registered Members</option>
-                <option value="not_registered">Not Registered</option>
-                <option value="five_star">5 Star Reviews</option>
-                <option value="low_rating">Needs Attention</option>
-                <option value="has_comments">Has Comments</option>
-                <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <MetricCard label="Total Feedback" value={mobileCommentSummary.total} />
-              <MetricCard label="Registered" value={mobileCommentSummary.registered} />
-              <MetricCard label="Avg Rating" value={`${mobileCommentSummary.average}/5`} />
-              <MetricCard label="Needs Attention" value={mobileCommentSummary.lowRating} />
-            </div>
-
-            {mobileCommentCardRows.length === 0 ? (
-              <EmptyState text="No comment cards found." />
-            ) : null}
-
-            {mobileCommentCardRows.map((row) => (
-              <div
-                key={row.card.id}
-                className="border border-white/20 p-4 shadow-[0_16px_44px_rgba(35,48,39,0.14)] backdrop-blur-2xl"
-                style={{ borderRadius: 24, background: GLASS_CARD }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[16px] font-black text-white">
-                      {row.card.full_name || "Guest"}
-                    </div>
-                    <div className="mt-1 text-[11px] font-semibold text-white/60">
-                      {row.card.phone || "—"}
-                      {row.member ? " · Registered" : " · Not registered"}
-                    </div>
-                  </div>
-
-                  <span className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] ${row.averageRating < 4 ? "bg-red-500/18 text-red-100" : "bg-[#ffd66b] text-[#365665]"}`}>
-                    ★ {row.averageRating.toFixed(1)}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] font-bold text-white/70">
-                  <div>
-                    <div className="text-[9px] font-black uppercase tracking-[0.15em] text-white/45">Heard From</div>
-                    <div className="mt-1 truncate">{row.card.heard_about_us || "—"}</div>
-                  </div>
-                  <div>
-                    <div className="text-[9px] font-black uppercase tracking-[0.15em] text-white/45">Submitted</div>
-                    <div className="mt-1 truncate">{formatDate(row.card.created_at)}</div>
-                  </div>
-                </div>
-
-                {row.card.comments?.trim() ? (
-                  <div className="mt-3 rounded-[16px] bg-white/10 p-3 text-[12px] font-semibold leading-5 text-white/78">
-                    {row.card.comments.trim()}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </section>
-        )}
-
         {tab === "Gifts" && (
           <section className="mb-12 space-y-3">
             {(giftRows ?? []).length === 0 ? (
@@ -1501,13 +1240,11 @@ function MobileAdminDashboard({
 
       <AdminMobileFloatingMenu
         active={
-          tab === "Activity"
-            ? "activity"
-            : tab === "Comment Cards"
-              ? "comment-cards"
-              : tab === "Loyalty Program"
-                ? "loyalty-program"
-                : "overview"
+          tab === "Comment Cards"
+            ? "comment-cards"
+            : tab === "Loyalty Program"
+              ? "loyalty-program"
+              : "overview"
         }
         onBeforeNavigate={() => setSelectedUser(null)}
       />
@@ -2828,10 +2565,12 @@ function desktopTabLabel(tab: Tab) {
 }
 
 function initialTabFromCurrentRoute(fallback: Tab): Tab {
-  if (typeof window === "undefined") return fallback;
+  const safeFallback: Tab = fallback === "Activity" ? "Overview" : fallback;
+
+  if (typeof window === "undefined") return safeFallback;
 
   const path = window.location.pathname;
-  if (path === "/admin/activity") return "Activity";
+  if (path === "/admin/activity") return safeFallback;
   if (path === "/admin/comment-cards") return "Comment Cards";
 
   const requestedTab = new URLSearchParams(window.location.search).get("tab");
@@ -2839,7 +2578,7 @@ function initialTabFromCurrentRoute(fallback: Tab): Tab {
     return requestedTab as Tab;
   }
 
-  return fallback;
+  return safeFallback;
 }
 
 function desktopRoleLabel(role: UserRole) {

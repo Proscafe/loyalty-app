@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
@@ -120,6 +121,8 @@ function desktopUniqueCount(values: Array<string | null | undefined>) {
 }
 
 type DesktopTimeRange = "today" | "week" | "month" | "all";
+type DesktopProfileTab = "all" | UserRole | "deactivated";
+type DesktopSmartSegment = "all" | "new" | "returning" | "one_time" | "high_spenders" | "inactive_30" | "at_risk" | "lost";
 function getDesktopTimeRangeStart(range: DesktopTimeRange) {
   if (range === "all") return null;
 
@@ -1010,6 +1013,7 @@ function DesktopClientProfilePanel({
 // ─── Main UsersPage Component ─────────────────────────────────────────────────
 
 export function UsersPage({ adminId }: { adminId: string }) {
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [toast, setToast] = useState<string | null>(null);
   const [tone, setTone] = useState<"success" | "error">("success");
@@ -1030,7 +1034,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(50);
-  const [filter, setFilter] = useState<"all" | UserRole>("client");
+  const [filter, setFilter] = useState<DesktopProfileTab>("client");
   const [timeRange, setTimeRange] = useState<DesktopTimeRange>("all");
   const [lastVisitFilter, setLastVisitFilter] = useState<"all" | "active" | "inactive">("all");
   const [customerStatusFilter, setCustomerStatusFilter] = useState<"all" | "active" | "inactive" | "at_risk" | "vip">("all");
@@ -1039,7 +1043,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [customerVisitRangeFilter, setCustomerVisitRangeFilter] = useState<"all" | "0" | "1-3" | "4-10" | "10+">("all");
   const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const reportFilterRef = useRef<HTMLDivElement | null>(null);
-  const [customerSort, setCustomerSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "lastVisit", direction: "desc" });
+  const [customerSort, setCustomerSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "lifetime", direction: "desc" });
+  const [smartSegment, setSmartSegment] = useState<DesktopSmartSegment>("all");
 
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [contactHistory, setContactHistory] = useState<Record<string, string[]>>({});
@@ -1229,22 +1234,44 @@ export function UsersPage({ adminId }: { adminId: string }) {
   // ── User profile ─────────────────────────────────────────────────────────────
 
   async function openUserProfile(user: AdminUser) {
-    setSelectedUser(user);
-    setSelectedLoading(true);
-    setSelectedCategories([]); setSelectedStamps([]); setSelectedRewards([]);
-    try {
-      const [catResult, stampResult, rewardResult] = await Promise.all([
-        supabase.from("loyalty_categories").select("id, name, sort_order").eq("is_active", true).order("sort_order", { ascending: true }),
-        supabase.from("client_stamps").select("id, client_id, category_id, stamp_count, updated_at").eq("client_id", user.id),
-        supabase.from("rewards").select("*").eq("client_id", user.id).order("created_at", { ascending: false }).limit(20),
-      ]);
-      setSelectedCategories((catResult.data ?? []) as AdminCategory[]);
-      setSelectedStamps((stampResult.data ?? []) as AdminClientStamp[]);
-      setSelectedRewards((rewardResult.data ?? []) as Reward[]);
-    } finally {
-      setSelectedLoading(false);
-    }
+    router.push(`/admin/users/${user.id}`);
   }
+
+  useEffect(() => {
+    if (loading || users.length === 0) return;
+
+    let requestedClient = "";
+    try {
+      const params = new URLSearchParams(window.location.search);
+      requestedClient =
+        params.get("client") ??
+        params.get("client_id") ??
+        window.sessionStorage.getItem("proscafe_open_client_id") ??
+        "";
+    } catch {}
+
+    requestedClient = requestedClient.trim();
+    if (!requestedClient) return;
+
+    const user = users.find(
+      (item) =>
+        item.id === requestedClient ||
+        String(item.client_code ?? "").toLowerCase() === requestedClient.toLowerCase(),
+    );
+
+    if (!user) return;
+
+    try {
+      window.sessionStorage.removeItem("proscafe_open_client_id");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("client");
+      url.searchParams.delete("client_id");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {}
+
+    setFilter("client");
+    void openUserProfile(user);
+  }, [loading, users]);
 
   async function setRole(userId: string, role: UserRole) {
     const res = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, action: "set_role", role }) });
@@ -1422,7 +1449,22 @@ export function UsersPage({ adminId }: { adminId: string }) {
       const user = row.user;
       const isClient = user.role === "client";
 
-      if (filter !== "all" && user.role !== filter) return false;
+      if (filter === "deactivated") {
+        if (user.is_active !== false) return false;
+      } else if (filter !== "all" && user.role !== filter) {
+        return false;
+      }
+
+      if (smartSegment !== "all") {
+        if (!isClient) return false;
+        if (smartSegment === "new" && row.totalVisits > 1) return false;
+        if (smartSegment === "returning" && row.totalVisits <= 1) return false;
+        if (smartSegment === "one_time" && row.totalVisits !== 1) return false;
+        if (smartSegment === "high_spenders" && row.lifetimeValue < 100) return false;
+        if (smartSegment === "inactive_30" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 30)) return false;
+        if (smartSegment === "at_risk" && !row.isAtRisk) return false;
+        if (smartSegment === "lost" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 60)) return false;
+      }
 
       // Client activity filters should not hide Staff/Admin rows.
       // This keeps the desktop Profile Tab filter working for Staff and Admin.
@@ -1451,7 +1493,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       if (phone && normalizedSearch && phone.includes(normalizedSearch)) return true;
       return [user.full_name, user.email, user.phone, user.client_code, desktopRoleLabel(user.role), user.is_active === false ? "deactivated" : "active"].filter(Boolean).join(" ").toLowerCase().includes(search);
     });
-  }, [allProfileReportRows, filter, timeRange, searchTerm, lastVisitFilter, customerStatusFilter, customerGenderFilter, customerAgeRangeFilter]);
+  }, [allProfileReportRows, filter, smartSegment, timeRange, searchTerm, lastVisitFilter, customerStatusFilter, customerGenderFilter, customerAgeRangeFilter]);
 
   const sortedCustomerReportRows = useMemo(() => {
     const dir = customerSort.direction === "asc" ? 1 : -1;
@@ -1459,6 +1501,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       if (customerSort.key === "name") return (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir;
       if (customerSort.key === "contact") return ((a.user.phone || a.user.email || "").localeCompare(b.user.phone || b.user.email || "")) * dir;
       if (customerSort.key === "lastVisit") return ((new Date(a.lastVisit || 0).getTime() || 0) - (new Date(b.lastVisit || 0).getTime() || 0)) * dir;
+      if (customerSort.key === "daysAgo") return ((a.daysSinceLastVisit ?? 99999) - (b.daysSinceLastVisit ?? 99999)) * dir;
       if (customerSort.key === "visits") return (a.totalVisits - b.totalVisits) * dir;
       if (customerSort.key === "lifetime") return (a.lifetimeValue - b.lifetimeValue) * dir;
       if (customerSort.key === "gifts") return (a.giftsCount - b.giftsCount) * dir;
@@ -1525,6 +1568,16 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const averageVisitsPerCustomer = customerReportRows.length > 0
     ? (customerReportRows.reduce((sum, r) => sum + r.totalVisits, 0) / customerReportRows.length).toFixed(1)
     : "0";
+
+  const smartSegments = [
+    { key: "new" as const, label: "New customers", count: customerReportRows.filter(r => r.totalVisits <= 1).length },
+    { key: "returning" as const, label: "Returning customers", count: customerReportRows.filter(r => r.totalVisits > 1).length },
+    { key: "one_time" as const, label: "One-time visitors", count: customerReportRows.filter(r => r.totalVisits === 1).length },
+    { key: "high_spenders" as const, label: "High spenders", count: customerReportRows.filter(r => r.lifetimeValue >= 100).length },
+    { key: "inactive_30" as const, label: "Inactive 30+ days", count: customerReportRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 30).length },
+    { key: "at_risk" as const, label: "At risk", count: atRiskCustomerCount },
+    { key: "lost" as const, label: "Lost customers", count: customerReportRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 60).length },
+  ];
 
   function downloadVisibleCustomerTable() {
     const rows = sortedCustomerReportRows.slice(0, 80);
@@ -1690,13 +1743,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
                       <div className="space-y-4">
                         {[
                           { label: "Date Range", value: timeRange, onChange: (v: string) => { setTimeRange(v as DesktopTimeRange); setReportFiltersOpen(false); }, options: [["today","Today"],["week","This week"],["month","This month"],["all","Show all"]] },
-                          { label: "Last Visit", value: lastVisitFilter, onChange: (v: string) => { setLastVisitFilter(v as any); setReportFiltersOpen(false); }, options: [["all","All"],["active","Active recently"],["inactive","Inactive recently"]] },
-                          { label: "Profile Tab", value: filter, onChange: (v: string) => { setFilter(v as any); setReportFiltersOpen(false); }, options: [["all","All profiles"],["client","Clients"],["staff","Staff"],["master_admin","Admin"]] },
-                          { label: "Status", value: customerStatusFilter, onChange: (v: string) => setCustomerStatusFilter(v as any), options: [["all","All status"],["active","Recent 0–7"],["inactive","Overdue 31+"],["at_risk","At Risk 31+"],["vip","VIP"]], desktopOnly: true },
-                          { label: "Gender", value: customerGenderFilter, onChange: (v: string) => setCustomerGenderFilter(v as any), options: [["all","All genders"],["male","Male"],["female","Female"]], desktopOnly: true },
-                          { label: "Age Range", value: customerAgeRangeFilter, onChange: (v: string) => setCustomerAgeRangeFilter(v as any), options: [["all","All ages"],["18-24","18–24"],["25-34","25–34"],["35-44","35–44"],["45+","45+"]], desktopOnly: true },
-                        ].map(({ label, value, onChange, options, desktopOnly }) => (
-                          <label key={label} className={desktopOnly ? "hidden lg:block" : "block"}>
+                          { label: "Profile Tab", value: filter, onChange: (v: string) => { setFilter(v as DesktopProfileTab); setReportFiltersOpen(false); }, options: [["all","All profiles"],["client","Clients"],["staff","Staff"],["master_admin","Admin"],["deactivated","Deactivated profiles"]] },
+                        ].map(({ label, value, onChange, options }) => (
+                          <label key={label} className="block">
                             <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">{label}</span>
                             <select value={value} onChange={e => onChange(e.target.value)} className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none">
                               {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -1722,6 +1771,28 @@ export function UsersPage({ adminId }: { adminId: string }) {
               <DesktopReportMetric label="At Risk" value={atRiskCustomerCount} />
               <DesktopReportMetric label="VIP" value={vipCustomerCount} />
               <DesktopReportMetric label="Avg. Visits" value={averageVisitsPerCustomer} />
+            </div>
+
+            {/* Smart Segments — desktop only */}
+            <div className="mb-4 hidden flex-wrap items-center gap-2 lg:flex">
+              <button
+                type="button"
+                onClick={() => setSmartSegment("all")}
+                className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${smartSegment === "all" ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.24)]" : "bg-white/12 text-white/82 hover:bg-white/18"}`}
+              >
+                All
+              </button>
+              {smartSegments.map(segment => (
+                <button
+                  key={segment.key}
+                  type="button"
+                  onClick={() => { setSmartSegment(segment.key); setVisibleUserCount(50); }}
+                  className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${smartSegment === segment.key ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.24)]" : "bg-white/12 text-white/82 hover:bg-white/18"}`}
+                  title={`${segment.label}: ${segment.count}`}
+                >
+                  {segment.label}
+                </button>
+              ))}
             </div>
 
             {/* Mobile customer list */}
@@ -1776,7 +1847,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                 {[["name","Names"],["contact","Contact"],["lastVisit","Last Visit"]].map(([k,l]) => (
                   <button key={k} type="button" onClick={() => sortBy(k)} className={headerClass(k)}>{l}</button>
                 ))}
-                <div>Days Ago</div>
+                <button type="button" onClick={() => sortBy("daysAgo")} className={headerClass("daysAgo")}>Days Ago</button>
                 {[["visits","Visits"],["lifetime","Lifetime $"],["gifts","Gifts"],["status","Status"]].map(([k,l]) => (
                   <button key={k} type="button" onClick={() => sortBy(k)} className={headerClass(k)}>{l}</button>
                 ))}
