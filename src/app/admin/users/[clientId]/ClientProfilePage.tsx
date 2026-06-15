@@ -651,7 +651,7 @@ export default function ClientProfilePage({
           <AdminSidebar active="users" />
         </div>
       </div>
-      {toast ? <Toast message={toast} type={tone} /> : null}
+      {toast ? <Toast message={toast} tone={tone} /> : null}
 
       <div className="mx-auto max-w-[1500px] space-y-4 px-3 py-4 pb-24 lg:ml-[112px] lg:max-w-none lg:px-6 lg:py-6 lg:pb-10">
         <Link

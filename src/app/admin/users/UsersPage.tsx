@@ -1599,7 +1599,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-[#61716b] text-white lg:bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
+    <main className="min-h-screen bg-[#7b8977] text-white lg:bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
       <Toast message={toast} tone={tone} />
 
       <div className="flex min-h-screen w-full gap-3 overflow-visible bg-transparent p-3 pb-24 lg:gap-6 lg:p-6 lg:pb-6 lg:min-h-screen">
