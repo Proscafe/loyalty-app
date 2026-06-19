@@ -215,6 +215,15 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function getProfileStatus(profile: ProfileRow | null): "client" | "staff" | "admin" | "deactivated" {
+  if (!profile) return "client";
+  if (profile.is_active === false) return "deactivated";
+  const role = String(profile.role || "client").toLowerCase();
+  if (role === "admin") return "admin";
+  if (role === "staff") return "staff";
+  return "client";
+}
+
 export default function ClientProfilePage({
   adminId,
   profile,
@@ -242,6 +251,7 @@ export default function ClientProfilePage({
   const [visitsOpen, setVisitsOpen] = useState(false);
   const [giftsSectionOpen, setGiftsSectionOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<"month" | "all">("month");
+  const [profileStatus, setProfileStatus] = useState<"client" | "staff" | "admin" | "deactivated">(() => getProfileStatus(profile));
   const [giftCategoryId, setGiftCategoryId] = useState(categories[0]?.id ?? "");
   const [giftNote, setGiftNote] = useState("");
   const [phoneDraft, setPhoneDraft] = useState(profile?.phone ?? "");
@@ -258,6 +268,10 @@ export default function ClientProfilePage({
     setToast(message);
     setTimeout(() => setToast(null), 2400);
   }
+
+  useEffect(() => {
+    setProfileStatus(getProfileStatus(profile));
+  }, [profile?.id, profile?.role, profile?.is_active]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -517,6 +531,34 @@ export default function ClientProfilePage({
     flash("Note deleted.");
   }
 
+  async function updateProfileStatus(nextStatus: "client" | "staff" | "admin" | "deactivated") {
+    if (!profile?.id) return;
+
+    const previousStatus = profileStatus;
+    setProfileStatus(nextStatus);
+
+    const nextRole = nextStatus === "deactivated"
+      ? String(profile.role || "client").toLowerCase() || "client"
+      : nextStatus;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        role: nextRole,
+        is_active: nextStatus === "deactivated" ? false : true,
+      })
+      .eq("id", profile.id);
+
+    if (error) {
+      setProfileStatus(previousStatus);
+      flash(error.message, "error");
+      return;
+    }
+
+    flash(nextStatus === "deactivated" ? "Profile deactivated." : "Profile role updated.");
+    router.refresh();
+  }
+
   async function savePhone() {
     if (!profile?.id) return;
     const nextPhone = phoneDraft.trim();
@@ -711,6 +753,21 @@ export default function ClientProfilePage({
               >
                 Change password
               </button>
+              <select
+                value={profileStatus}
+                onChange={(event) =>
+                  void updateProfileStatus(
+                    event.target.value as "client" | "staff" | "admin" | "deactivated",
+                  )
+                }
+                className="h-[38px] rounded-full border-0 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665] outline-none"
+                aria-label="Change profile role"
+              >
+                <option value="client">Client</option>
+                <option value="staff">Staff</option>
+                <option value="admin">Admin</option>
+                <option value="deactivated">Deactivate</option>
+              </select>
               {currentWhatsAppUrl ? (
                 <a
                   href={currentWhatsAppUrl}

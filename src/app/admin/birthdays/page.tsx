@@ -1,9 +1,14 @@
-import { AdminDashboardClient } from "../AdminDashboardClient";
-import { loadAdminDashboardData } from "../_dashboard-data";
-
-export const dynamic = "force-dynamic";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import BirthdaysPageClient from "./BirthdaysPageClient";
 
 export default async function AdminBirthdaysPage() {
-  const props = await loadAdminDashboardData();
-  return <AdminDashboardClient {...props} initialTab="Birthdays" />;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+
+  return <BirthdaysPageClient />;
 }
