@@ -3,6 +3,10 @@
 import dynamic from "next/dynamic";
 import type { Profile, Reward, StampTransaction } from "@/types";
 
+type AdminUser = Profile & {
+  is_active?: boolean | null;
+};
+
 interface Metrics {
   totalClients: number;
   stampsIssued: number;
@@ -13,24 +17,19 @@ interface Metrics {
 
 interface Props {
   profile: Profile;
-  initialTab?: "Overview" | "Activity" | "Gifts" | "Birthdays" | "Comment Cards" | "Loyalty Program";
-  users?: Profile[];
+  users?: AdminUser[];
   recentTxns?: StampTransaction[];
   recentRewards?: Reward[];
   metrics: Metrics;
+  initialTab?: string;
 }
 
 const AdminDashboardNoSsr = dynamic(
-  () => import("./AdminDashboard").then((module) => module.AdminDashboard),
-  {
-    ssr: false,
-    loading: () => (
-      <main
-        className="min-h-screen bg-[#798673]"
-        style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}
-      />
-    ),
-  },
+  () =>
+    import("./AdminDashboard").then((mod) => {
+      return mod.AdminDashboard ?? mod.default;
+    }),
+  { ssr: false },
 );
 
 export function AdminDashboardClient(props: Props) {

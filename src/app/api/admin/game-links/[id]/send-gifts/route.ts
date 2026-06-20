@@ -501,17 +501,17 @@ export async function POST(req: Request, context: RouteContext) {
       return jsonError("Create at least one active loyalty category before sending gifts.", 400);
     }
 
-    const { data: existingRewards, error: existingRewardsError } = await admin
-      .from("rewards")
-      .select("client_id, reward_type, description")
+    const { data: existingGiftLinks, error: existingGiftLinksError } = await admin
+      .from("prediction_match_gifts")
+      .select("client_id, gift_type")
+      .eq("match_id", id)
       .in("client_id", winnerClientIds)
-      .eq("reward_type", "Free Dessert")
-      .ilike("description", `%${matchGiftMarker}%`);
+      .eq("gift_type", "Free Dessert");
 
-    if (existingRewardsError) return jsonError(existingRewardsError.message, 400);
+    if (existingGiftLinksError) return jsonError(existingGiftLinksError.message, 400);
 
     const alreadyRewardedClientIds = new Set(
-      (existingRewards ?? []).map((reward: any) => reward.client_id).filter(Boolean),
+      (existingGiftLinks ?? []).map((gift: any) => gift.client_id).filter(Boolean),
     );
 
     const winnersForInsert = (entries ?? []).filter(
@@ -523,17 +523,38 @@ export async function POST(req: Request, context: RouteContext) {
         client_id: entry.client_id,
         category_id: category.id,
         reward_type: gift.label,
-        description: gift.description,
         status: "available",
         earned_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       })),
     );
 
+    let insertedRewards: Array<{ id: string; client_id: string; reward_type: string }> = [];
+
     if (rewardRows.length > 0) {
-      const { error: rewardError } = await admin.from("rewards").insert(rewardRows);
+      const { data: rewardData, error: rewardError } = await admin
+        .from("rewards")
+        .insert(rewardRows)
+        .select("id, client_id, reward_type");
 
       if (rewardError) return jsonError(rewardError.message, 400);
+
+      insertedRewards = (rewardData ?? []) as Array<{ id: string; client_id: string; reward_type: string }>;
+
+      const giftLinkRows = insertedRewards.map((reward) => ({
+        match_id: id,
+        client_id: reward.client_id,
+        reward_id: reward.id,
+        gift_type: reward.reward_type || "Free Dessert",
+      }));
+
+      if (giftLinkRows.length > 0) {
+        const { error: giftLinkError } = await admin
+          .from("prediction_match_gifts")
+          .upsert(giftLinkRows, { onConflict: "match_id,client_id,gift_type" });
+
+        if (giftLinkError) return jsonError(giftLinkError.message, 400);
+      }
     }
 
     if (rewardRows.length === 0) {

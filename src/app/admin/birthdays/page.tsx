@@ -1,14 +1,7 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import BirthdaysPageClient from "./BirthdaysPageClient";
 
-export default async function AdminBirthdaysPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export const dynamic = "force-dynamic";
 
-  if (!user) redirect("/login");
-
+export default function BirthdaysPage() {
   return <BirthdaysPageClient />;
 }

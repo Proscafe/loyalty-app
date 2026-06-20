@@ -198,71 +198,6 @@ function winnerCategoryForEntry(match: MatchRow, entry: EntryRow) {
   return exactScore ? "exact" : "team";
 }
 
-
-function sortEntriesByPointsThenName(
-  entries: EntryRow[],
-  profileNames: Record<string, { name: string; code: string; role?: string }>,
-) {
-  return entries.slice().sort((a, b) => {
-    const pointDiff = Number(b.points ?? 0) - Number(a.points ?? 0);
-    if (pointDiff !== 0) return pointDiff;
-
-    const aName = (profileNames[a.client_id]?.name ?? "Client").toLowerCase();
-    const bName = (profileNames[b.client_id]?.name ?? "Client").toLowerCase();
-
-    if (aName < bName) return -1;
-    if (aName > bName) return 1;
-
-    if (a.client_id < b.client_id) return -1;
-    if (a.client_id > b.client_id) return 1;
-
-    return 0;
-  });
-}
-
-type SubmittedResultPayload =
-  | {
-      sport_type: "basketball";
-      winner: "home" | "away";
-      margin: number;
-    }
-  | {
-      sport_type: "football";
-      home_score: number;
-      away_score: number;
-    };
-
-function exactWinnerEntriesForSubmittedResult(
-  match: MatchRow,
-  entries: EntryRow[],
-  result: SubmittedResultPayload,
-  profileNames: Record<string, { name: string; code: string; role?: string }>,
-) {
-  const exactEntries = entries.filter((entry) => {
-    if (result.sport_type === "basketball") {
-      const predictedWinner = entryPredictedWinner(match, entry);
-      const predictedMargin = entryPredictedMargin(entry);
-
-      return (
-        predictedWinner === result.winner &&
-        predictedMargin === Number(result.margin)
-      );
-    }
-
-    const actualWinner = winnerForScores(result.home_score, result.away_score);
-    const predictedWinner = entryPredictedWinner(match, entry);
-
-    if (actualWinner === "draw" || predictedWinner !== actualWinner) return false;
-
-    return (
-      Number(entry.home_score ?? 0) === Number(result.home_score) &&
-      Number(entry.away_score ?? 0) === Number(result.away_score)
-    );
-  });
-
-  return sortEntriesByPointsThenName(exactEntries, profileNames);
-}
-
 function initialGiftOptions(sportLabel: string): GiftOption[] {
   return [
     {
@@ -333,6 +268,41 @@ function writeSavedWinnerIds(matchId: string, winnerIds: string[]) {
   }
 }
 
+function sortEntriesByPointsThenName(
+  entries: EntryRow[],
+  profileNames: Record<string, { name: string; code: string; role?: string }>,
+) {
+  return entries.slice().sort((a, b) => {
+    const aPoints = Number(a.points ?? 0);
+    const bPoints = Number(b.points ?? 0);
+
+    if (aPoints !== bPoints) return bPoints - aPoints;
+
+    const aName = (profileNames[a.client_id]?.name ?? "Client").toLowerCase();
+    const bName = (profileNames[b.client_id]?.name ?? "Client").toLowerCase();
+
+    if (aName < bName) return -1;
+    if (aName > bName) return 1;
+
+    if (a.client_id < b.client_id) return -1;
+    if (a.client_id > b.client_id) return 1;
+
+    return 0;
+  });
+}
+
+function exactWinnerEntriesForMatch(
+  match: MatchRow,
+  entries: EntryRow[],
+  profileNames: Record<string, { name: string; code: string; role?: string }>,
+) {
+  const exactEntries = entries.filter(
+    (entry) => winnerCategoryForEntry(match, entry) === "exact",
+  );
+
+  return sortEntriesByPointsThenName(exactEntries, profileNames);
+}
+
 function downloadQr(code: string, title: string) {
   const link = predictionLinkFor(code);
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=900x900&data=${encodeURIComponent(link)}`;
@@ -352,6 +322,7 @@ export function GameLinkDetailsClient({
   match,
   entries,
   profileNames,
+  giftSentClientIds = [],
 }: {
   match: MatchRow;
   entries: EntryRow[];
@@ -407,6 +378,11 @@ export function GameLinkDetailsClient({
   const [sendResultPopupOpen, setSendResultPopupOpen] = useState(false);
   const [sendGiftResult, setSendGiftResult] = useState<SendGiftResponse | null>(null);
 
+  const giftSentClientIdSet = useMemo(
+    () => new Set(giftSentClientIds),
+    [giftSentClientIds],
+  );
+
   const sortedEntries = useMemo(() => {
     return entries.slice().sort((a, b) => {
       const aProfile = profileNames[a.client_id]?.name ?? "Client";
@@ -439,6 +415,10 @@ export function GameLinkDetailsClient({
     return { teamWinners, exactWinners };
   }, [entries, match]);
 
+  const exactScoreWinnerEntries = useMemo(() => {
+    return exactWinnerEntriesForMatch(match, entries, profileNames);
+  }, [entries, match, profileNames]);
+
   const correctPredictionEntries = useMemo(() => {
     const uniqueWinners = [
       ...winnerGroups.exactWinners,
@@ -470,20 +450,20 @@ export function GameLinkDetailsClient({
   const featuredWinners = useMemo(() => {
     const selectedEntries = selectedWinnerIds
       .map((clientId) =>
-        correctPredictionEntries.find((entry) => entry.client_id === clientId),
+        exactScoreWinnerEntries.find((entry) => entry.client_id === clientId),
       )
       .filter((entry): entry is EntryRow => Boolean(entry));
 
     return selectedEntries.length > 0
       ? selectedEntries
-      : correctPredictionEntries.slice(0, 3);
-  }, [correctPredictionEntries, selectedWinnerIds]);
+      : exactScoreWinnerEntries.slice(0, 3);
+  }, [exactScoreWinnerEntries, selectedWinnerIds]);
 
   const visibleFeaturedWinners = savedWinnersLoaded ? featuredWinners : [];
 
   useEffect(() => {
     const validClientIds = new Set(
-      correctPredictionEntries.map((entry) => entry.client_id),
+      exactScoreWinnerEntries.map((entry) => entry.client_id),
     );
     const savedIds = readSavedWinnerIds(match.id)
       .filter((clientId) => validClientIds.has(clientId))
@@ -491,7 +471,7 @@ export function GameLinkDetailsClient({
 
     setSelectedWinnerIds(savedIds);
     setSavedWinnersLoaded(true);
-  }, [correctPredictionEntries, match.id]);
+  }, [exactScoreWinnerEntries, match.id]);
 
   useEffect(() => {
     if (!savedWinnersLoaded) return;
@@ -500,6 +480,20 @@ export function GameLinkDetailsClient({
   }, [match.id, savedWinnersLoaded, selectedWinnerIds]);
 
   function toggleWinner(clientId: string) {
+    const canReceiveGift = exactScoreWinnerEntries.some(
+      (entry) => entry.client_id === clientId,
+    );
+
+    if (!canReceiveGift) {
+      setMessage("Only exact-score winners who have not already received this gift can receive Free Dessert gifts.");
+      return;
+    }
+
+    if (giftSentClientIdSet.has(clientId)) {
+      setMessage("A Free Dessert gift was already sent to this winner.");
+      return;
+    }
+
     setSelectedWinnerIds((current) =>
       current.includes(clientId)
         ? current.filter((id) => id !== clientId)
@@ -510,10 +504,12 @@ export function GameLinkDetailsClient({
   }
 
   function randomizeThreeGiftWinners() {
-    const candidates = correctPredictionEntries.slice();
+    const candidates = exactScoreWinnerEntries.filter(
+      (entry) => !giftSentClientIdSet.has(entry.client_id),
+    );
 
     if (candidates.length === 0) {
-      setMessage("No right-team predictions available yet.");
+      setMessage("No exact-score predictions available yet.");
       return;
     }
 
@@ -633,7 +629,7 @@ export function GameLinkDetailsClient({
     setSaving(true);
     setMessage(null);
 
-    const resultPayload: SubmittedResultPayload =
+    const scorePayload =
       inferSportType(match) === "basketball"
         ? {
             sport_type: "basketball",
@@ -646,19 +642,10 @@ export function GameLinkDetailsClient({
             away_score: Number(awayScore),
           };
 
-    const automaticWinnerIds = exactWinnerEntriesForSubmittedResult(
-      match,
-      entries,
-      resultPayload,
-      profileNames,
-    )
-      .slice(0, 3)
-      .map((entry) => entry.client_id);
-
     const response = await fetch(`/api/admin/game-links/${match.id}/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(resultPayload),
+      body: JSON.stringify(scorePayload),
     });
 
     const json = (await response.json().catch(() => ({}))) as {
@@ -671,15 +658,29 @@ export function GameLinkDetailsClient({
       return;
     }
 
+    const savedMatch: MatchRow =
+      inferSportType(match) === "basketball"
+        ? match
+        : {
+            ...match,
+            home_score: Number(homeScore),
+            away_score: Number(awayScore),
+          };
+
+    const automaticWinnerIds = exactWinnerEntriesForMatch(
+      savedMatch,
+      entries,
+      profileNames,
+    )
+      .slice(0, 3)
+      .map((entry) => entry.client_id);
+
     if (automaticWinnerIds.length === 0) {
       setSaving(false);
-      setMessage("Result saved. No exact-score winners found.");
-      window.setTimeout(() => window.location.reload(), 900);
+      setMessage("Result saved. No exact-score winners found for gifts.");
+      window.setTimeout(() => window.location.reload(), 1200);
       return;
     }
-
-    setSelectedWinnerIds(automaticWinnerIds);
-    writeSavedWinnerIds(match.id, automaticWinnerIds);
 
     const giftResponse = await fetch(
       `/api/admin/game-links/${match.id}/send-gifts`,
@@ -688,22 +689,27 @@ export function GameLinkDetailsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           winner_client_ids: automaticWinnerIds,
+          gifts: [
+            {
+              label: "Free Dessert",
+              description: `Winner in ${sportLabel} Prediction`,
+            },
+          ],
+          randomize: false,
         }),
       },
     );
 
-    const giftJson = (await giftResponse
-      .json()
-      .catch(() => ({}))) as SendGiftResponse;
+    const giftJson = (await giftResponse.json().catch(() => ({}))) as SendGiftResponse;
 
     setSaving(false);
 
     if (!giftResponse.ok) {
+      setSelectedWinnerIds(automaticWinnerIds);
+      writeSavedWinnerIds(match.id, automaticWinnerIds);
       setSendGiftResult({
         ok: false,
-        error:
-          giftJson.error ??
-          "Result saved, but Free Dessert gifts could not be sent automatically.",
+        error: giftJson.error ?? "Result saved, but Free Dessert gifts failed.",
         rewards_created: giftJson.rewards_created ?? 0,
         admin_email_sent: giftJson.admin_email_sent ?? false,
         winner_emails_sent: giftJson.winner_emails_sent ?? 0,
@@ -714,22 +720,16 @@ export function GameLinkDetailsClient({
         smtp_configured: giftJson.smtp_configured,
       });
       setSendResultPopupOpen(true);
+      setMessage("Result saved, but gifts were not sent. Check the gift details.");
       return;
     }
 
-    const lockedWinnerIds =
-      giftJson.locked_winner_client_ids?.length
-        ? giftJson.locked_winner_client_ids.slice(0, 3)
-        : automaticWinnerIds;
-
-    setSelectedWinnerIds(lockedWinnerIds);
-    writeSavedWinnerIds(match.id, lockedWinnerIds);
-
+    setSelectedWinnerIds(automaticWinnerIds);
+    writeSavedWinnerIds(match.id, automaticWinnerIds);
     setSendGiftResult(giftJson);
-    setMessage(
-      `Result saved. Free Dessert gifts sent to ${lockedWinnerIds.length} winner(s).`,
-    );
-    window.setTimeout(() => window.location.reload(), 1000);
+    setSendResultPopupOpen(true);
+    setMessage(`Result saved. Free Dessert sent to ${automaticWinnerIds.length} exact-score winner(s).`);
+    window.setTimeout(() => window.location.reload(), 1800);
   }
 
   async function sendGifts() {
@@ -742,7 +742,20 @@ export function GameLinkDetailsClient({
       }));
 
     if (selectedWinnerIds.length === 0) {
-      setMessage("Select at least one winner first.");
+      setMessage("Select at least one exact-score winner first.");
+      return;
+    }
+
+    const validExactWinnerIds = new Set(
+      exactScoreWinnerEntries.map((entry) => entry.client_id),
+    );
+    const exactSelectedWinnerIds = selectedWinnerIds.filter(
+      (clientId) =>
+        validExactWinnerIds.has(clientId) && !giftSentClientIdSet.has(clientId),
+    );
+
+    if (exactSelectedWinnerIds.length === 0) {
+      setMessage("Only exact-score winners can receive Free Dessert gifts.");
       return;
     }
 
@@ -760,7 +773,7 @@ export function GameLinkDetailsClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          winner_client_ids: selectedWinnerIds,
+          winner_client_ids: exactSelectedWinnerIds,
           gifts: selectedGifts,
           randomize: randomizeGifts,
         }),
@@ -913,7 +926,7 @@ export function GameLinkDetailsClient({
                   <button
                     type="button"
                     onClick={randomizeThreeGiftWinners}
-                    disabled={correctPredictionEntries.length === 0}
+                    disabled={exactScoreWinnerEntries.length === 0}
                     className="flex h-11 w-11 items-center justify-center rounded-full border border-[#ffd66b]/70 bg-white/10 text-[18px] font-black text-[#ffd66b] transition hover:bg-[#ffd66b] hover:text-[#365665] disabled:opacity-45"
                     title="Shuffle and save 3 winners"
                     aria-label="Shuffle and save 3 winners"
