@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import AdminSidebar from "@/components/AdminSidebar";
+import { AdminMobileHeader } from "@/components/AdminMobileHeader";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 import { Toast } from "@/components/Toast";
 
@@ -71,7 +72,7 @@ type ContactHistoryRow = AnyRow & {
 };
 
 const PAGE_BG =
-  "bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]";
+  "bg-[#798673] lg:bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]";
 
 function parseMoneyValue(value: string | number | null | undefined) {
   const numberValue =
@@ -250,6 +251,8 @@ export default function ClientProfilePage({
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [visitsOpen, setVisitsOpen] = useState(false);
   const [giftsSectionOpen, setGiftsSectionOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<"month" | "all">("month");
   const [profileStatus, setProfileStatus] = useState<"client" | "staff" | "admin" | "deactivated">(() => getProfileStatus(profile));
   const [giftCategoryId, setGiftCategoryId] = useState(categories[0]?.id ?? "");
@@ -695,6 +698,10 @@ export default function ClientProfilePage({
       </div>
       {toast ? <Toast message={toast} tone={tone} /> : null}
 
+      <div className="px-4 pt-5 lg:hidden">
+        <AdminMobileHeader profile={profile as any} />
+      </div>
+
       <div className="mx-auto max-w-[1500px] space-y-4 px-3 py-4 pb-24 lg:ml-[112px] lg:max-w-none lg:px-6 lg:py-6 lg:pb-10">
         <Link
           href="/admin/users"
@@ -731,25 +738,25 @@ export default function ClientProfilePage({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 lg:justify-end">
+            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:justify-end lg:overflow-visible lg:pb-0">
               <button
                 type="button"
                 onClick={() => setTimeRange((current) => (current === "month" ? "all" : "month"))}
-                className="rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/18"
+                className="hidden rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/18 lg:inline-flex"
               >
                 {timeRange === "month" ? "This month" : "Show all"}
               </button>
               <button
                 type="button"
                 onClick={() => setPhoneOpen(true)}
-                className="rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white"
+                className="hidden rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white lg:inline-flex"
               >
                 Edit phone
               </button>
               <button
                 type="button"
                 onClick={() => setPasswordOpen(true)}
-                className="rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white"
+                className="hidden rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white lg:inline-flex"
               >
                 Change password
               </button>
@@ -760,7 +767,7 @@ export default function ClientProfilePage({
                     event.target.value as "client" | "staff" | "admin" | "deactivated",
                   )
                 }
-                className="h-[38px] rounded-full border-0 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665] outline-none"
+                className="h-[34px] shrink-0 rounded-full border-0 bg-white px-3 text-[10px] font-black uppercase tracking-[0.10em] text-[#365665] outline-none lg:h-[38px] lg:px-4 lg:text-[11px] lg:tracking-[0.12em]"
                 aria-label="Change profile role"
               >
                 <option value="client">Client</option>
@@ -773,7 +780,7 @@ export default function ClientProfilePage({
                   href={currentWhatsAppUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-full bg-[#25D366] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white"
+                  className="shrink-0 rounded-full bg-[#25D366] px-3.5 py-2 text-[10px] font-black uppercase tracking-[0.10em] text-white lg:px-4 lg:py-2.5 lg:text-[11px] lg:tracking-[0.12em]"
                 >
                   WA
                 </a>
@@ -781,16 +788,16 @@ export default function ClientProfilePage({
               <button
                 type="button"
                 onClick={() => setGiftOpen(true)}
-                className="rounded-full bg-[#ffd66b] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665]"
+                className="shrink-0 rounded-full bg-[#ffd66b] px-3.5 py-2 text-[10px] font-black uppercase tracking-[0.10em] text-[#365665] lg:px-4 lg:py-2.5 lg:text-[11px] lg:tracking-[0.12em]"
               >
-                Send
+                Gift
               </button>
               <button
                 type="button"
                 onClick={() => void markContacted()}
-                className="rounded-full bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665]"
+                className="shrink-0 rounded-full bg-white px-3.5 py-2 text-[10px] font-black uppercase tracking-[0.10em] text-[#365665] lg:px-4 lg:py-2.5 lg:text-[11px] lg:tracking-[0.12em]"
               >
-                Mark contacted
+                Contacted
               </button>
             </div>
           </div>
@@ -980,10 +987,24 @@ export default function ClientProfilePage({
 
           <div className="space-y-4">
             <Panel>
-              <h2 className="text-[20px] font-black tracking-[-0.04em] text-white">
-                Notes
-              </h2>
-              <div className="mt-4 space-y-3">
+              <button
+                type="button"
+                onClick={() => setNotesOpen((value) => !value)}
+                className="flex w-full items-center justify-between gap-3 text-left lg:cursor-default"
+              >
+                <div>
+                  <h2 className="text-[20px] font-black tracking-[-0.04em] text-white">
+                    Notes
+                  </h2>
+                  <div className="mt-1 text-[11px] font-black text-white/65 lg:hidden">
+                    {notes.length} notes
+                  </div>
+                </div>
+                <span className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-[#365665] lg:hidden">
+                  {notesOpen ? "Close" : "Open"}
+                </span>
+              </button>
+              <div className={`${notesOpen ? "mt-4" : "hidden"} space-y-3 lg:mt-4 lg:block`}>
                 <textarea
                   value={noteText}
                   onChange={(event) => setNoteText(event.target.value)}
@@ -1053,10 +1074,24 @@ export default function ClientProfilePage({
             </Panel>
 
             <Panel>
-              <h2 className="text-[20px] font-black tracking-[-0.04em] text-white">
-                Full activity timeline
-              </h2>
-              <div className="mt-4 max-h-[720px] space-y-2 overflow-auto pr-1">
+              <button
+                type="button"
+                onClick={() => setActivityOpen((value) => !value)}
+                className="flex w-full items-center justify-between gap-3 text-left lg:cursor-default"
+              >
+                <div>
+                  <h2 className="text-[20px] font-black tracking-[-0.04em] text-white">
+                    Activity
+                  </h2>
+                  <div className="mt-1 text-[11px] font-black text-white/65 lg:hidden">
+                    {timeline.length} activity items
+                  </div>
+                </div>
+                <span className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-[#365665] lg:hidden">
+                  {activityOpen ? "Close" : "Open"}
+                </span>
+              </button>
+              <div className={`${activityOpen ? "mt-4" : "hidden"} max-h-[720px] space-y-2 overflow-auto pr-1 lg:mt-4 lg:block`}>
                 {timeline.length === 0 ? (
                   <div className="text-[13px] font-bold text-white/65">
                     No activity yet.

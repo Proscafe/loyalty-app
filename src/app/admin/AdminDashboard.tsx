@@ -307,16 +307,16 @@ function StatCard({
   badge?: string;
 }) {
   return (
-    <DashboardCard className="relative min-h-[100px] px-5 py-5 lg:min-h-[112px] lg:px-6">
+    <DashboardCard className="relative min-h-[88px] px-3 py-4 lg:min-h-[112px] lg:px-6 lg:py-5">
       {badge ? (
-        <span className="absolute right-5 top-5 rounded-full bg-[#365665] px-3 py-1 text-[10px] font-black text-[#ffd66b]">
+        <span className="absolute right-3 top-3 rounded-full bg-[#365665] px-2 py-1 text-[8px] font-black text-[#ffd66b] lg:right-5 lg:top-5 lg:px-3 lg:text-[10px]">
           {badge}
         </span>
       ) : null}
-      <div className="text-[32px] font-black leading-none tracking-[-0.06em] text-white lg:text-[36px]">
+      <div className="text-[24px] font-black leading-none tracking-[-0.06em] text-white lg:text-[36px]">
         {value}
       </div>
-      <div className="mt-3 text-[12px] font-black leading-tight text-white/72">
+      <div className="mt-2 text-[9px] font-black leading-tight text-white/72 lg:mt-3 lg:text-[12px]">
         {label}
       </div>
     </DashboardCard>
@@ -589,6 +589,33 @@ function InsightTable({
   );
 }
 
+function cleanDashboardLabel(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text || text === "—") return "";
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(text)) return "";
+  return text;
+}
+
+function activityDetailLabel(txn: StampTransaction) {
+  const record = asRecord(txn);
+  const action = String(record.action_type ?? "").toLowerCase();
+
+  if (/redeem|redeemed|claim|claimed|gift|reward/.test(action)) {
+    return cleanDashboardLabel(
+      record.reward_label ??
+        record.reward_name ??
+        record.reward_type ??
+        record.gift_type ??
+        record.title ??
+        record.item_label,
+    );
+  }
+
+  return cleanDashboardLabel(
+    record.category_name ?? record.category ?? record.stamp_category,
+  );
+}
+
 function RecentActivity({
   txns,
   users,
@@ -610,12 +637,7 @@ function RecentActivity({
           txns.slice(0, 5).map((txn) => {
             const record = asRecord(txn);
             const clientName = getClientName(txn.client_id, users);
-            const category = String(
-              record.category_name ??
-                record.category ??
-                record.category_id ??
-                "",
-            );
+            const detail = activityDetailLabel(txn);
             return (
               <div
                 key={String(record.id ?? `${txn.client_id}-${txn.created_at}`)}
@@ -625,9 +647,9 @@ function RecentActivity({
                   <div className="text-[14px] font-black leading-tight">
                     {clientName} {actionLabel(txn)}
                   </div>
-                  {category ? (
+                  {detail ? (
                     <div className="mt-2 text-[11px] font-black text-white/76">
-                      {category}
+                      {detail}
                     </div>
                   ) : null}
                 </div>
@@ -650,7 +672,8 @@ function AdminDashboard({
   recentRewards = [],
   metrics,
 }: Props) {
-  const [period, setPeriod] = useState<DashboardPeriod>("today");
+  const [period, setPeriod] = useState<DashboardPeriod>("week");
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   const filteredTxns = useMemo(
     () => recentTxns.filter((txn) => isInPeriod(txn.created_at, period)),
@@ -814,17 +837,30 @@ function AdminDashboard({
             </Link>
           </header>
 
-          <section className="mb-5 flex flex-col gap-4 rounded-[28px] bg-white/10 px-5 py-5 backdrop-blur-2xl lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-7">
-            <div>
+          <section className="mb-5 flex items-center justify-between gap-3 rounded-[28px] bg-white/10 px-5 py-5 backdrop-blur-2xl lg:flex-row lg:items-start lg:px-7 lg:py-7">
+            <div className="min-w-0">
               <h1 className="text-[28px] font-black tracking-[-0.05em] text-white lg:text-[30px]">
-                Dashboard Overview
+                Dashboard<span className="hidden lg:inline"> Overview</span>
               </h1>
-              <p className="mt-2 text-[12px] font-black text-white/68">
+              <p className="mt-2 hidden text-[12px] font-black text-white/68 lg:block">
                 Track customers, stamps, rewards, feedback, and loyalty
                 performance.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-1 rounded-[14px] bg-white/10 p-1">
+
+            <div className="lg:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileFilterOpen((open) => !open)}
+                className="flex h-10 min-w-[118px] items-center justify-between gap-3 rounded-[15px] bg-[#ffd66b] px-4 text-[11px] font-black text-[#365665]"
+                aria-expanded={mobileFilterOpen}
+              >
+                <span>{PERIODS.find((item) => item.key === period)?.label}</span>
+                <span className={`text-[10px] transition ${mobileFilterOpen ? "rotate-180" : ""}`}>⌄</span>
+              </button>
+            </div>
+
+            <div className="hidden flex-wrap items-center gap-1 rounded-[14px] bg-white/10 p-1 lg:flex">
               {PERIODS.map((item) => (
                 <FilterPill
                   key={item.key}
@@ -836,7 +872,7 @@ function AdminDashboard({
             </div>
           </section>
 
-          <section className="grid gap-4 lg:grid-cols-4">
+          <section className="grid grid-cols-3 gap-2 lg:grid-cols-4 lg:gap-4">
             <StatCard label="Total Customers" value={totalCustomers} />
             <StatCard label="Active Customers" value={activeCustomers} />
             <StatCard
@@ -924,6 +960,44 @@ function AdminDashboard({
           </section>
         </div>
       </div>
+
+
+      {mobileFilterOpen ? (
+        <div
+          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 px-5 backdrop-blur-md lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setMobileFilterOpen(false)}
+        >
+          <div
+            className="w-full max-w-[300px] rounded-[28px] border border-white/18 bg-[#365665]/98 p-4 shadow-[0_28px_90px_rgba(0,0,0,0.45)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 text-center text-[10px] font-black uppercase tracking-[0.2em] text-white/62">
+              Filter dashboard
+            </div>
+            <div className="grid gap-2">
+              {PERIODS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    setPeriod(item.key);
+                    setMobileFilterOpen(false);
+                  }}
+                  className={`flex h-11 w-full items-center justify-center rounded-[16px] px-4 text-[11px] font-black transition ${
+                    period === item.key
+                      ? "bg-[#ffd66b] text-[#365665]"
+                      : "bg-white/14 text-white hover:bg-white/20"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AdminMobileFloatingMenu active="overview" />
     </main>

@@ -14,23 +14,17 @@ const MENU_ITEMS = [
   { key: "overview", label: "Overview", icon: "⌂", href: "/admin" },
   { key: "activity", label: "Activity", icon: "↯", href: "/admin/activity" },
   { key: "users", label: "Users", icon: "♟", href: "/admin/users" },
-  { key: "loyalty-program", label: "Loyalty", icon: "★", href: "/admin/loyalty" },
-  { key: "comment-cards", label: "Comment Card", icon: "✎", href: "/admin/comment-cards" },
+  { key: "comment-cards", label: "Comment Cards", icon: "✎", href: "/admin/comment-cards" },
   { key: "games", label: "Games", icon: "🎮", href: "/admin/games" },
-  { key: "gifts", label: "Gifts", icon: "🎁", href: "/admin/gifts" },
-  { key: "birthdays", label: "Birthdays", icon: "🎂", href: "/admin/birthdays" },
-  { key: "news", label: "News", icon: "📣", href: "/admin/news" },
+  { key: "loyalty-program", label: "Loyalty", icon: "★", href: "/admin/loyalty" },
 ] as const;
 
 function inferActiveFromPath(pathname: string) {
   if (pathname === "/admin/activity") return "activity";
   if (pathname === "/admin/users") return "users";
-  if (pathname === "/admin/loyalty") return "loyalty-program";
   if (pathname === "/admin/comment-cards") return "comment-cards";
   if (pathname === "/admin/games" || pathname === "/admin/predictions" || pathname.startsWith("/admin/game-links")) return "games";
-  if (pathname === "/admin/gifts") return "gifts";
-  if (pathname === "/admin/birthdays") return "birthdays";
-  if (pathname === "/admin/news") return "news";
+  if (pathname === "/admin/loyalty") return "loyalty-program";
   return "overview";
 }
 

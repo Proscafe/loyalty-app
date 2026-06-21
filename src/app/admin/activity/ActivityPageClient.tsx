@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { AdminMobileHeader } from "@/components/AdminMobileHeader";
 import { AdminPageShell } from "@/components/AdminPageShell";
 
 type ActivityRow = Record<string, any>;
@@ -15,8 +15,6 @@ type ProfileRow = {
 type CategoryRow = { id: string; name?: string | null };
 type Filter = "today" | "week" | "month";
 
-const MOBILE_CARD =
-  "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
 const PAGE_BG =
   "radial-gradient(circle at top left, rgba(255,214,107,0.24), transparent 28%), linear-gradient(135deg, #365665 0%, #263f49 48%, #798673 100%)";
 const GLASS_PANEL = "rgba(255,255,255,0.10)";
@@ -26,8 +24,6 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "week", label: "This week" },
   { key: "month", label: "This month" },
 ];
-
-const MOBILE_FILTERS = FILTERS;
 
 function validDate(value?: string | null) {
   if (!value) return null;
@@ -273,6 +269,7 @@ export default function ActivityPageClient({
   const [filter, setFilter] = useState<Filter>("today");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [desktopFilterOpen, setDesktopFilterOpen] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const desktopFilterRef = useRef<HTMLDivElement | null>(null);
 
   const profileById = useMemo(
@@ -384,6 +381,7 @@ export default function ActivityPageClient({
   const desktopFilterLabel = selectedMonth
     ? monthLabelFromKey(selectedMonth)
     : (FILTERS.find((item) => item.key === filter)?.label ?? "Today");
+  const mobileFilterLabel = desktopFilterLabel;
 
   const visibleRows = enriched.filter(
     ({
@@ -414,11 +412,13 @@ export default function ActivityPageClient({
     setFilter(nextFilter);
     setSelectedMonth(null);
     setDesktopFilterOpen(false);
+    setMobileFilterOpen(false);
   }
 
   function chooseMonth(month: string) {
     setSelectedMonth(month);
     setDesktopFilterOpen(false);
+    setMobileFilterOpen(false);
   }
 
   function openClientCard(clientId: unknown) {
@@ -479,33 +479,97 @@ export default function ActivityPageClient({
           style={{ background: PAGE_BG }}
         />
 
-        <div className="mb-5 lg:hidden">
-          <div className="flex h-[58px] items-center justify-between rounded-[18px] bg-white/10 px-4 shadow-[0_14px_36px_rgba(35,54,47,0.16)] backdrop-blur-2xl">
-            <img
-              src="/apple-icon.png"
-              alt="PRO's"
-              className="h-[36px] w-auto origin-left object-contain"
-            />
-            <Link
-              href="/profile"
-              aria-label="Open profile"
-              className="flex h-[32px] w-[32px] items-center justify-center text-[#ffd66b] transition hover:scale-105"
+        <AdminMobileHeader title="Pro's Cafe" />
+
+        <section className="mb-3 rounded-[28px] border border-white/10 bg-white/10 px-5 py-5 shadow-[0_22px_58px_rgba(35,54,47,0.18)] backdrop-blur-2xl lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-[30px] font-black leading-none tracking-[-0.05em] text-white">
+              Activity
+            </h1>
+            <button
+              type="button"
+              onClick={() => setMobileFilterOpen(true)}
+              className="flex h-11 min-w-[118px] items-center justify-center rounded-[18px] bg-[#ffd66b] px-4 text-[12px] font-black text-[#365665]"
+              aria-expanded={mobileFilterOpen}
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-[24px] w-[24px]"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Zm0 2.2c-4.2 0-7.6 2.2-7.6 5v.6c0 .4.3.6.7.6h13.8c.4 0 .7-.3.7-.6v-.6c0-2.8-3.4-5-7.6-5Z" />
-              </svg>
-            </Link>
+              {mobileFilterLabel}
+            </button>
           </div>
-        </div>
+        </section>
+
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search client name..."
+          className="mb-5 h-12 w-full rounded-[16px] border-0 bg-white px-5 text-sm font-bold text-[#365665] outline-none placeholder:text-[#365665]/50 lg:hidden"
+        />
+
+        {mobileFilterOpen ? (
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 px-5 backdrop-blur-sm lg:hidden"
+            onMouseDown={() => setMobileFilterOpen(false)}
+            onTouchStart={() => setMobileFilterOpen(false)}
+          >
+            <div
+              className="w-full max-w-[320px] rounded-[28px] border border-white/15 bg-[#365665]/95 p-4 text-white shadow-[0_28px_80px_rgba(0,0,0,0.38)] backdrop-blur-2xl"
+              onMouseDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+            >
+              <div className="mb-3 px-2 text-[11px] font-black uppercase tracking-[0.18em] text-white/62">
+                Filter activity
+              </div>
+
+              <div className="space-y-2">
+                {FILTERS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => chooseFilter(item.key)}
+                    className={`flex h-12 w-full items-center justify-between rounded-[18px] px-4 text-left text-[13px] font-black transition ${
+                      !selectedMonth && filter === item.key
+                        ? "bg-[#ffd66b] text-[#365665]"
+                        : "bg-white/10 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    {item.label}
+                    {!selectedMonth && filter === item.key ? (
+                      <span>✓</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+
+              {availableMonths.length > 0 ? (
+                <>
+                  <div className="my-4 h-px bg-white/12" />
+                  <div className="mb-2 px-2 text-[11px] font-black uppercase tracking-[0.18em] text-white/62">
+                    Month
+                  </div>
+                  <div className="max-h-[210px] space-y-2 overflow-y-auto pr-1">
+                    {availableMonths.map((month) => (
+                      <button
+                        key={month.key}
+                        type="button"
+                        onClick={() => chooseMonth(month.key)}
+                        className={`flex h-11 w-full items-center rounded-[16px] px-4 text-left text-[12px] font-black transition ${
+                          selectedMonth === month.key
+                            ? "bg-[#ffd66b] text-[#365665]"
+                            : "bg-white/10 text-white hover:bg-white/15"
+                        }`}
+                      >
+                        {month.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="relative lg:min-h-[calc(100vh-48px)] lg:rounded-[34px] lg:border lg:border-white/10 lg:bg-white/10 lg:px-8 lg:py-8 lg:shadow-[0_26px_70px_rgba(35,54,47,0.22)] lg:backdrop-blur-2xl">
           <div className="relative">
-            <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <header className="mb-6 hidden flex-col gap-4 lg:flex lg:flex-row lg:items-start lg:justify-between">
               <div className="px-0 py-0">
                 <h1 className="text-[24px] font-black tracking-[-0.04em] text-white lg:text-[34px]">
                   Activity
@@ -596,23 +660,6 @@ export default function ActivityPageClient({
                     ↓
                   </button>
                 </div>
-
-                <div className="flex items-center gap-2 rounded-[18px] bg-white/10 p-1 lg:hidden">
-                  {MOBILE_FILTERS.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => chooseFilter(item.key)}
-                      className={`h-10 rounded-[14px] px-5 text-[12px] font-black transition ${
-                        filter === item.key
-                          ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_28px_rgba(255,214,107,0.35)]"
-                          : "text-white hover:bg-white/10"
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
               </div>
             </header>
 
@@ -626,27 +673,44 @@ export default function ActivityPageClient({
                     No activity matches this filter.
                   </div>
                 ) : (
-                  visibleRows.map(({ row, activity, staffName, duplicate, type, itemLabel, categoryName }) => (
-                    <button
-                      key={`${String(row.activity_source ?? "activity")}-${String(row.id)}`}
-                      type="button"
-                      onClick={() => openClientCard(row.client_id ?? row.profile_id)}
-                      className={`flex w-full cursor-pointer items-center justify-between gap-6 border-b border-white/10 px-7 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0 ${duplicate ? "bg-[#ffd66b]/16" : ""}`}
-                    >
-                      <div className="min-w-0 break-words">
-                        {renderHighlightedActivity(activity, type, itemLabel, categoryName)}
-                        {duplicate ? (
-                          <span className="ml-2 rounded-full bg-[#ffd66b] px-2 py-1 text-[9px] font-black uppercase text-[#365665]">
-                            Double
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="shrink-0 text-right text-[12px] font-black text-white/90">
-                        {staffName} · {dateOnly(row.created_at)} ·{" "}
-                        {timeOnly(row.created_at)}
-                      </div>
-                    </button>
-                  ))
+                  visibleRows.map(
+                    ({
+                      row,
+                      activity,
+                      staffName,
+                      duplicate,
+                      type,
+                      itemLabel,
+                      categoryName,
+                    }) => (
+                      <button
+                        key={`${String(row.activity_source ?? "activity")}-${String(row.id)}`}
+                        type="button"
+                        onClick={() =>
+                          openClientCard(row.client_id ?? row.profile_id)
+                        }
+                        className={`flex w-full cursor-pointer items-center justify-between gap-6 border-b border-white/10 px-7 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0 ${duplicate ? "bg-[#ffd66b]/16" : ""}`}
+                      >
+                        <div className="min-w-0 break-words">
+                          {renderHighlightedActivity(
+                            activity,
+                            type,
+                            itemLabel,
+                            categoryName,
+                          )}
+                          {duplicate ? (
+                            <span className="ml-2 rounded-full bg-[#ffd66b] px-2 py-1 text-[9px] font-black uppercase text-[#365665]">
+                              Double
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-right text-[12px] font-black text-white/90">
+                          {staffName} · {dateOnly(row.created_at)} ·{" "}
+                          {timeOnly(row.created_at)}
+                        </div>
+                      </button>
+                    ),
+                  )
                 )}
               </div>
 
@@ -656,26 +720,44 @@ export default function ActivityPageClient({
                     No activity matches this filter.
                   </div>
                 ) : (
-                  visibleRows.map(({ row, activity, staffName, duplicate, type, itemLabel, categoryName }) => (
-                    <button
-                      key={`${String(row.activity_source ?? "activity")}-${String(row.id)}`}
-                      type="button"
-                      onClick={() => openClientCard(row.client_id ?? row.profile_id)}
-                      className={`flex w-full cursor-pointer flex-col gap-1 border-b border-white/10 px-5 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0 ${duplicate ? "bg-[#ffd66b]/18" : ""}`}
-                    >
-                      <div className="min-w-0 break-words leading-[1.35]">
-                        {renderHighlightedActivity(activity, type, itemLabel, categoryName)}
-                        {duplicate ? (
-                          <span className="ml-2 rounded-full bg-[#ffd66b] px-2 py-1 text-[9px] font-black uppercase text-[#365665]">
-                            Double
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="text-[11px] font-black text-white/76">
-                        {staffName} · {dateOnly(row.created_at)} · {timeOnly(row.created_at)}
-                      </div>
-                    </button>
-                  ))
+                  visibleRows.map(
+                    ({
+                      row,
+                      activity,
+                      staffName,
+                      duplicate,
+                      type,
+                      itemLabel,
+                      categoryName,
+                    }) => (
+                      <button
+                        key={`${String(row.activity_source ?? "activity")}-${String(row.id)}`}
+                        type="button"
+                        onClick={() =>
+                          openClientCard(row.client_id ?? row.profile_id)
+                        }
+                        className={`flex w-full cursor-pointer flex-col gap-1 border-b border-white/10 px-5 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0 ${duplicate ? "bg-[#ffd66b]/18" : ""}`}
+                      >
+                        <div className="min-w-0 break-words leading-[1.35]">
+                          {renderHighlightedActivity(
+                            activity,
+                            type,
+                            itemLabel,
+                            categoryName,
+                          )}
+                          {duplicate ? (
+                            <span className="ml-2 rounded-full bg-[#ffd66b] px-2 py-1 text-[9px] font-black uppercase text-[#365665]">
+                              Double
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="text-[11px] font-black text-white/76">
+                          {staffName} · {dateOnly(row.created_at)} ·{" "}
+                          {timeOnly(row.created_at)}
+                        </div>
+                      </button>
+                    ),
+                  )
                 )}
               </div>
             </section>

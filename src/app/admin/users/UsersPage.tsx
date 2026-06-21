@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
+import { AdminMobileHeader } from "@/components/AdminMobileHeader";
 import type { Profile, Reward, StampTransaction, UserRole } from "@/types";
 
 type AdminUser = Profile & {
@@ -1023,6 +1024,16 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const adminProfile = useMemo(
+    () =>
+      ((users.find((user) => user.id === adminId) ?? {
+        id: adminId,
+        full_name: "Admin",
+        email: null,
+        role: "master_admin",
+      }) as Profile),
+    [adminId, users],
+  );
 
   // Selected user profile
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
@@ -1692,12 +1703,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
         {/* Content */}
         <section className="min-h-[calc(100vh-24px)] min-w-0 flex-1 overflow-visible lg:min-h-[calc(100vh-48px)]">
           <div className="mb-5 space-y-5 lg:hidden">
-            <div className="flex h-[70px] items-center justify-between rounded-[20px] bg-white/10 px-5 shadow-[0_18px_48px_rgba(35,54,47,0.18)] backdrop-blur-2xl">
-              <img src="/apple-icon.png" alt="PRO's" className="h-[46px] w-auto origin-left scale-[1.22] object-contain" />
-              <Link href="/profile" aria-label="Open profile" className="flex h-11 w-11 items-center justify-center rounded-full text-[#ffd66b] transition hover:bg-white/10">
-                <svg viewBox="0 0 24 24" className="h-[27.6px] w-[24.9px]" fill="currentColor" aria-hidden="true"><path d="M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Zm0 2.2c-4.2 0-7.6 2.2-7.6 5v.6c0 .4.3.6.7.6h13.8c.4 0 .7-.3.7-.6v-.6c0-2.8-3.4-5-7.6-5Z" /></svg>
-              </Link>
-            </div>
+            <AdminMobileHeader profile={adminProfile} />
             <div className="rounded-[20px] border border-white/10 bg-white/10 px-5 py-5 shadow-[0_18px_48px_rgba(35,54,47,0.16)] backdrop-blur-2xl">
               <h1 className="text-[24px] font-black tracking-[-0.05em] text-white">Users</h1>
             </div>

@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Toast } from "@/components/Toast";
+import { AdminMobileHeader } from "@/components/AdminMobileHeader";
 import { createClient } from "@/lib/supabase/client";
 import * as AdminMobileFloatingMenuModule from "@/components/AdminMobileFloatingMenu";
+import type { Profile } from "@/types";
 
 
 
@@ -195,12 +197,13 @@ function Panel({ children, className = "" }: { children: React.ReactNode; classN
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMatchRow[] }) {
+export function GamesPage({ initialMatches = [], profile }: { initialMatches?: InitialMatchRow[]; profile?: Profile }) {
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tone, setTone] = useState<"success" | "error">("success");
   const [isMobileDateFilterOpen, setIsMobileDateFilterOpen] = useState(false);
   const supabase = useMemo(() => createClient(), []);
+  const mobileHeaderProfile = profile ?? ({ id: "admin", full_name: "Admin", email: "", role: "master_admin" } as Profile);
 
   // Game form
   const [gameKind, setGameKind] = useState<"football" | "basketball">("basketball");
@@ -802,16 +805,8 @@ export function GamesPage({ initialMatches = [] }: { initialMatches?: InitialMat
           <div className="px-5 py-5 sm:px-5 sm:py-6 lg:px-8">
 
         {/* Mobile app header */}
-        <div className="mb-5 flex h-[70px] items-center justify-between rounded-[18px] border border-white/10 bg-white/10 px-6 shadow-[0_18px_44px_rgba(35,54,47,0.18)] backdrop-blur-2xl sm:hidden">
-          <Link href="/admin" aria-label="Go to admin dashboard" className="flex items-center">
-            <img src="/apple-icon.png" alt="PRO&apos;s" className="h-[46px] w-auto object-contain" />
-          </Link>
-          <Link href="/profile" aria-label="Open profile" className="flex h-10 w-10 items-center justify-center rounded-full text-[#ffd66b] transition hover:bg-white/10">
-            <svg viewBox="0 0 25 28" className="h-[27.6px] w-[24.9px]" fill="currentColor" aria-hidden="true">
-              <path d="M12.45 13.6c3.38 0 6.12-2.82 6.12-6.3S15.83 1 12.45 1 6.33 3.82 6.33 7.3s2.74 6.3 6.12 6.3Z" />
-              <path d="M23.52 26.8c0-5.98-4.96-10.82-11.07-10.82S1.38 20.82 1.38 26.8h22.14Z" />
-            </svg>
-          </Link>
+        <div className="mb-5 sm:hidden">
+          <AdminMobileHeader profile={mobileHeaderProfile} />
         </div>
 
         {/* Header */}

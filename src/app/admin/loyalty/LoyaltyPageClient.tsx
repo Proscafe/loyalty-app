@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { AdminPageShell } from "@/components/AdminPageShell";
+import { AdminMobileHeader } from "@/components/AdminMobileHeader";
 
 const GLASS_CARD = "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
+const PAGE_BG =
+  "radial-gradient(circle at top left, rgba(255,214,107,0.24), transparent 28%), linear-gradient(135deg, #365665 0%, #263f49 48%, #798673 100%)";
 
 type Settings = {
   id: string;
@@ -152,13 +155,18 @@ export default function LoyaltyPageClient() {
 
   return (
     <AdminPageShell active="loyalty-program">
-      <div className="px-4 py-5 lg:px-0 lg:py-0">
+      <style>{`@media (min-width: 1024px) { html, body, main, [data-nextjs-scroll-focus-boundary] { background: ${PAGE_BG} !important; } body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: ${PAGE_BG}; pointer-events: none; } }`}</style>
+      <div className="pointer-events-none fixed inset-0 -z-10 hidden lg:block" style={{ background: PAGE_BG }} />
+      <div className="min-h-screen bg-[#738271] px-4 py-5 pb-28 lg:min-h-0 lg:bg-transparent lg:px-0 lg:py-0">
+        <div className="lg:hidden">
+          <AdminMobileHeader />
+        </div>
         <header
-          className="mb-5 rounded-[28px] border border-white/10 p-5 backdrop-blur-xl lg:mb-6 lg:flex lg:flex-row lg:items-end lg:justify-between"
+          className="mb-5 rounded-[24px] border border-white/10 p-5 backdrop-blur-xl lg:mb-6 lg:rounded-[28px] lg:flex lg:flex-row lg:items-end lg:justify-between"
           style={{ background: GLASS_CARD }}
         >
           <div>
-            <h1 className="text-[34px] font-black tracking-[-0.04em] text-white">Loyalty Program</h1>
+            <h1 className="text-[25px] font-black leading-none tracking-[-0.04em] text-white lg:text-[34px]">Loyalty Program</h1>
             <p className="mt-1 hidden text-sm font-bold text-white/68 lg:block">Manage program status, stamp rules, and category values.</p>
           </div>
           <button
@@ -170,7 +178,7 @@ export default function LoyaltyPageClient() {
           </button>
         </header>
 
-        <section className="mb-5 rounded-[28px] border border-white/10 p-5 backdrop-blur-xl lg:hidden" style={{ background: GLASS_CARD }}>
+        <section className="mb-5 rounded-[24px] border border-white/10 p-5 backdrop-blur-xl lg:hidden" style={{ background: GLASS_CARD }}>
           <div className="mb-7 flex justify-start">
             <span className="pt-1 text-[18px] font-black uppercase tracking-[0.12em] text-emerald-100">
               {settings.is_enabled ? "Active" : "Inactive"}
@@ -188,9 +196,9 @@ export default function LoyaltyPageClient() {
 
         {message ? <div className="mb-4 rounded-2xl bg-white/14 px-4 py-3 text-sm font-black text-white">{message}</div> : null}
 
-        <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-[28px] border border-white/10 p-5 backdrop-blur-xl" style={{ background: GLASS_CARD }}>
-            <h2 className="text-2xl font-black text-white">Program settings</h2>
+        <section className="hidden gap-4 lg:grid lg:gap-5 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-[24px] border border-white/10 p-5 backdrop-blur-xl lg:rounded-[28px]" style={{ background: GLASS_CARD }}>
+            <h2 className="text-[22px] font-black text-white lg:text-2xl">Program settings</h2>
             <div className="mt-5 space-y-4">
               {[
                 ["Program name", "program_name"],
@@ -203,7 +211,7 @@ export default function LoyaltyPageClient() {
                   <input
                     value={String(settings[key as keyof Settings])}
                     onChange={(event) => setSettings((current) => ({ ...current, [key]: event.target.value }))}
-                    className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-white/12 px-4 text-sm font-black text-white outline-none placeholder:text-white/38"
+                    className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-white px-4 text-sm font-black text-[#365665] outline-none placeholder:text-[#365665]/38 lg:bg-white/12 lg:text-[#365665] lg:placeholder:text-[#365665]/38"
                   />
                 </label>
               ))}
@@ -213,7 +221,7 @@ export default function LoyaltyPageClient() {
                   type="number"
                   value={settings.stamps_per_gift}
                   onChange={(event) => setSettings((current) => ({ ...current, stamps_per_gift: Number(event.target.value) }))}
-                  className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-white/12 px-4 text-sm font-black text-white outline-none"
+                  className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-white px-4 text-sm font-black text-[#365665] outline-none lg:bg-white/12 lg:text-[#365665]"
                 />
               </label>
               <button
@@ -227,10 +235,10 @@ export default function LoyaltyPageClient() {
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-white/10 p-5 backdrop-blur-xl" style={{ background: GLASS_CARD }}>
+          <div className="rounded-[24px] border border-white/10 p-5 backdrop-blur-xl lg:rounded-[28px]" style={{ background: GLASS_CARD }}>
             <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="text-2xl font-black text-white">Categories</h2>
+                <h2 className="text-[22px] font-black text-white lg:text-2xl">Categories</h2>
                 <p className="text-xs font-bold text-white/62">Average price is used in Lifetime $ calculations.</p>
               </div>
               <div className="flex gap-2">
@@ -238,7 +246,7 @@ export default function LoyaltyPageClient() {
                   value={newCategoryName}
                   onChange={(event) => setNewCategoryName(event.target.value)}
                   placeholder="New category"
-                  className="h-11 rounded-2xl border border-white/10 bg-white/12 px-4 text-sm font-black text-white outline-none placeholder:text-white/38"
+                  className="h-11 rounded-2xl border border-white/10 bg-white px-4 text-sm font-black text-[#365665] outline-none placeholder:text-[#365665]/38 lg:bg-white/12 lg:text-[#365665] lg:placeholder:text-[#365665]/38"
                 />
                 <button type="button" onClick={() => void addCategory()} className="h-11 rounded-2xl bg-[#ffd66b] px-4 text-[11px] font-black uppercase text-[#365665]">Add</button>
               </div>
@@ -248,22 +256,22 @@ export default function LoyaltyPageClient() {
             ) : (
               <div className="space-y-3">
                 {categories.map((category, index) => (
-                  <div key={category.id} className="grid gap-3 rounded-[22px] border border-white/10 bg-white/8 p-4 lg:grid-cols-[1fr_0.45fr_0.45fr_auto] lg:items-center">
+                  <div key={category.id} className="grid grid-cols-[1fr_auto] gap-3 rounded-[22px] border border-white/10 bg-white/8 p-4 lg:grid-cols-[1fr_0.45fr_0.45fr_auto] lg:items-center">
                     <input
                       value={category.name}
                       onChange={(event) => setCategories((current) => current.map((item) => item.id === category.id ? { ...item, name: event.target.value } : item))}
-                      className="h-11 rounded-2xl border border-white/10 bg-white/10 px-4 text-sm font-black text-white outline-none"
+                      className="h-11 rounded-2xl border border-white/10 bg-white px-4 text-sm font-black text-[#365665] outline-none lg:bg-white/10 lg:text-white"
                     />
                     <input
                       type="number"
                       value={category.average_price ?? 0}
                       onChange={(event) => setCategories((current) => current.map((item) => item.id === category.id ? { ...item, average_price: Number(event.target.value) } : item))}
-                      className="h-11 rounded-2xl border border-white/10 bg-white/10 px-4 text-sm font-black text-white outline-none"
+                      className="h-11 rounded-2xl border border-white/10 bg-white px-4 text-sm font-black text-[#365665] outline-none lg:bg-white/10 lg:text-white"
                     />
                     <button
                       type="button"
                       onClick={() => setCategories((current) => current.map((item) => item.id === category.id ? { ...item, is_active: item.is_active === false } : item))}
-                      className={`h-11 rounded-2xl px-4 text-[11px] font-black uppercase ${category.is_active === false ? "bg-white/12 text-white" : "bg-[#ffd66b] text-[#365665]"}`}
+                      className={`h-9 rounded-full px-4 text-[10px] font-black uppercase lg:h-11 lg:rounded-2xl lg:text-[11px] ${category.is_active === false ? "bg-white/12 text-white" : "bg-[#ffd66b] text-[#365665]"}`}
                     >
                       {category.is_active === false ? "Off" : "On"}
                     </button>
@@ -271,7 +279,7 @@ export default function LoyaltyPageClient() {
                       type="button"
                       disabled={savingCategoryId === category.id}
                       onClick={() => void saveCategory({ ...category, sort_order: category.sort_order ?? index + 1 })}
-                      className="h-11 rounded-2xl bg-white/14 px-4 text-[11px] font-black uppercase text-white disabled:opacity-60"
+                      className="h-9 rounded-full bg-white/14 px-4 text-[10px] font-black uppercase text-white disabled:opacity-60 lg:h-11 lg:rounded-2xl lg:text-[11px]"
                     >
                       Save
                     </button>
