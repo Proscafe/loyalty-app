@@ -852,7 +852,6 @@ export function ClientDashboard({
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
   const [showGameScanCard, setShowGameScanCard] = useState(false);
-  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(
       ((rewards ?? initialRewards ?? []) as ClientReward[])
@@ -1334,19 +1333,7 @@ export function ClientDashboard({
     seenRewardIdsRef.current.add(newestReward.id);
     setCelebrationReward(newestReward);
 
-    if (celebrationTimerRef.current) {
-      clearTimeout(celebrationTimerRef.current);
-    }
-
-    celebrationTimerRef.current = setTimeout(() => {
-      setCelebrationReward(null);
-    }, 8000);
-
-    return () => {
-      if (celebrationTimerRef.current) {
-        clearTimeout(celebrationTimerRef.current);
-      }
-    };
+    return undefined;
   }, [profile.id, visibleRewards]);
 
   async function handleClaim(rewardId: string) {
