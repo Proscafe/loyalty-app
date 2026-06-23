@@ -337,6 +337,7 @@ function StaffConsole({ profile, categories }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"success" | "error">("success");
   const [pushStatus, setPushStatus] = useState<PushStatus>("idle");
+  const claimAlertRequestIdsRef = useRef<Set<string>>(new Set());
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
     categories.forEach((category) => map.set(category.id, category.name));
@@ -456,6 +457,32 @@ function StaffConsole({ profile, categories }: Props) {
       }
     },
     [flash],
+  );
+
+  const sendNewClaimAlert = useCallback(
+    async (reward: Partial<Reward> | null | undefined) => {
+      const rewardId = String(reward?.id ?? "").trim();
+      if (!rewardId || claimAlertRequestIdsRef.current.has(rewardId)) return;
+
+      claimAlertRequestIdsRef.current.add(rewardId);
+
+      try {
+        const response = await fetch("/api/notifications/claim-alert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rewardId }),
+        });
+
+        const json = await response.json().catch(() => ({}));
+
+        if (!response.ok || json?.error) {
+          console.error("Claim alert failed", json?.error || response.statusText);
+        }
+      } catch (error) {
+        console.error("Claim alert failed", error);
+      }
+    },
+    [],
   );
 
   async function cleanupRewardTimers() {
@@ -814,7 +841,17 @@ function StaffConsole({ profile, categories }: Props) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "rewards" },
-        () => {
+        (payload) => {
+          const nextReward = payload.new as Partial<Reward> | null;
+          const previousReward = payload.old as Partial<Reward> | null;
+          const nextStatus = String((nextReward as any)?.status ?? "").toLowerCase();
+          const previousStatus = String((previousReward as any)?.status ?? "").toLowerCase();
+          const becameClaimed = nextStatus === "claimed" && previousStatus !== "claimed";
+
+          if (becameClaimed) {
+            void sendNewClaimAlert(nextReward);
+          }
+
           void loadClaimedRewards();
         },
       )
@@ -824,7 +861,7 @@ function StaffConsole({ profile, categories }: Props) {
       window.clearInterval(interval);
       supabase.removeChannel(rewardChannel);
     };
-  }, [loadClaimedRewards, supabase]);
+  }, [loadClaimedRewards, sendNewClaimAlert, supabase]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
