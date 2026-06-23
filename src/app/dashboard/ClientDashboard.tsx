@@ -829,6 +829,53 @@ function RewardCelebrationModal({
   );
 }
 
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+
+  return outputArray;
+}
+
+async function registerPushNotifications() {
+  if (typeof window === "undefined") return;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "denied") return;
+
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (!publicKey) return;
+
+  const permission =
+    Notification.permission === "granted"
+      ? "granted"
+      : await Notification.requestPermission();
+
+  if (permission !== "granted") return;
+
+  const registration = await navigator.serviceWorker.register("/sw.js");
+  let subscription = await registration.pushManager.getSubscription();
+
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+  }
+
+  await fetch("/api/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subscription, audience: "Client", role: "client" }),
+  });
+}
+
 export function ClientDashboard({
   profile,
   categories = [],
@@ -839,6 +886,12 @@ export function ClientDashboard({
   isLoyaltyProgramEnabled = true,
 }: ClientDashboardProps) {
   const router = useRouter();
+
+  useEffect(() => {
+    void registerPushNotifications().catch(() => {
+      // Push setup is best-effort. The dashboard should still work if notifications are blocked.
+    });
+  }, []);
   const [localRewards, setLocalRewards] = useState<ClientReward[]>((rewards ?? initialRewards ?? []) as ClientReward[]);
   const [claimingRewardIds, setClaimingRewardIds] = useState<Set<string>>(() => new Set());
   const [celebrationReward, setCelebrationReward] = useState<ClientReward | null>(null);
@@ -852,6 +905,7 @@ export function ClientDashboard({
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
   const [showGameScanCard, setShowGameScanCard] = useState(false);
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(
       ((rewards ?? initialRewards ?? []) as ClientReward[])
@@ -1333,7 +1387,19 @@ export function ClientDashboard({
     seenRewardIdsRef.current.add(newestReward.id);
     setCelebrationReward(newestReward);
 
-    return undefined;
+    if (celebrationTimerRef.current) {
+      clearTimeout(celebrationTimerRef.current);
+    }
+
+    celebrationTimerRef.current = setTimeout(() => {
+      setCelebrationReward(null);
+    }, 8000);
+
+    return () => {
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current);
+      }
+    };
   }, [profile.id, visibleRewards]);
 
   async function handleClaim(rewardId: string) {

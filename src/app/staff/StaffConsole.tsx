@@ -24,15 +24,6 @@ type ClaimedReward = Reward & {
   client?: Profile;
 };
 
-type StaffAnnouncement = {
-  id: string;
-  title: string | null;
-  body: string | null;
-  is_active: boolean | null;
-  updated_at?: string | null;
-  created_at?: string | null;
-};
-
 const pageGradient =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
@@ -346,57 +337,6 @@ function StaffConsole({ profile, categories }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"success" | "error">("success");
   const [pushStatus, setPushStatus] = useState<PushStatus>("idle");
-  const [announcement, setAnnouncement] = useState<StaffAnnouncement | null>(
-    null,
-  );
-  const [announcementOpen, setAnnouncementOpen] = useState(false);
-
-  const loadStaffAnnouncement = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("staff_announcements")
-      .select("id, title, body, is_active, updated_at, created_at")
-      .eq("audience", "staff")
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Could not load staff announcement", error);
-      return;
-    }
-
-    const row = data as StaffAnnouncement | null;
-    if (row?.is_active && (row.title?.trim() || row.body?.trim())) {
-      setAnnouncement(row);
-    } else {
-      setAnnouncement(null);
-      setAnnouncementOpen(false);
-    }
-  }, [supabase]);
-
-  useEffect(() => {
-    void loadStaffAnnouncement();
-
-    const channel = supabase
-      .channel("staff-announcements-live")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "staff_announcements",
-          filter: "audience=eq.staff",
-        },
-        () => {
-          void loadStaffAnnouncement();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [loadStaffAnnouncement, supabase]);
-
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
     categories.forEach((category) => map.set(category.id, category.name));
@@ -452,23 +392,47 @@ function StaffConsole({ profile, categories }: Props) {
           return;
         }
 
-        const registration = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
         const readyRegistration = await navigator.serviceWorker.ready;
+        await readyRegistration.update().catch(() => undefined);
 
-        let subscription =
-          await readyRegistration.pushManager.getSubscription();
+        const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+
+        let subscription = await readyRegistration.pushManager.getSubscription();
 
         if (!subscription) {
-          subscription = await readyRegistration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-          });
+          try {
+            subscription = await readyRegistration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey,
+            });
+          } catch (firstError) {
+            // Mobile Chrome can keep an old/broken local service-worker push state,
+            // especially after changing VAPID keys during local testing. Reset once.
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((item) => item.unregister()));
+            const freshRegistration = await navigator.serviceWorker.register("/sw.js", {
+              updateViaCache: "none",
+            });
+            const freshReadyRegistration = await navigator.serviceWorker.ready;
+            await freshRegistration.update().catch(() => undefined);
+
+            subscription = await freshReadyRegistration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey,
+            });
+          }
         }
 
         const response = await fetch("/api/push/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscription }),
+          body: JSON.stringify({
+            subscription,
+            audience: "Staff",
+            role: "staff",
+            profileId: profile.id,
+          }),
         });
 
         const json = await response.json().catch(() => ({}));
@@ -485,8 +449,8 @@ function StaffConsole({ profile, categories }: Props) {
         if (showFeedback)
           flash(
             error instanceof Error
-              ? error.message
-              : "Could not enable claim alerts.",
+              ? error.message || "Registration failed - push service error"
+              : "Registration failed - push service error",
             "error",
           );
       }
@@ -994,46 +958,6 @@ function StaffConsole({ profile, categories }: Props) {
                 </h1>
               </div>
             </div>
-
-            {announcement && (
-              <div className="overflow-hidden rounded-[22px] border border-white/18 bg-white/14 shadow-[0_18px_44px_rgba(20,30,26,0.14)] backdrop-blur-2xl">
-                <button
-                  type="button"
-                  onClick={() => setAnnouncementOpen((current) => !current)}
-                  className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
-                >
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#ffd66b]">
-                      Announcements
-                    </div>
-                    <div className="mt-1 truncate text-[16px] font-black text-white">
-                      {announcement.title?.trim() || "Staff announcement"}
-                    </div>
-                  </div>
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[18px] font-black text-[#365665]">
-                    {announcementOpen ? "−" : "+"}
-                  </span>
-                </button>
-
-                {announcementOpen && (
-                  <div className="border-t border-white/12 px-5 pb-5 pt-4">
-                    <p className="whitespace-pre-wrap text-[14px] font-bold leading-6 text-white/82">
-                      {announcement.body?.trim() || "No announcement text yet."}
-                    </p>
-                    {(announcement.updated_at || announcement.created_at) && (
-                      <div className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
-                        Updated{" "}
-                        {new Date(
-                          announcement.updated_at ||
-                            announcement.created_at ||
-                            "",
-                        ).toLocaleString()}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
 
             {pushStatus !== "enabled" && (
               <button

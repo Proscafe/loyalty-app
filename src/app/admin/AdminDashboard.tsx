@@ -2,10 +2,11 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 import { AdminSidebar } from "@/components/AdminSidebar";
+import { createClient } from "@/lib/supabase/client";
 import type { Profile, Reward, StampTransaction } from "@/types";
 
 interface Metrics {
@@ -596,7 +597,10 @@ function cleanDashboardLabel(value: unknown) {
   return text;
 }
 
-function activityDetailLabel(txn: StampTransaction) {
+function activityDetailLabel(
+  txn: StampTransaction,
+  categoryNamesById: Record<string, string> = {},
+) {
   const record = asRecord(txn);
   const action = String(record.action_type ?? "").toLowerCase();
 
@@ -611,57 +615,65 @@ function activityDetailLabel(txn: StampTransaction) {
     );
   }
 
+  const categoryId = String(record.category_id ?? "").trim();
+
   return cleanDashboardLabel(
-    record.category_name ?? record.category ?? record.stamp_category,
+    record.category_name ??
+      record.category ??
+      record.stamp_category ??
+      record.loyalty_category_name ??
+      (categoryId ? categoryNamesById[categoryId] : ""),
   );
+}
+
+function activitySentence(txn: StampTransaction, clientName: string, detail: string) {
+  const base = `${clientName} ${actionLabel(txn)}`;
+  return detail ? `${base} (${detail})` : base;
 }
 
 function RecentActivity({
   txns,
   users,
+  categoryNamesById,
 }: {
   txns: StampTransaction[];
   users: AdminUser[];
+  categoryNamesById: Record<string, string>;
 }) {
   return (
-    <DashboardCard className="px-5 py-5 lg:col-span-6 lg:px-6 lg:py-6">
-      <h2 className="mb-7 text-[22px] font-black tracking-[-0.04em] text-white">
-        Recent Activity
-      </h2>
-      <div className="space-y-6">
-        {txns.length === 0 ? (
-          <div className="rounded-[18px] bg-white/10 px-4 py-4 text-[13px] font-black text-white/70">
-            No recent activity.
-          </div>
-        ) : (
-          txns.slice(0, 5).map((txn) => {
-            const record = asRecord(txn);
-            const clientName = getClientName(txn.client_id, users);
-            const detail = activityDetailLabel(txn);
-            return (
-              <div
-                key={String(record.id ?? `${txn.client_id}-${txn.created_at}`)}
-                className="grid gap-2 text-white sm:grid-cols-[1fr_auto] sm:items-start"
-              >
-                <div>
+    <Link href="/admin/activity" className="block lg:col-span-6">
+      <DashboardCard className="h-full px-5 py-5 transition hover:bg-white/10 lg:px-6 lg:py-6">
+        <h2 className="mb-7 text-[22px] font-black tracking-[-0.04em] text-white">
+          Recent Activity
+        </h2>
+        <div className="space-y-6">
+          {txns.length === 0 ? (
+            <div className="rounded-[18px] bg-white/10 px-4 py-4 text-[13px] font-black text-white/70">
+              No recent activity.
+            </div>
+          ) : (
+            txns.slice(0, 5).map((txn) => {
+              const record = asRecord(txn);
+              const clientName = getClientName(txn.client_id, users);
+              const detail = activityDetailLabel(txn, categoryNamesById);
+              return (
+                <div
+                  key={String(record.id ?? `${txn.client_id}-${txn.created_at}`)}
+                  className="grid gap-2 text-white sm:grid-cols-[1fr_auto] sm:items-start"
+                >
                   <div className="text-[14px] font-black leading-tight">
-                    {clientName} {actionLabel(txn)}
+                    {activitySentence(txn, clientName, detail)}
                   </div>
-                  {detail ? (
-                    <div className="mt-2 text-[11px] font-black text-white/76">
-                      {detail}
-                    </div>
-                  ) : null}
+                  <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white/90">
+                    {formatDate(txn.created_at)}
+                  </div>
                 </div>
-                <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white/90">
-                  {formatDate(txn.created_at)}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </DashboardCard>
+              );
+            })
+          )}
+        </div>
+      </DashboardCard>
+    </Link>
   );
 }
 
@@ -674,6 +686,32 @@ function AdminDashboard({
 }: Props) {
   const [period, setPeriod] = useState<DashboardPeriod>("week");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [categoryNamesById, setCategoryNamesById] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCategoryNames() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("loyalty_categories")
+        .select("id, name");
+
+      if (!isMounted) return;
+
+      const nextNames: Record<string, string> = {};
+      (data ?? []).forEach((category: { id?: string | null; name?: string | null }) => {
+        if (category.id && category.name) nextNames[category.id] = category.name;
+      });
+      setCategoryNamesById(nextNames);
+    }
+
+    void loadCategoryNames();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredTxns = useMemo(
     () => recentTxns.filter((txn) => isInPeriod(txn.created_at, period)),
@@ -956,6 +994,7 @@ function AdminDashboard({
             <RecentActivity
               txns={filteredTxns.length ? filteredTxns : recentTxns}
               users={users}
+              categoryNamesById={categoryNamesById}
             />
           </section>
         </div>
