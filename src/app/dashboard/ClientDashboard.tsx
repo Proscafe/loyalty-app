@@ -392,10 +392,23 @@ function isAutoGameGiftReward(reward: ClientReward) {
   );
 }
 
-const BIRTHDAY_REWARD_TYPES = ["20% Discount", "Free Dessert"];
+const BIRTHDAY_REWARD_TYPES = ["20% Discount"];
 
 function isBirthdayRewardType(value?: string | null) {
   return BIRTHDAY_REWARD_TYPES.includes(String(value || ""));
+}
+
+function isBirthdayReward(reward: ClientReward) {
+  return Boolean(
+    reward.is_birthday_reward ||
+      String(reward.id || "").startsWith("birthday-") ||
+      (isBirthdayRewardType(reward.reward_type) &&
+        cleanText(reward.description).toLowerCase().includes("birthday"))
+  );
+}
+
+function getRewardIcon(reward: ClientReward) {
+  return isBirthdayReward(reward) ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
 }
 
 function makeBirthdayRewards(profile: Profile): ClientReward[] {
@@ -516,11 +529,11 @@ function GiftCarouselCard({
 }) {
   const categoryName = extractCategoryName(reward, categoryMap, index);
   const state = getRewardState(reward);
-  const isBirthdayReward = Boolean(reward.is_birthday_reward || isBirthdayRewardType(reward.reward_type));
-  const title = isBirthdayReward
+  const isBirthday = isBirthdayReward(reward);
+  const title = isBirthday
     ? reward.reward_type || "Birthday Gift"
     : `Free ${getSingularCategory(categoryName)}`;
-  const giftIcon = isBirthdayReward ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
+  const giftIcon = getRewardIcon(reward);
   const validityLabel = getValidityLabel(reward);
   const urgentValidity = isExpiryUrgent(validityLabel);
 
@@ -683,9 +696,9 @@ function RewardCelebrationModal({
 }) {
   const categoryName = extractCategoryName(reward, categoryMap, 0);
   const giftName = getSingularCategory(categoryName);
-  const isBirthdayReward = Boolean(reward.is_birthday_reward || isBirthdayRewardType(reward.reward_type));
+  const isBirthday = isBirthdayReward(reward);
   const birthdayGiftName = reward.reward_type || "birthday gift";
-  const modalIcon = isBirthdayReward ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
+  const modalIcon = getRewardIcon(reward);
 
   const confettiPieces = [
     ["8%", "-120px", "0s", "#f0cf61"],
@@ -793,7 +806,7 @@ function RewardCelebrationModal({
             />
           </div>
 
-          {isBirthdayReward ? (
+          {isBirthday ? (
             <div className="mt-5">
               <h2 className="text-[28px] font-black leading-tight text-white">
                 Happy birthday!
@@ -811,7 +824,7 @@ function RewardCelebrationModal({
           <button
             type="button"
             onClick={() => {
-              if (isBirthdayReward) {
+              if (isBirthdayReward(reward)) {
                 onClaim(reward.id);
                 onClose();
                 return;
@@ -821,7 +834,7 @@ function RewardCelebrationModal({
             }}
             className="mt-7 w-full rounded-[12px] bg-[#f0cf61] px-4 py-3 text-[14px] font-black text-[#1c2530]"
           >
-            {isBirthdayReward ? "Claim gift" : "Congratulations"}
+            {isBirthday ? "Claim gift" : "Congratulations"}
           </button>
         </div>
       </div>
@@ -1274,7 +1287,7 @@ export function ClientDashboard({
 
     const existingBirthdayRewards = new Set(
       baseRewards
-        .filter((reward) => reward.is_birthday_reward || isBirthdayRewardType(reward.reward_type))
+        .filter((reward) => isBirthdayReward(reward))
         .map((reward) => String(reward.reward_type || "")),
     );
 
@@ -1302,7 +1315,7 @@ export function ClientDashboard({
       if (isAutoGameGift && alreadyShownGameGift) return false;
       if (!isAutoGameGift && alreadyShownRegular) return false;
       if (!isAutoGameGift && !isNew) return false;
-      if (reward.is_birthday_reward && birthdayPopupAlreadyShown) return false;
+      if (isBirthdayReward(reward) && birthdayPopupAlreadyShown) return false;
 
       return true;
     }
@@ -1321,7 +1334,7 @@ export function ClientDashboard({
 
     if (!newestReward) return;
 
-    if (newestReward.is_birthday_reward && typeof window !== "undefined") {
+    if (isBirthdayReward(newestReward) && typeof window !== "undefined") {
       window.localStorage.setItem(birthdayPopupKey, "true");
     }
 

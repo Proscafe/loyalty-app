@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import AdminMobileHeader from "@/components/AdminMobileHeader";
 
 type MatchRow = {
   id: string;
@@ -322,12 +323,10 @@ export function GameLinkDetailsClient({
   match,
   entries,
   profileNames,
-  giftSentClientIds = [],
 }: {
   match: MatchRow;
   entries: EntryRow[];
   profileNames: Record<string, { name: string; code: string; role?: string }>;
-  giftSentClientIds?: string[];
 }) {
   const sportLabel =
     inferSportType(match) === "basketball" ? "Basketball" : "Football";
@@ -377,11 +376,6 @@ export function GameLinkDetailsClient({
   const [sendingGifts, setSendingGifts] = useState(false);
   const [sendResultPopupOpen, setSendResultPopupOpen] = useState(false);
   const [sendGiftResult, setSendGiftResult] = useState<SendGiftResponse | null>(null);
-
-  const giftSentClientIdSet = useMemo(
-    () => new Set(giftSentClientIds),
-    [giftSentClientIds],
-  );
 
   const sortedEntries = useMemo(() => {
     return entries.slice().sort((a, b) => {
@@ -485,12 +479,7 @@ export function GameLinkDetailsClient({
     );
 
     if (!canReceiveGift) {
-      setMessage("Only exact-score winners who have not already received this gift can receive Free Dessert gifts.");
-      return;
-    }
-
-    if (giftSentClientIdSet.has(clientId)) {
-      setMessage("A Free Dessert gift was already sent to this winner.");
+      setMessage("Only exact-score winners can receive Free Dessert gifts.");
       return;
     }
 
@@ -504,9 +493,7 @@ export function GameLinkDetailsClient({
   }
 
   function randomizeThreeGiftWinners() {
-    const candidates = exactScoreWinnerEntries.filter(
-      (entry) => !giftSentClientIdSet.has(entry.client_id),
-    );
+    const candidates = exactScoreWinnerEntries.slice();
 
     if (candidates.length === 0) {
       setMessage("No exact-score predictions available yet.");
@@ -719,7 +706,6 @@ export function GameLinkDetailsClient({
         smtp_from: giftJson.smtp_from,
         smtp_configured: giftJson.smtp_configured,
       });
-      setSendResultPopupOpen(true);
       setMessage("Result saved, but gifts were not sent. Check the gift details.");
       return;
     }
@@ -727,7 +713,6 @@ export function GameLinkDetailsClient({
     setSelectedWinnerIds(automaticWinnerIds);
     writeSavedWinnerIds(match.id, automaticWinnerIds);
     setSendGiftResult(giftJson);
-    setSendResultPopupOpen(true);
     setMessage(`Result saved. Free Dessert sent to ${automaticWinnerIds.length} exact-score winner(s).`);
     window.setTimeout(() => window.location.reload(), 1800);
   }
@@ -749,9 +734,8 @@ export function GameLinkDetailsClient({
     const validExactWinnerIds = new Set(
       exactScoreWinnerEntries.map((entry) => entry.client_id),
     );
-    const exactSelectedWinnerIds = selectedWinnerIds.filter(
-      (clientId) =>
-        validExactWinnerIds.has(clientId) && !giftSentClientIdSet.has(clientId),
+    const exactSelectedWinnerIds = selectedWinnerIds.filter((clientId) =>
+      validExactWinnerIds.has(clientId),
     );
 
     if (exactSelectedWinnerIds.length === 0) {
@@ -813,19 +797,7 @@ export function GameLinkDetailsClient({
       style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}
     >
       <div className="mx-auto max-w-6xl">
-        <header className="mb-7 flex h-[78px] items-center justify-between rounded-[18px] bg-[#718078] px-6 shadow-[0_18px_42px_rgba(20,30,26,0.16)] lg:hidden">
-          <img
-            src="/pros-logo-basic.png"
-            alt="PRO's Cafe"
-            className="h-12 w-auto object-contain"
-          />
-          <div className="flex h-11 w-11 items-center justify-center" aria-label="Admin profile">
-            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <circle cx="15" cy="8.5" r="6.5" fill="#FFD66B" />
-              <path d="M5.5 27C6.2 20.7 9.9 17.4 15 17.4C20.1 17.4 23.8 20.7 24.5 27H5.5Z" fill="#FFD66B" />
-            </svg>
-          </div>
-        </header>
+        <AdminMobileHeader />
 
         <Link
           href="/admin/predictions"
@@ -834,7 +806,7 @@ export function GameLinkDetailsClient({
           ← Back
         </Link>
 
-        <section className="rounded-[32px] bg-[#718078] p-6 shadow-[0_26px_70px_rgba(35,54,47,0.18)] lg:border lg:border-white/24 lg:bg-white/10 lg:backdrop-blur-2xl">
+        <section className="rounded-[32px] bg-[#718078] p-6 shadow-[0_26px_70px_rgba(35,54,47,0.18)] lg:bg-white/10 lg:backdrop-blur-2xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
@@ -891,67 +863,22 @@ export function GameLinkDetailsClient({
             </div>
           </div>
 
-          <div className="mt-5 hidden flex-wrap gap-3 lg:flex">
-            <SmallStat label="Players" value={players} />
-            <SmallStat
-              label="Prediction closes"
-              value={formatDate(match.closes_at)}
-            />
-          </div>
 
           {resultSaved ? (
-            <div className="mt-5 rounded-[26px] border border-white/18 bg-white/8 p-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
-                    Winners
-                  </div>
-                  <h2 className="mt-1 text-[22px] font-black text-white">
-                    Correct predictions
-                  </h2>
-                  <p className="mt-1 text-[12px] font-bold text-white/62">
-                    Right team: {correctPredictionEntries.length} ·{" "}
-                    {inferSportType(match) === "basketball"
-                      ? "Right margin"
-                      : "Right score"}
-                    : {winnerGroups.exactWinners.length}
-                  </p>
-                  <p className="mt-2 text-[12px] font-bold text-[#ffd66b]">
-                    Randomize 3 from the right-team users, then send gifts to
-                    those selected winners.
-                  </p>
+            <div className="mt-5 rounded-[26px] bg-white/8 p-4">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
+                  Winners
                 </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={randomizeThreeGiftWinners}
-                    disabled={exactScoreWinnerEntries.length === 0}
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-[#ffd66b]/70 bg-white/10 text-[18px] font-black text-[#ffd66b] transition hover:bg-[#ffd66b] hover:text-[#365665] disabled:opacity-45"
-                    title="Shuffle and save 3 winners"
-                    aria-label="Shuffle and save 3 winners"
-                  >
-                    ⇄
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGiftPopupOpen(true)}
-                    disabled={selectedWinnerIds.length === 0}
-                    className="rounded-full bg-[#ffd66b] px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#365665] disabled:opacity-45"
-                    title="Send selected winners gifts"
-                  >
-                    ✦ Send Gifts
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                  Selected gift winners
-                </div>
-                <div className="text-[11px] font-black text-[#ffd66b]">
-                  {selectedWinnerIds.length}/3 selected
-                </div>
+                <h2 className="mt-1 text-[22px] font-black text-white">
+                  Correct predictions
+                </h2>
+                <p className="mt-1 text-[12px] font-bold text-white/62">
+                  {inferSportType(match) === "basketball" ? "Right margin" : "Right score"}: {winnerGroups.exactWinners.length} · Right team: {correctPredictionEntries.length}
+                </p>
+                <p className="mt-3 text-[16px] font-bold text-[#ffd66b]">
+                  Draw completed. 3 winners selected and gifts sent successfully.
+                </p>
               </div>
 
               <div className="mt-3 grid gap-3 lg:grid-cols-3">
@@ -959,9 +886,9 @@ export function GameLinkDetailsClient({
                   const profile = profileNames[entry.client_id];
                   const selected = selectedWinnerIds.includes(entry.client_id);
                   const colors = [
-                    "border-[#ffd66b] bg-[#ffd66b]/18",
-                    "border-emerald-300/70 bg-emerald-300/14",
-                    "border-sky-300/70 bg-sky-300/14",
+                    "bg-white/14 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]",
+                    "bg-white/12 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]",
+                    "bg-white/14 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]",
                   ];
 
                   return (
@@ -969,7 +896,7 @@ export function GameLinkDetailsClient({
                       key={entry.id}
                       type="button"
                       onClick={() => toggleWinner(entry.client_id)}
-                      className={`rounded-[22px] border p-4 text-left transition ${colors[index % colors.length]} ${
+                      className={`rounded-[22px] p-4 text-left transition ${colors[index % colors.length]} ${
                         selected ? "ring-2 ring-white/80" : ""
                       }`}
                     >
@@ -987,17 +914,17 @@ export function GameLinkDetailsClient({
                 })}
 
                 {!savedWinnersLoaded ? (
-                  <div className="rounded-[22px] border border-white/16 bg-white/10 p-4 text-[13px] font-bold text-white/60 lg:col-span-3">
+                  <div className="rounded-[22px] bg-white/10 p-4 text-[13px] font-bold text-white/60 lg:col-span-3">
                     Loading saved winners...
                   </div>
                 ) : visibleFeaturedWinners.length === 0 ? (
-                  <div className="rounded-[22px] border border-white/16 bg-white/10 p-4 text-[13px] font-bold text-white/60 lg:col-span-3">
+                  <div className="rounded-[22px] bg-white/10 p-4 text-[13px] font-bold text-white/60 lg:col-span-3">
                     No correct predictions yet.
                   </div>
                 ) : null}
               </div>
 
-              <div className="mt-5 rounded-[22px] border border-white/14 bg-black/10 p-4">
+              <div className="mt-5 rounded-[22px] bg-white/8 p-4 backdrop-blur-lg">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ffd66b]">
@@ -1008,7 +935,7 @@ export function GameLinkDetailsClient({
                       margin winners are included here too.
                     </div>
                   </div>
-                  <div className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-white">
+                  <div className="rounded-full bg-white/16 px-3 py-1 text-[11px] font-black text-white">
                     {correctPredictionEntries.length}
                   </div>
                 </div>
@@ -1026,10 +953,10 @@ export function GameLinkDetailsClient({
                         key={entry.id}
                         type="button"
                         onClick={() => toggleWinner(entry.client_id)}
-                        className={`flex items-center justify-between gap-3 rounded-[16px] border px-3 py-3 text-left transition ${
+                        className={`flex items-center justify-between gap-3 rounded-[16px] px-3 py-3 text-left transition backdrop-blur-md ${
                           selected
-                            ? "border-[#ffd66b] bg-[#ffd66b]/14"
-                            : "border-white/12 bg-white/7 hover:bg-white/12"
+                            ? "bg-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
+                            : "bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] hover:bg-white/14"
                         }`}
                       >
                         <div className="min-w-0">
@@ -1040,7 +967,13 @@ export function GameLinkDetailsClient({
                             {predictionText(match, entry)}
                           </div>
                         </div>
-                        <div className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
+                        <div
+                          className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                            category === "exact"
+                              ? "bg-[#ffd66b]/20 text-[#ffd66b]"
+                              : "bg-white/10 text-white/70"
+                          }`}
+                        >
                           {category === "exact"
                             ? inferSportType(match) === "basketball"
                               ? "Right margin"
@@ -1063,7 +996,7 @@ export function GameLinkDetailsClient({
         </section>
 
         <section className="mt-5 grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-[28px] bg-[#718078] p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] lg:border lg:border-white/24 lg:bg-white/10 lg:backdrop-blur-xl">
+          <div className="rounded-[28px] bg-[#718078] p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] lg:bg-white/10 lg:backdrop-blur-xl">
             <button
               type="button"
               onClick={() => setSaveResultOpen((open) => !open)}
@@ -1139,13 +1072,13 @@ export function GameLinkDetailsClient({
             ) : null}
           </div>
 
-          <div className="rounded-[28px] bg-[#718078] p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] lg:border lg:border-white/24 lg:bg-white/10 lg:backdrop-blur-xl">
+          <div className="rounded-[28px] bg-[#718078] p-5 shadow-[0_18px_46px_rgba(0,0,0,0.10)] lg:bg-white/10 lg:backdrop-blur-xl">
             <h2 className="text-[22px] font-black text-white">Leaderboard</h2>
             <p className="mt-1 text-[12px] font-bold text-white/62">
               Names and predictions entered for this game.
             </p>
 
-            <div className="mt-5 overflow-hidden rounded-[22px] bg-white/8 lg:border lg:border-white/18">
+            <div className="mt-5 overflow-hidden rounded-[22px] bg-black/18">
               <div
                 className={`grid ${inferSportType(match) === "basketball" ? "grid-cols-[0.35fr_1fr_0.8fr]" : "grid-cols-[0.35fr_1fr_0.8fr_0.5fr]"} gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58`}
               >
@@ -1511,30 +1444,6 @@ export function GameLinkDetailsClient({
         </div>
       ) : null}
     </main>
-  );
-}
-
-function SmallStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <div className="flex min-h-[90px] min-w-[180px] flex-1 items-center gap-4 rounded-[999px] bg-white/8 px-5 py-4 lg:border lg:border-white/22">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[18px] font-black text-[#365665]">
-        {typeof value === "number" ? value : "•"}
-      </div>
-      <div className="min-w-0">
-        <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">
-          {label}
-        </div>
-        <div className="mt-1 truncate text-[16px] font-black text-white">
-          {value}
-        </div>
-      </div>
-    </div>
   );
 }
 

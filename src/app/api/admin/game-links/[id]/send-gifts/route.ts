@@ -518,14 +518,21 @@ export async function POST(req: Request, context: RouteContext) {
       (entry: any) => !alreadyRewardedClientIds.has(entry.client_id),
     );
 
+    const nowIso = new Date().toISOString();
+    const expiresAtIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
     const rewardRows = winnersForInsert.flatMap((entry: any) =>
       gifts.map((gift) => ({
         client_id: entry.client_id,
         category_id: category.id,
         reward_type: gift.label,
         status: "available",
-        earned_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        earned_at: nowIso,
+        expires_at: expiresAtIso,
+        source: "game_prediction",
+        source_match_id: id,
+        source_label: `${match.home_team} vs ${match.away_team}`,
+        reward_note: gift.description,
       })),
     );
 
@@ -562,6 +569,7 @@ export async function POST(req: Request, context: RouteContext) {
         ok: true,
         rewards_created: 0,
         already_sent: true,
+        duplicate_scope: "same_match_only",
         gift_label: "Free Dessert",
         locked_winner_client_ids: winnerClientIds,
         admin_email_sent: false,
@@ -636,6 +644,7 @@ ${csv}`,
       ok: true,
       rewards_created: rewardRows.length,
       already_sent: rewardRows.length === 0,
+      duplicate_scope: "same_match_only",
       gift_label: "Free Dessert",
       locked_winner_client_ids: winnerClientIds,
       admin_email_sent: adminEmailSent,

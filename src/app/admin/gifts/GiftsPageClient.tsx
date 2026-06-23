@@ -269,6 +269,8 @@ export default function GiftsPageClient({
   const [sortKey, setSortKey] = useState<SortKey>("expiresAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
+  const [reversingId, setReversingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmRedeemRow, setConfirmRedeemRow] = useState<DisplayGiftRow | null>(null);
   const [currentStaffName, setCurrentStaffName] = useState("Staff user");
   const [currentStaffId, setCurrentStaffId] = useState<string | null>(null);
@@ -562,6 +564,80 @@ export default function GiftsPageClient({
     }
   }
 
+  async function handleReverseGift(row: DisplayGiftRow) {
+    if (row.status !== "Redeemed" || reversingId) return;
+
+    const confirmed = window.confirm(
+      `Reverse ${row.label} for ${row.clientName}? This will send the gift back to the client as available.`,
+    );
+
+    if (!confirmed) return;
+
+    setReversingId(row.id);
+    try {
+      const response = await fetch("/api/admin/gifts/reverse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          giftId: String(row.raw.id ?? row.id ?? "").trim(),
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json?.error || "Failed to reverse gift");
+
+      setGiftRows((current) =>
+        current.map((gift) =>
+          String(gift.id) === String(row.raw.id ?? row.id)
+            ? {
+                ...gift,
+                status: "available",
+                reward_status: "available",
+                redeemed_at: null,
+                redeemed_by: null,
+                redeemed_by_id: null,
+                redeemed_by_name: null,
+              }
+            : gift,
+        ),
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to reverse gift");
+    } finally {
+      setReversingId(null);
+    }
+  }
+
+  async function handleDeleteGift(row: DisplayGiftRow) {
+    if (deletingId) return;
+
+    const confirmed = window.confirm(
+      `Delete ${row.label} for ${row.clientName}? This permanently removes the gift from the database.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingId(row.id);
+    try {
+      const response = await fetch("/api/admin/gifts/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          giftId: String(row.raw.id ?? row.id ?? "").trim(),
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json?.error || "Failed to delete gift");
+
+      setGiftRows((current) =>
+        current.filter((gift) => String(gift.id) !== String(row.raw.id ?? row.id)),
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete gift");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const headerClass =
     "text-left text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:text-[#ffd66b]";
 
@@ -791,7 +867,11 @@ export default function GiftsPageClient({
                     key={row.id}
                     row={row}
                     onRedeem={requestManualRedeem}
+                    onReverse={handleReverseGift}
+                    onDelete={handleDeleteGift}
                     redeeming={redeemingId === row.id}
+                    reversing={reversingId === row.id}
+                    deleting={deletingId === row.id}
                   />
                 ))
               )}
@@ -805,7 +885,11 @@ export default function GiftsPageClient({
                     key={row.id}
                     row={row}
                     onRedeem={requestManualRedeem}
+                    onReverse={handleReverseGift}
+                    onDelete={handleDeleteGift}
                     redeeming={redeemingId === row.id}
+                    reversing={reversingId === row.id}
+                    deleting={deletingId === row.id}
                   />
                 ))
               )}
@@ -991,12 +1075,20 @@ function ActionButtons({
   phone,
   row,
   onRedeem,
+  onReverse,
+  onDelete,
   redeeming,
+  reversing,
+  deleting,
 }: {
   phone: string;
   row: DisplayGiftRow;
   onRedeem: (row: DisplayGiftRow) => void;
+  onReverse: (row: DisplayGiftRow) => void;
+  onDelete: (row: DisplayGiftRow) => void;
   redeeming: boolean;
+  reversing: boolean;
+  deleting: boolean;
 }) {
   const wa =
     phone && phone !== "—" ? `https://wa.me/${phone.replace(/\D/g, "")}` : "#";
@@ -1017,23 +1109,25 @@ function ActionButtons({
       </button>
       <button
         type="button"
-        onClick={() => onRedeem(row)}
-        disabled={alreadyRedeemed || redeeming}
-        title={alreadyRedeemed ? "Already redeemed" : "Redeem gift manually"}
+        onClick={() => (alreadyRedeemed ? onReverse(row) : onRedeem(row))}
+        disabled={redeeming || reversing}
+        title={alreadyRedeemed ? "Reverse gift back to client" : "Redeem gift manually"}
         className={`h-8 w-8 rounded-full text-[12px] font-black transition ${
           alreadyRedeemed
-            ? "bg-white/15 text-white/45"
+            ? "bg-[#ffd66b] text-[#365665] hover:scale-105 disabled:opacity-60"
             : "bg-[#ffd66b] text-[#365665] hover:scale-105 disabled:opacity-60"
         }`}
       >
-        {redeeming ? "…" : "R"}
+        {redeeming || reversing ? "…" : "R"}
       </button>
       <button
         type="button"
-        title="Delete gift"
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffdede] text-[#d92f3a] transition hover:scale-105"
+        onClick={() => onDelete(row)}
+        disabled={deleting}
+        title="Delete gift from database"
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffdede] text-[#d92f3a] transition hover:scale-105 disabled:opacity-60"
       >
-        <TrashIcon />
+        {deleting ? "…" : <TrashIcon />}
       </button>
     </div>
   );
@@ -1042,11 +1136,19 @@ function ActionButtons({
 function DesktopRow({
   row,
   onRedeem,
+  onReverse,
+  onDelete,
   redeeming,
+  reversing,
+  deleting,
 }: {
   row: DisplayGiftRow;
   onRedeem: (row: DisplayGiftRow) => void;
+  onReverse: (row: DisplayGiftRow) => void;
+  onDelete: (row: DisplayGiftRow) => void;
   redeeming: boolean;
+  reversing: boolean;
+  deleting: boolean;
 }) {
   return (
     <div className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.7fr_0.75fr_0.6fr_0.7fr_0.8fr_0.65fr_1.7fr_0.8fr] items-center border-b border-white/10 px-6 py-4 text-[12px] font-black text-white last:border-b-0">
@@ -1076,7 +1178,11 @@ function DesktopRow({
         phone={row.phone}
         row={row}
         onRedeem={onRedeem}
+        onReverse={onReverse}
+        onDelete={onDelete}
         redeeming={redeeming}
+        reversing={reversing}
+        deleting={deleting}
       />
       <div>{row.lastContacted}</div>
     </div>
@@ -1086,11 +1192,19 @@ function DesktopRow({
 function MobileRow({
   row,
   onRedeem,
+  onReverse,
+  onDelete,
   redeeming,
+  reversing,
+  deleting,
 }: {
   row: DisplayGiftRow;
   onRedeem: (row: DisplayGiftRow) => void;
+  onReverse: (row: DisplayGiftRow) => void;
+  onDelete: (row: DisplayGiftRow) => void;
   redeeming: boolean;
+  reversing: boolean;
+  deleting: boolean;
 }) {
   return (
     <div className="border-b border-white/10 px-5 py-4 text-white last:border-b-0">
@@ -1128,7 +1242,11 @@ function MobileRow({
           phone={row.phone}
           row={row}
           onRedeem={onRedeem}
+          onReverse={onReverse}
+          onDelete={onDelete}
           redeeming={redeeming}
+          reversing={reversing}
+          deleting={deleting}
         />
       </div>
     </div>
