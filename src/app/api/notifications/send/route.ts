@@ -56,6 +56,18 @@ function invalidSubscription(row: PushSubscriptionRow) {
   return !row.endpoint || !row.p256dh || !row.auth;
 }
 
+function normalizeVapidSubject(value: string | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "mailto:info@proscafe.net";
+  if (raw.startsWith("mailto:") || raw.startsWith("https://") || raw.startsWith("http://")) {
+    return raw;
+  }
+  if (raw.includes("@") && !raw.includes(" ")) {
+    return `mailto:${raw}`;
+  }
+  return raw;
+}
+
 export async function GET() {
   try {
     const admin = getServiceClient();
@@ -107,7 +119,7 @@ export async function POST(req: Request) {
 
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT || "mailto:info@proscafe.net";
+  const subject = normalizeVapidSubject(process.env.VAPID_SUBJECT);
 
   if (!publicKey || !privateKey) {
     return NextResponse.json(
