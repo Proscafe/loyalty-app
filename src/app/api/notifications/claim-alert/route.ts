@@ -8,9 +8,9 @@ type PushSubscriptionRow = {
   id: string;
   audience?: string | null;
   role?: string | null;
-  endpoint: string;
-  p256dh: string;
-  auth: string;
+  endpoint: string | null;
+  p256dh: string | null;
+  auth: string | null;
 };
 
 type RewardRow = {
@@ -49,20 +49,31 @@ function normalizeVapidSubject(value?: string | null) {
 }
 
 function isStaffSubscription(row: PushSubscriptionRow) {
-  return (
-    String(row.audience ?? "").trim().toLowerCase() === "staff" ||
-    String(row.role ?? "").trim().toLowerCase() === "staff"
-  );
+  const audience = String(row.audience ?? "").trim().toLowerCase();
+  const role = String(row.role ?? "").trim().toLowerCase();
+  return audience === "staff" || role === "staff";
 }
 
-function invalidSubscription(row: PushSubscriptionRow) {
-  return !row.endpoint || !row.p256dh || !row.auth;
+function hasPushKeys(row: PushSubscriptionRow) {
+  return Boolean(row.endpoint && row.p256dh && row.auth);
 }
 
 function prettyRewardName(value?: string | null) {
   const clean = String(value || "reward").trim();
-  if (!clean) return "reward";
-  return clean;
+  return clean || "reward";
+}
+
+function pushErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return "push_send_failed";
+}
+
+function pushStatusCode(error: unknown) {
+  if (typeof error === "object" && error && "statusCode" in error) {
+    const value = Number((error as { statusCode?: unknown }).statusCode);
+    return Number.isFinite(value) ? value : null;
+  }
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -115,24 +126,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: true, reason: "claim_alert_already_sent" });
     }
 
-    const now = new Date().toISOString();
-
-    const { data: lockedReward, error: lockError } = await admin
-      .from("rewards")
-      .update({ claim_alert_sent_at: now })
-      .eq("id", rewardId)
-      .is("claim_alert_sent_at", null)
-      .select("id")
-      .maybeSingle();
-
-    if (lockError) {
-      return NextResponse.json({ error: lockError.message }, { status: 400 });
-    }
-
-    if (!lockedReward) {
-      return NextResponse.json({ ok: true, skipped: true, reason: "claim_alert_already_locked" });
-    }
-
     let clientName = "A client";
 
     if (rewardRow.client_id) {
@@ -162,17 +155,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: subError.message }, { status: 400 });
     }
 
-    const staffSubscriptions = ((allSubscriptions ?? []) as PushSubscriptionRow[])
-      .filter(isStaffSubscription)
-      .filter((subscription) => !invalidSubscription(subscription));
+    const savedSubscriptions = (allSubscriptions ?? []) as PushSubscriptionRow[];
+    const staffSubscriptions = savedSubscriptions.filter(isStaffSubscription).filter(hasPushKeys);
 
     if (staffSubscriptions.length === 0) {
       return NextResponse.json({
         ok: true,
-        message: "Claim alert saved, but no Staff push subscriptions were found.",
+        message: "Claim saved, but no valid Staff push subscriptions were found.",
         sentCount: 0,
         failedCount: 0,
-        totalSavedSubscriptions: allSubscriptions?.length ?? 0,
+        totalSavedSubscriptions: savedSubscriptions.length,
+        staffRows: savedSubscriptions.filter(isStaffSubscription).length,
       });
     }
 
@@ -193,26 +186,48 @@ export async function POST(req: Request) {
 
     let sentCount = 0;
     let failedCount = 0;
+    const failedSubscriptionIds: string[] = [];
+    const expiredSubscriptionIds: string[] = [];
 
     await Promise.all(
       staffSubscriptions.map(async (subscription) => {
         try {
           await webpush.sendNotification(
             {
-              endpoint: subscription.endpoint,
+              endpoint: subscription.endpoint || "",
               keys: {
-                p256dh: subscription.p256dh,
-                auth: subscription.auth,
+                p256dh: subscription.p256dh || "",
+                auth: subscription.auth || "",
               },
             },
             payload,
           );
           sentCount += 1;
-        } catch {
+        } catch (error) {
           failedCount += 1;
+          failedSubscriptionIds.push(subscription.id);
+          const statusCode = pushStatusCode(error);
+          if (statusCode === 404 || statusCode === 410) {
+            expiredSubscriptionIds.push(subscription.id);
+          }
+          console.error("Staff claim push failed", subscription.id, pushErrorMessage(error));
         }
       }),
     );
+
+    if (expiredSubscriptionIds.length > 0) {
+      await admin.from("push_subscriptions").delete().in("id", expiredSubscriptionIds);
+    }
+
+    const now = new Date().toISOString();
+
+    if (sentCount > 0) {
+      await admin
+        .from("rewards")
+        .update({ claim_alert_sent_at: now })
+        .eq("id", rewardId)
+        .is("claim_alert_sent_at", null);
+    }
 
     await admin.from("admin_notifications").insert({
       title,
@@ -235,8 +250,11 @@ export async function POST(req: Request) {
       sentCount,
       failedCount,
       subscriptionCount: staffSubscriptions.length,
+      failedSubscriptionIds,
+      expiredSubscriptionIds,
     });
   } catch (error) {
+    console.error("Claim alert route failed", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "server_error" },
       { status: 500 },
