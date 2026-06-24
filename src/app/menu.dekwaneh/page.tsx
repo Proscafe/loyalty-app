@@ -1,4 +1,4 @@
-import MenuDekwanehClient from "@/components/menu/MenuDekwanehClient";
+import MenuDekwanehClient from "./MenuDekwanehClient";
 
 export const metadata = {
   title: "PRO's Cafe Dekwaneh Menu",

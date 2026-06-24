@@ -1,0 +1,2758 @@
+{
+  "sourceUrl": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?category_id=1562",
+  "categories": [
+    {
+      "sourceId": "2364",
+      "name": "BREAKFAST",
+      "image": "",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=2364",
+      "id": "breakfast"
+    },
+    {
+      "sourceId": "2443",
+      "name": "GATHERING BUNDLES",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703146642.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=2443",
+      "id": "gathering-bundles"
+    },
+    {
+      "sourceId": "504",
+      "name": "STARTERS",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1689757325.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=504",
+      "id": "starters"
+    },
+    {
+      "sourceId": "1550",
+      "name": "SALADS",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686311220.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=1550",
+      "id": "salads"
+    },
+    {
+      "sourceId": "509",
+      "name": "MAINS",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686313722.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=509",
+      "id": "mains"
+    },
+    {
+      "sourceId": "508",
+      "name": "BURGERS",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686313671.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=508",
+      "id": "burgers"
+    },
+    {
+      "sourceId": "2267",
+      "name": "PASTA",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20250606064925Penne.jpg",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=2267",
+      "id": "pasta"
+    },
+    {
+      "sourceId": "506",
+      "name": "PIZZA",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686313753.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=506",
+      "id": "pizza"
+    },
+    {
+      "sourceId": "512",
+      "name": "LEBANESE",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727083959LB.jpg",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=512",
+      "id": "lebanese"
+    },
+    {
+      "sourceId": "511",
+      "name": "SANDWICHES",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20260316113522Sandwiches%20.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=511",
+      "id": "sandwiches"
+    },
+    {
+      "sourceId": "515",
+      "name": "DESSERTS",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20260316113205Dessert.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=515",
+      "id": "desserts"
+    },
+    {
+      "sourceId": "514",
+      "name": "FRESH JUICE",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686313709.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=514",
+      "id": "fresh-juice"
+    },
+    {
+      "sourceId": "516",
+      "name": "DRINKS",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686313691.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=516",
+      "id": "drinks"
+    },
+    {
+      "sourceId": "1331",
+      "name": "ALCOHOL & COCKTAILS",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686313679.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=1331",
+      "id": "alcohol-cocktails"
+    },
+    {
+      "sourceId": "1914",
+      "name": "HOOKA",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686313701.png",
+      "url": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?p=home&category_id=1914",
+      "id": "hooka"
+    }
+  ],
+  "items": [
+    {
+      "id": "breakfast-00-l-l",
+      "name": "BREAKFAST",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "00 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "served-from-10-00-am-till-01-00-pm-from-12-00-am-till-03-00-am-00-l-l",
+      "name": "Served from 10:00 AM till 01:00 PM & from 12:00 AM till 03:00 AM",
+      "arabicName": "",
+      "description": "NEW - Breakfast Combo for 2 - كومبو الترويقة Enjoy a delicious spread for two with Nabulsiye cheese, zaatar mix, su... Zaatar - منقوشة زعتر Cheese - منقوشة جبنة Smoked Turkey Cheese - جبنة وحبش مدخن Ciabatta Brown... Sou",
+      "price": "00 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767157_1259fc8c.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "and-00-l-l",
+      "name": "and",
+      "arabicName": "",
+      "description": "",
+      "price": "00 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "new-breakfast-combo-for-2-كومبو-الترويقة-13500001350000-l-l",
+      "name": "NEW - Breakfast Combo for 2 - كومبو الترويقة",
+      "arabicName": "",
+      "description": "Enjoy a delicious spread for two with Nabulsiye cheese, zaatar mix, su...",
+      "price": "13500001350000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20251211093201Breakfast.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "1350000-and-13500001350000-l-l",
+      "name": "1350000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13500001350000 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "zaatar-منقوشة-زعتر-330000330000-l-l",
+      "name": "Zaatar - منقوشة زعتر",
+      "arabicName": "",
+      "description": "",
+      "price": "330000330000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767228_eb6e2bfe.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "330000-and-330000330000-l-l",
+      "name": "330000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "330000330000 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "cheese-منقوشة-جبنة-495000495000-l-l",
+      "name": "Cheese - منقوشة جبنة",
+      "arabicName": "",
+      "description": "",
+      "price": "495000495000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767259_5b68d821.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "495000-and-495000495000-l-l",
+      "name": "495000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "495000495000 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "smoked-turkey-cheese-جبنة-وحبش-مدخن-650-000-ll",
+      "name": "Smoked Turkey Cheese - جبنة وحبش مدخن",
+      "arabicName": "",
+      "description": "Ciabatta Brown...",
+      "price": "650,000 LL",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767696_297ddb1b.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "ciabatta-brown-650-000-ll",
+      "name": "Ciabatta Brown...",
+      "arabicName": "",
+      "description": "",
+      "price": "650,000 LL",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "soujok-cheese-منقوشة-جبنة-وسجق-594000594000-l-l",
+      "name": "Soujok Cheese - منقوشة جبنة وسجق",
+      "arabicName": "",
+      "description": "",
+      "price": "594000594000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767999_4ae9b760.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "594000-and-594000594000-l-l",
+      "name": "594000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "594000594000 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "scrambled-eggs-بيض-مخفوق-550000550000-l-l",
+      "name": "Scrambled Eggs - بيض مخفوق",
+      "arabicName": "",
+      "description": "4 scrambled or sunny side up eggs with arabic bread Add vegetable p...",
+      "price": "550000550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767364_9811c2c1.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "550000-and-550000550000-l-l",
+      "name": "550000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "grilled-halloumi-حلوم-مشوي-880000880000-l-l",
+      "name": "Grilled Halloumi - حلوم مشوي",
+      "arabicName": "",
+      "description": "Grilled halloumi served with veggie plate and arabic bread",
+      "price": "880000880000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781768272_9a476838.png",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "880000-and-880000880000-l-l",
+      "name": "880000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "880000880000 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "labneh-plate-صحن-لبنة-90-000-ll",
+      "name": "Labneh Plate - صحن لبنة",
+      "arabicName": "",
+      "description": "Served with arabic bread",
+      "price": "90,000 LL",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767283_4d3b212e.webp",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "served-with-arabic-bread-90-000-ll",
+      "name": "Served with arabic bread",
+      "arabicName": "",
+      "description": "",
+      "price": "90,000 LL",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "605000-and-605000605000-l-l",
+      "name": "605000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "605000605000 L.L",
+      "image": "",
+      "categoryId": "breakfast"
+    },
+    {
+      "id": "gathering-bundles-21780002178000-l-l",
+      "name": "GATHERING BUNDLES",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "21780002178000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "no-guilt-pleasure-21780002178000-l-l",
+      "name": "No-Guilt Pleasure ⭐⭐",
+      "arabicName": "",
+      "description": "Light Sandwich, Two Half Caesar Salad, Baked Potato and 2 Soft Drinks Better Together ⭐⭐ Tangy Burger, Chicken Sub, Cheese Garlic Bread, Side French Fries and ... Game-Time Duet ⭐⭐ Pepperoni Pizza, 2 Half Caesar Salad, C",
+      "price": "21780002178000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152586.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "2178000-and-21780002178000-l-l",
+      "name": "2178000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "21780002178000 L.L",
+      "image": "",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "better-together-24750002475000-l-l",
+      "name": "Better Together ⭐⭐",
+      "arabicName": "",
+      "description": "Tangy Burger, Chicken Sub, Cheese Garlic Bread, Side French Fries and ...",
+      "price": "24750002475000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152639.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "2475000-and-24750002475000-l-l",
+      "name": "2475000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "24750002475000 L.L",
+      "image": "",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "game-time-duet-21780002178000-l-l",
+      "name": "Game-Time Duet ⭐⭐",
+      "arabicName": "",
+      "description": "Pepperoni Pizza, 2 Half Caesar Salad, Cheese Garlic Bread, Side French...",
+      "price": "21780002178000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152683.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "buzzer-beater-32670003267000-l-l",
+      "name": "Buzzer Beater ⭐⭐⭐",
+      "arabicName": "",
+      "description": "Swiss Mushroom Burger, Chicken Sub, Fajita Sandwich, 2 Side French Fr...",
+      "price": "32670003267000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152740.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "3267000-and-32670003267000-l-l",
+      "name": "3267000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "32670003267000 L.L",
+      "image": "",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "hat-trick-32670003267000-l-l",
+      "name": "Hat-Trick⭐⭐⭐",
+      "arabicName": "",
+      "description": "Pepperoni Pizza, Chicken Sub, 2 Half Caesar Salad, 2 Side French Fries...",
+      "price": "32670003267000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152713.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "fantastic-four-43560004356000-l-l",
+      "name": "Fantastic Four ⭐⭐⭐⭐",
+      "arabicName": "",
+      "description": "Tangy Burger, Chicken Sub, Fajita Sandwich, Classic Burger, Pro’s Co...",
+      "price": "43560004356000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152765.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "4356000-and-43560004356000-l-l",
+      "name": "4356000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "43560004356000 L.L",
+      "image": "",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "squad-goals-43560004356000-l-l",
+      "name": "Squad Goals ⭐⭐⭐⭐",
+      "arabicName": "",
+      "description": "Pepperoni Pizza, Regular Pizza, Pro’s Combo, Tagliatelle Al Pollo Pa...",
+      "price": "43560004356000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152798.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "all-stars-family-32670003267000-l-l",
+      "name": "All-Stars (Family) ⭐⭐⭐⭐",
+      "arabicName": "",
+      "description": "Classic Burger, Chicken Sub, Pro’s Combo, Kids Meal Nuggets, Two Si...",
+      "price": "32670003267000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152900.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "mvp-family-35640003564000-l-l",
+      "name": "MVP (Family) ⭐⭐⭐⭐",
+      "arabicName": "",
+      "description": "Pepperoni Pizza, Regular Pizza, Pro’s Combo, Kids Meal Nuggets, Two ...",
+      "price": "35640003564000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1703152824.png",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "3564000-and-35640003564000-l-l",
+      "name": "3564000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "35640003564000 L.L",
+      "image": "",
+      "categoryId": "gathering-bundles"
+    },
+    {
+      "id": "starters-990000990000-l-l",
+      "name": "STARTERS",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "cheese-nachos-ناتشوز-بالجبنة-990000990000-l-l",
+      "name": "Cheese Nachos - ناتشوز بالجبنة",
+      "arabicName": "",
+      "description": "Crispy tortilla chips smothered in melted cheese, served with cool sou... Cheese Garlic Bread - خبز بالثوم مع جبنة Toasted warm ciabatta bread brushed with garlic butter and topped with... Chicken Wings - جوانح دجاج Cris",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095454NACH.jpg",
+      "categoryId": "starters"
+    },
+    {
+      "id": "990000-and-990000990000-l-l",
+      "name": "990000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "990000990000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "cheese-garlic-bread-خبز-بالثوم-مع-جبنة-550000550000-l-l",
+      "name": "Cheese Garlic Bread - خبز بالثوم مع جبنة",
+      "arabicName": "",
+      "description": "Toasted warm ciabatta bread brushed with garlic butter and topped with...",
+      "price": "550000550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672741303.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "550000-and-550000550000-l-l",
+      "name": "550000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "chicken-wings-جوانح-دجاج-750000750000-l-l",
+      "name": "Chicken Wings - جوانح دجاج",
+      "arabicName": "",
+      "description": "Crispy chicken wings tossed in your choice of smoky BBQ or spicy buffa...",
+      "price": "750000750000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718092463.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "750000-and-750000750000-l-l",
+      "name": "750000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "750000750000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "twister-fries-تويستر-715000715000-l-l",
+      "name": "Twister Fries - تويستر",
+      "arabicName": "",
+      "description": "Served with cocktail sauce",
+      "price": "715000715000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686907835.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "715000-and-715000715000-l-l",
+      "name": "715000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "715000715000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "baked-potato-بطاطا-مشوية-198-000-ll",
+      "name": "Baked Potato - بطاطا مشوية",
+      "arabicName": "",
+      "description": "Served with sour cream",
+      "price": "198,000 LL",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1722245306.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "served-with-sour-cream-198-000-ll",
+      "name": "Served with sour cream",
+      "arabicName": "",
+      "description": "",
+      "price": "198,000 LL",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "440000-and-440000440000-l-l",
+      "name": "440000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "440000440000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "breaded-mozzarella-ا-صابع-الموزاريلا-850000850000-l-l",
+      "name": "Breaded Mozzarella - أصابع الموزاريلا",
+      "arabicName": "",
+      "description": "3 crispy breaded mozzarella sticks served with tangy cocktail sauce.",
+      "price": "850000850000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1722245348.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "850000-and-850000850000-l-l",
+      "name": "850000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "850000850000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "potato-wedges-بطاطا-ودجز-495000495000-l-l",
+      "name": "Potato Wedges - بطاطا ودجز",
+      "arabicName": "",
+      "description": "Crispy potato wedges, served with bbq sauce",
+      "price": "495000495000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672745387.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "495000-and-495000495000-l-l",
+      "name": "495000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "495000495000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "french-fries-بطاطا-مقلية-440000440000-l-l",
+      "name": "French Fries - بطاطا مقلية",
+      "arabicName": "",
+      "description": "",
+      "price": "440000440000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672745061.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "fries-and-truffle-بطاطا-مقلية-وترافل-825000825000-l-l",
+      "name": "Fries and Truffle - بطاطا مقلية وترافل",
+      "arabicName": "",
+      "description": "Golden crispy French fries drizzled with rich truffle sauce and sprink...",
+      "price": "825000825000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672823883.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "825000-and-825000825000-l-l",
+      "name": "825000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "825000825000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "dynamite-shrimps-قريدس-ديناميت-950000950000-l-l",
+      "name": "Dynamite Shrimps - قريدس ديناميت",
+      "arabicName": "",
+      "description": "Crispy fried shrimps generously topped with our bold and spicy dynamit...",
+      "price": "950000950000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1689757415.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "950000-and-950000950000-l-l",
+      "name": "950000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "950000950000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "chicken-tenders-تندرز-الدجاج-950000950000-l-l",
+      "name": "Chicken Tenders - تندرز الدجاج",
+      "arabicName": "",
+      "description": "Golden fried breaded chicken tenders, served with your choice of BBQ o...",
+      "price": "950000950000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20250606065006Tenders.jpg",
+      "categoryId": "starters"
+    },
+    {
+      "id": "chicken-quesadillas-كاساديا-الدجاج-12000001200000-l-l",
+      "name": "Chicken Quesadillas - كاساديا الدجاج",
+      "arabicName": "",
+      "description": "Grilled chicken breast, chili bell peppers, olives, and mixed cheese w...",
+      "price": "12000001200000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1673431054.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "1200000-and-12000001200000-l-l",
+      "name": "1200000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "12000001200000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "chicken-nuggets-ناجتس-دجاج-700000700000-l-l",
+      "name": "Chicken Nuggets - ناجتس دجاج",
+      "arabicName": "",
+      "description": "Crispy homemade chicken nuggets served with golden French fries and ta...",
+      "price": "700000700000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718093235.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "700000-and-700000700000-l-l",
+      "name": "700000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "700000700000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "pro-s-combo-بروز-كومبو-24000002400000-l-l",
+      "name": "Pro's Combo - بروز كومبو",
+      "arabicName": "",
+      "description": "A delicious selection of crispy breaded mozzarella sticks, golden chic...",
+      "price": "24000002400000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1689757325.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "2400000-and-24000002400000-l-l",
+      "name": "2400000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "24000002400000 L.L",
+      "image": "",
+      "categoryId": "starters"
+    },
+    {
+      "id": "kids-meal-nuggets-كيدز-ميل-ناجتس-825000825000-l-l",
+      "name": "Kids Meal Nuggets - كيدز ميل ناجتس",
+      "arabicName": "",
+      "description": "Crispy chicken nuggets, golden French fries, Mr. Juicy and a fun surpr...",
+      "price": "825000825000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/202511141056360eb153ea-f1ce-453b-a533-1d20a782c7ac.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "kids-meal-burger-كيدز-ميل-برغر-825000825000-l-l",
+      "name": "Kids Meal Burger - كيدز ميل برغر",
+      "arabicName": "",
+      "description": "Meat patty, ketchup, served with golden fries, Mr. Juicy and a surpris...",
+      "price": "825000825000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/202511141056360eb153ea-f1ce-453b-a533-1d20a782c7ac.png",
+      "categoryId": "starters"
+    },
+    {
+      "id": "salads-900000900000-l-l",
+      "name": "SALADS",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "900000900000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "greek-يونانية-900000900000-l-l",
+      "name": "Greek - يونانية",
+      "arabicName": "",
+      "description": "A vibrant mix of feta cheese, juicy tomatoes, roman lettuce, cucumbers... Caesar - سيزر A traditional favorite featuring crisp iceberg lettuce, crunchy crouto... Chicken Caesar - سيزر A classic favorite with tender grill",
+      "price": "900000900000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20250528094451003.jpg",
+      "categoryId": "salads"
+    },
+    {
+      "id": "900000-and-900000900000-l-l",
+      "name": "900000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "900000900000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "caesar-سيزر-930000930000-l-l",
+      "name": "Caesar - سيزر",
+      "arabicName": "",
+      "description": "A traditional favorite featuring crisp iceberg lettuce, crunchy crouto...",
+      "price": "930000930000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1689668793.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "930000-and-930000930000-l-l",
+      "name": "930000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "930000930000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "chicken-caesar-سيزر-13750001375000-l-l",
+      "name": "Chicken Caesar - سيزر",
+      "arabicName": "",
+      "description": "A classic favorite with tender grilled chicken, crisp iceberg lettuce,...",
+      "price": "13750001375000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1689668793.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "1375000-and-13750001375000-l-l",
+      "name": "1375000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13750001375000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "pasta-tuna-معكرونة-تونا-950000950000-l-l",
+      "name": "Pasta Tuna - معكرونة تونا",
+      "arabicName": "",
+      "description": "A hearty mix of tuna and fusilli pasta with crisp lettuce, sweet corn,...",
+      "price": "950000950000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1722245430.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "950000-and-950000950000-l-l",
+      "name": "950000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "950000950000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "kale-cajun-الكيل-كاجون-13000001300000-l-l",
+      "name": "Kale Cajun - الكيل كاجون",
+      "arabicName": "",
+      "description": "Tender chicken breast seasoned with bold Cajun spices, served over nut...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672742105.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "1300000-and-13000001300000-l-l",
+      "name": "1300000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13000001300000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "crab-avocado-كراب-ا-فوكادو-12000001200000-l-l",
+      "name": "Crab Avocado - كراب أفوكادو",
+      "arabicName": "",
+      "description": "A refreshing blend of crab sticks, creamy avocado, crisp iceberg lettu...",
+      "price": "12000001200000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1722245463.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "1200000-and-12000001200000-l-l",
+      "name": "1200000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "12000001200000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "bbq-ranch-chicken-باربكيو-رانش-بالدجاج-13200001320000-l-l",
+      "name": "BBQ Ranch Chicken - باربكيو رانش بالدجاج",
+      "arabicName": "",
+      "description": "BBQ grilled chicken breast layered over crisp iceberg lettuce, black b...",
+      "price": "13200001320000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686311429.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "1320000-and-13200001320000-l-l",
+      "name": "1320000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13200001320000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "cobb-كوب-13500001350000-l-l",
+      "name": "Cobb - كوب",
+      "arabicName": "",
+      "description": "Tender chicken breast, turkey bacon, cherry tomatoes, hard-boiled e...",
+      "price": "13500001350000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686311220.png",
+      "categoryId": "salads"
+    },
+    {
+      "id": "1350000-and-13500001350000-l-l",
+      "name": "1350000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13500001350000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "shrimp-kale-cajun-الكيل-كاجون-14500001450000-l-l",
+      "name": "Shrimp Kale Cajun - الكيل كاجون",
+      "arabicName": "",
+      "description": "Spiced Cajun shrimp served atop nutrient-rich kale, shredded carrots, ...",
+      "price": "14500001450000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20250606065116shrimps.jpg",
+      "categoryId": "salads"
+    },
+    {
+      "id": "1450000-and-14500001450000-l-l",
+      "name": "1450000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14500001450000 L.L",
+      "image": "",
+      "categoryId": "salads"
+    },
+    {
+      "id": "mains-12000001200000-l-l",
+      "name": "MAINS",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "12000001200000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "grilled-chicken-صدر-دجاج-مشوي-12000001200000-l-l",
+      "name": "Grilled Chicken - صدر دجاج مشوي",
+      "arabicName": "",
+      "description": "Tender grilled chicken breast served with a fresh green salad and your... Beef Stroganoff - لحمة ستروجانوف Tender strips of meat filet sautéed with fresh peppers and mushrooms ... Crispy Chicken with Rice - دجاج كرسبي مع",
+      "price": "12000001200000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1722245525.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "1200000-and-12000001200000-l-l",
+      "name": "1200000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "12000001200000 L.L",
+      "image": "",
+      "categoryId": "mains"
+    },
+    {
+      "id": "beef-stroganoff-لحمة-ستروجانوف-15800001580000-l-l",
+      "name": "Beef Stroganoff - لحمة ستروجانوف",
+      "arabicName": "",
+      "description": "Tender strips of meat filet sautéed with fresh peppers and mushrooms ...",
+      "price": "15800001580000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1726928494.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "1580000-and-15800001580000-l-l",
+      "name": "1580000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "15800001580000 L.L",
+      "image": "",
+      "categoryId": "mains"
+    },
+    {
+      "id": "crispy-chicken-with-rice-دجاج-كرسبي-مع-ا-رز-13000001300000-l-l",
+      "name": "Crispy Chicken with Rice - دجاج كرسبي مع أرز",
+      "arabicName": "",
+      "description": "Golden crispy chicken strips served over steamed rice, accompanied by ...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1729163325.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "1300000-and-13000001300000-l-l",
+      "name": "1300000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13000001300000 L.L",
+      "image": "",
+      "categoryId": "mains"
+    },
+    {
+      "id": "chicken-stroganoff-دجاج-ستروجانوف-15800001580000-l-l",
+      "name": "Chicken Stroganoff - دجاج ستروجانوف",
+      "arabicName": "",
+      "description": "Tender chicken filet strips cooked with fresh peppers and mushrooms in...",
+      "price": "15800001580000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1726470129.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "pro-s-chicken-escalope-اسكالوب-بروز-16500001650000-l-l",
+      "name": "Pro's Chicken Escalope - اسكالوب بروز",
+      "arabicName": "",
+      "description": "Crispy breaded chicken breast topped with melted mozzarella, smoked tu...",
+      "price": "16500001650000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1722245568.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "1650000-and-16500001650000-l-l",
+      "name": "1650000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "16500001650000 L.L",
+      "image": "",
+      "categoryId": "mains"
+    },
+    {
+      "id": "great-escalope-اسكالوب-بروز-16500001650000-l-l",
+      "name": "Great Escalope - اسكالوب بروز",
+      "arabicName": "",
+      "description": "Crispy breaded chicken breast served over tagliatelle pasta tossed in ...",
+      "price": "16500001650000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1687774218.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "steak-fries-ستيك-18700001870000-l-l",
+      "name": "Steak & Fries - ستيك",
+      "arabicName": "",
+      "description": "Filet steak, green salad, fries and your choice of pepper or mushroom ...",
+      "price": "18700001870000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686931781.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "1870000-and-18700001870000-l-l",
+      "name": "1870000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "18700001870000 L.L",
+      "image": "",
+      "categoryId": "mains"
+    },
+    {
+      "id": "taouk-طاووق-13000001300000-l-l",
+      "name": "Taouk - طاووق",
+      "arabicName": "",
+      "description": "Two flavorful grilled taouk skewers served with creamy coleslaw, garli...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639127783.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "boneless-chicken-نصف-فروج-مسحب-14500001450000-l-l",
+      "name": "Boneless Chicken - نصف فروج مسحب",
+      "arabicName": "",
+      "description": "Juicy boneless half chicken served with creamy coleslaw, garlic sauce,...",
+      "price": "14500001450000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718093307.png",
+      "categoryId": "mains"
+    },
+    {
+      "id": "1450000-and-14500001450000-l-l",
+      "name": "1450000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14500001450000 L.L",
+      "image": "",
+      "categoryId": "mains"
+    },
+    {
+      "id": "fish-and-fries-سمك-وبطاطا-13200001320000-l-l",
+      "name": "Fish and Fries - سمك وبطاطا",
+      "arabicName": "",
+      "description": "Crispy Fish Fillet with French Fries, Tartar Sauce, and Green Salad",
+      "price": "13200001320000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20260217195238resize3.jpg",
+      "categoryId": "mains"
+    },
+    {
+      "id": "1320000-and-13200001320000-l-l",
+      "name": "1320000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13200001320000 L.L",
+      "image": "",
+      "categoryId": "mains"
+    },
+    {
+      "id": "burgers-990000990000-l-l",
+      "name": "BURGERS",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "classic-برغر-كلاسيك-990000990000-l-l",
+      "name": "Classic - برغر كلاسيك",
+      "arabicName": "",
+      "description": "130g of tender char-grilled beef served on a bed of crisp iceberg lett... Pulled Beef Mushroom - برغر بريسكت بالفطر Juicy brisket patty, Swiss cheese, mushroom sauce, honey mustard and a... Tangy - تانجي Breaded chicken ",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718092874.png",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "990000-and-990000990000-l-l",
+      "name": "990000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "990000990000 L.L",
+      "image": "",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "pulled-beef-mushroom-برغر-بريسكت-بالفطر-12000001200000-l-l",
+      "name": "Pulled Beef Mushroom - برغر بريسكت بالفطر",
+      "arabicName": "",
+      "description": "Juicy brisket patty, Swiss cheese, mushroom sauce, honey mustard and a...",
+      "price": "12000001200000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20260212150312IMG_8375.jpg",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "1200000-and-12000001200000-l-l",
+      "name": "1200000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "12000001200000 L.L",
+      "image": "",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "tangy-تانجي-14850001485000-l-l",
+      "name": "Tangy - تانجي",
+      "arabicName": "",
+      "description": "Breaded chicken breast and crispy breaded mozzarella served with pickl...",
+      "price": "14850001485000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718092935.png",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "1485000-and-14850001485000-l-l",
+      "name": "1485000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14850001485000 L.L",
+      "image": "",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "bbq-bacon-باربكيو-بيكون-12000001200000-l-l",
+      "name": "BBQ Bacon - باربكيو بيكون",
+      "arabicName": "",
+      "description": "130g of char-grilled beef topped with turkey bacon, crisp iceberg lett...",
+      "price": "12000001200000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686311558.png",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "swiss-mushrooms-مشروم-سويسري-13000001300000-l-l",
+      "name": "Swiss Mushrooms - مشروم سويسري",
+      "arabicName": "",
+      "description": "Choose between 130g of char-grilled beef or a chicken patty, topped wi...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718092785.png",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "1300000-and-13000001300000-l-l",
+      "name": "1300000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13000001300000 L.L",
+      "image": "",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "volcano-فولكانو-14000001400000-l-l",
+      "name": "Volcano - فولكانو",
+      "arabicName": "",
+      "description": "130g char-grilled beef paired with crispy breaded mozzarella, fresh lo...",
+      "price": "14000001400000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686311644.png",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "1400000-and-14000001400000-l-l",
+      "name": "1400000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14000001400000 L.L",
+      "image": "",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "truffle-burger-برغر-التراف-12500001250000-l-l",
+      "name": "Truffle Burger - برغر التراف",
+      "arabicName": "",
+      "description": "130g beef patty topped with mozzarella & Swiss cheese, finished with t...",
+      "price": "12500001250000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781766082_a39f7471.png",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "1250000-and-12500001250000-l-l",
+      "name": "1250000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "12500001250000 L.L",
+      "image": "",
+      "categoryId": "burgers"
+    },
+    {
+      "id": "pasta-990000990000-l-l",
+      "name": "PASTA",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "arrabbiata-ا-ربياتا-990000990000-l-l",
+      "name": "Arrabbiata - أربياتا",
+      "arabicName": "",
+      "description": "Penne pasta tossed in a mildly spicy tomato sauce, garnished with fres... Four Cheese - أربع أنواع جبنة Penne pasta tossed in Alfredo sauce, blended with a rich mix of four c... NEW - Pesto Pasta - باسطة بيستو Pasta penn",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095649arrr.jpg",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "990000-and-990000990000-l-l",
+      "name": "990000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "990000990000 L.L",
+      "image": "",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "four-cheese-ا-ربع-ا-نواع-جبنة-11000001100000-l-l",
+      "name": "Four Cheese - أربع أنواع جبنة",
+      "arabicName": "",
+      "description": "Penne pasta tossed in Alfredo sauce, blended with a rich mix of four c...",
+      "price": "11000001100000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639129174.png",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "1100000-and-11000001100000-l-l",
+      "name": "1100000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "11000001100000 L.L",
+      "image": "",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "new-pesto-pasta-باسطة-بيستو-990000990000-l-l",
+      "name": "NEW - Pesto Pasta - باسطة بيستو",
+      "arabicName": "",
+      "description": "Pasta penne tossed in creamy pesto sauce, finished with parmesan chees...",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20260212150222IMG_8373.jpg",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "tagliatelle-al-pollo-تاليتلي-ا-لبولو-14850001485000-l-l",
+      "name": "Tagliatelle Al Pollo - تاليتلي ألبولو",
+      "arabicName": "",
+      "description": "Tagliatelle pasta tossed in a rich Alfredo sauce, topped with tender g...",
+      "price": "14850001485000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639129054.png",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "1485000-and-14850001485000-l-l",
+      "name": "1485000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14850001485000 L.L",
+      "image": "",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "mac-n-cheese-ماك-اند-تشيز-15950001595000-l-l",
+      "name": "Mac n' Cheese - ماك اند تشيز",
+      "arabicName": "",
+      "description": "Cavatappi pasta baked in creamy Alfredo sauce with a blend of mixed ch...",
+      "price": "15950001595000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686907743.png",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "1595000-and-15950001595000-l-l",
+      "name": "1595000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "15950001595000 L.L",
+      "image": "",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "pinky-shrimps-باسطة-بالقريدس-13200001320000-l-l",
+      "name": "Pinky Shrimps - باسطة بالقريدس",
+      "arabicName": "",
+      "description": "Tender tagliatelle pasta tossed with succulent shrimp in a rich and cr...",
+      "price": "13200001320000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20250606064925Penne.jpg",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "1320000-and-13200001320000-l-l",
+      "name": "1320000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13200001320000 L.L",
+      "image": "",
+      "categoryId": "pasta"
+    },
+    {
+      "id": "pizza-900000900000-l-l",
+      "name": "PIZZA",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "900000900000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "margherita-مارغريتا-900000900000-l-l",
+      "name": "Margherita - مارغريتا",
+      "arabicName": "",
+      "description": "Classic tomato basil sauce topped with melted mozzarella cheese. Vegetarien - نباتية Tomato basil sauce topped with melted mozzarella, sweet corn, fresh mu... Pepperoni - بيبيروني Tomato basil sauce topped with spicy bee",
+      "price": "900000900000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1642498395.png",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "900000-and-900000900000-l-l",
+      "name": "900000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "900000900000 L.L",
+      "image": "",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "vegetarien-نباتية-11000001100000-l-l",
+      "name": "Vegetarien - نباتية",
+      "arabicName": "",
+      "description": "Tomato basil sauce topped with melted mozzarella, sweet corn, fresh mu...",
+      "price": "11000001100000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095558reg.jpg",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "1100000-and-11000001100000-l-l",
+      "name": "1100000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "11000001100000 L.L",
+      "image": "",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "pepperoni-بيبيروني-12000001200000-l-l",
+      "name": "Pepperoni - بيبيروني",
+      "arabicName": "",
+      "description": "Tomato basil sauce topped with spicy beef pepperoni and melted mozzare...",
+      "price": "12000001200000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095621pepp.jpg",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "1200000-and-12000001200000-l-l",
+      "name": "1200000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "12000001200000 L.L",
+      "image": "",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "regular-عادية-13000001300000-l-l",
+      "name": "Regular - عادية",
+      "arabicName": "",
+      "description": "Tomato basil sauce layered with melted mozzarella cheese, smoky turkey...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639128380.png",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "1300000-and-13000001300000-l-l",
+      "name": "1300000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13000001300000 L.L",
+      "image": "",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "bbq-chicken-باربكيو-تشيكن-14800001480000-l-l",
+      "name": "BBQ Chicken - باربكيو تشيكن",
+      "arabicName": "",
+      "description": "Smoky BBQ sauce layered with melted mozzarella, fresh mushrooms, and g...",
+      "price": "14800001480000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1642497555.png",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "1480000-and-14800001480000-l-l",
+      "name": "1480000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14800001480000 L.L",
+      "image": "",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "rocket-sundried-tomato-روكا-وبندورة-مجففة-15400001540000-l-l",
+      "name": "Rocket Sundried Tomato - روكا وبندورة مجففة",
+      "arabicName": "",
+      "description": "Tomato basil sauce topped with melted mozzarella and Parmesan cheeses,...",
+      "price": "15400001540000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672743498.png",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "1540000-and-15400001540000-l-l",
+      "name": "1540000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "15400001540000 L.L",
+      "image": "",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "truffle-pizza-بيتزا-الترافل-14850001485000-l-l",
+      "name": "Truffle Pizza - بيتزا الترافل",
+      "arabicName": "",
+      "description": "Mozzarella cheese, rich truffle sauce, fresh rocket leaves, and shaved...",
+      "price": "14850001485000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781777109_9ff7d6c2.png",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "1485000-and-14850001485000-l-l",
+      "name": "1485000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14850001485000 L.L",
+      "image": "",
+      "categoryId": "pizza"
+    },
+    {
+      "id": "lebanese-2-250-000-ll",
+      "name": "LEBANESE",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "2,250,000 LL",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "lebanese-meza-م-از-ة-ل-بناني-ة-2-250-000-ll",
+      "name": "Lebanese Meza - مَازّة لِبنانيّة",
+      "arabicName": "",
+      "description": "(4 Prs Min.) Tabbouleh, Fa... Tabbouleh - تبولة Fattouch - فتوش Hommos - حمص Moutabbal - باذنجان متبل Shanklish - شنكليش Labneh - لبنة Vine Leaves - ورق عنب Batata Harra - بطاطا حرة Soujouk - سجق Makanek - مقانق مع دبس ا",
+      "price": "2,250,000 LL",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1779450611_42da7cc9.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "4-prs-min-2-250-000-ll",
+      "name": "(4 Prs Min.)",
+      "arabicName": "",
+      "description": "Tabbouleh, Fa...",
+      "price": "2,250,000 LL",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "set-menu-12-250-000-l-lset-menu-22-520-000-l-l",
+      "name": "Set Menu 12.250.000 L.LSet Menu",
+      "arabicName": "",
+      "description": "",
+      "price": "22.520.000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "tabbouleh-تبولة-600000600000-l-l",
+      "name": "Tabbouleh - تبولة",
+      "arabicName": "",
+      "description": "",
+      "price": "600000600000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095814tabb.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "600000-and-600000600000-l-l",
+      "name": "600000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "600000600000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "fattouch-فتوش-600000600000-l-l",
+      "name": "Fattouch - فتوش",
+      "arabicName": "",
+      "description": "",
+      "price": "600000600000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095836fatt.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "hommos-حمص-550000550000-l-l",
+      "name": "Hommos - حمص",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095858hommos.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "550000-and-550000550000-l-l",
+      "name": "550000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "moutabbal-باذنجان-متبل-550000550000-l-l",
+      "name": "Moutabbal - باذنجان متبل",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727095927baba.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "shanklish-شنكليش-550000550000-l-l",
+      "name": "Shanklish - شنكليش",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1744468955.png",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "labneh-لبنة-600000600000-l-l",
+      "name": "Labneh - لبنة",
+      "arabicName": "",
+      "description": "",
+      "price": "600000600000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639130949.png",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "vine-leaves-ورق-عنب-600000600000-l-l",
+      "name": "Vine Leaves - ورق عنب",
+      "arabicName": "",
+      "description": "",
+      "price": "600000600000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672740480.png",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "batata-harra-بطاطا-حرة-500000500000-l-l",
+      "name": "Batata Harra - بطاطا حرة",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/202107270959577ara.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "500000-and-500000500000-l-l",
+      "name": "500000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "soujouk-سجق-770000770000-l-l",
+      "name": "Soujouk - سجق",
+      "arabicName": "",
+      "description": "",
+      "price": "770000770000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727100035MAK.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "770000-and-770000770000-l-l",
+      "name": "770000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "770000770000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "makanek-مقانق-مع-دبس-الرمان-770000770000-l-l",
+      "name": "Makanek - مقانق مع دبس الرمان",
+      "arabicName": "",
+      "description": "",
+      "price": "770000770000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727100056SOU.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "fatayer-sabanigh-فطاير-سبانخ-110000110000-l-l",
+      "name": "Fatayer Sabanigh - فطاير سبانخ",
+      "arabicName": "",
+      "description": "2 PCS",
+      "price": "110000110000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781767380_02198fc2.png",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "110000-and-110000110000-l-l",
+      "name": "110000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "110000110000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "rakakat-cheese-رقاقات-جبنة-165000165000-l-l",
+      "name": "Rakakat Cheese - رقاقات جبنة",
+      "arabicName": "",
+      "description": "1 pcs",
+      "price": "165000165000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727100120rolls.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "165000-and-165000165000-l-l",
+      "name": "165000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "165000165000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "kebbeh-bi-lahme-كبة-ا-قراص-165000165000-l-l",
+      "name": "Kebbeh Bi Lahme - كبة أقراص",
+      "arabicName": "",
+      "description": "1 pcs",
+      "price": "165000165000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727100150kebb.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "sambousik-سمبوسك-165000165000-l-l",
+      "name": "Sambousik - سمبوسك",
+      "arabicName": "",
+      "description": "1 pcs",
+      "price": "165000165000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20210727100120rolls.jpg",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "boneless-chicken-نصف-فروج-مسحب-14500001450000-l-l",
+      "name": "Boneless Chicken - نصف فروج مسحب",
+      "arabicName": "",
+      "description": "Juicy boneless half chicken served with creamy coleslaw, garlic sauce,...",
+      "price": "14500001450000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718093307.png",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "1450000-and-14500001450000-l-l",
+      "name": "1450000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14500001450000 L.L",
+      "image": "",
+      "categoryId": "lebanese"
+    },
+    {
+      "id": "sandwiches-11000001100000-l-l",
+      "name": "SANDWICHES",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "11000001100000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "chicken-sub-ساب-دجاج-11000001100000-l-l",
+      "name": "Chicken Sub - ساب دجاج",
+      "arabicName": "",
+      "description": "Grilled chicken breast topped with melted mozzarella cheese, crisp let... Light Chicken - دجاج لايت Grilled chicken breast with peppery rocket leaves, fresh mushrooms, an... Chicken Club Sandwich - كلوب ساندويتش الدجاج L",
+      "price": "11000001100000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718093091.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "1100000-and-11000001100000-l-l",
+      "name": "1100000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "11000001100000 L.L",
+      "image": "",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "light-chicken-دجاج-لايت-13000001300000-l-l",
+      "name": "Light Chicken - دجاج لايت",
+      "arabicName": "",
+      "description": "Grilled chicken breast with peppery rocket leaves, fresh mushrooms, an...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1718093151.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "1300000-and-13000001300000-l-l",
+      "name": "1300000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "13000001300000 L.L",
+      "image": "",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "chicken-club-sandwich-كلوب-ساندويتش-الدجاج-11500001150000-l-l",
+      "name": "Chicken Club Sandwich - كلوب ساندويتش الدجاج",
+      "arabicName": "",
+      "description": "Layers of mixed chicken with mayo sauce and pickles, smoked turkey col...",
+      "price": "11500001150000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20260306082953IMG_8357.jpg",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "1150000-and-11500001150000-l-l",
+      "name": "1150000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "11500001150000 L.L",
+      "image": "",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "chicken-avocado-ا-فوكادو-دجاج-13000001300000-l-l",
+      "name": "Chicken Avocado - أفوكادو دجاج",
+      "arabicName": "",
+      "description": "Grilled chicken breast, melted mozzarella cheese, sweet corn, fresh ar...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20250924115501WhatsApp%20Image%202025-09-23%20at%2015.26.19_17450409.jpg",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "chicken-fajitas-فاهيتا-الدجاج-13000001300000-l-l",
+      "name": "Chicken Fajitas - فاهيتا الدجاج",
+      "arabicName": "",
+      "description": "Grilled chicken breast, melted mozzarella, sweet corn, bell peppers, a...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672823293.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "chicken-honey-mustard-دجاج-بالعسل-والخردل-15500001550000-l-l",
+      "name": "Chicken Honey Mustard - دجاج بالعسل والخردل",
+      "arabicName": "",
+      "description": "Your choice of crispy or grilled chicken breast drizzled with honey mu...",
+      "price": "15500001550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1689757366.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "1550000-and-15500001550000-l-l",
+      "name": "1550000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "15500001550000 L.L",
+      "image": "",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "dynamite-chicken-دجاج-ديناميت-14000001400000-l-l",
+      "name": "Dynamite Chicken - دجاج ديناميت",
+      "arabicName": "",
+      "description": "Crispy chicken breast layered with lettuce, smoked turkey, creamy avoc...",
+      "price": "14000001400000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639128104.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "1400000-and-14000001400000-l-l",
+      "name": "1400000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "14000001400000 L.L",
+      "image": "",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "manhattan-مانهاتن-15500001550000-l-l",
+      "name": "Manhattan - مانهاتن",
+      "arabicName": "",
+      "description": "Crispy breaded chicken topped with turkey bacon, melted mozzarella, cr...",
+      "price": "15500001550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686312017.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "chicken-pesto-دجاج-باليستو-13000001300000-l-l",
+      "name": "Chicken Pesto - دجاج باليستو",
+      "arabicName": "",
+      "description": "Grilled chicken strips, brown ciabatta, pesto sauce, mozzarella cheese...",
+      "price": "13000001300000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1779466030_2a4d1e4b.jpg",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "crab-sandwich-كراب-990000990000-l-l",
+      "name": "Crab Sandwich - كراب",
+      "arabicName": "",
+      "description": "Brown Ciabatta bread, shredded crab sticks, avocado, sweet corn and yo...",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1677066144.png",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "990000-and-990000990000-l-l",
+      "name": "990000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "990000990000 L.L",
+      "image": "",
+      "categoryId": "sandwiches"
+    },
+    {
+      "id": "desserts-630000630000-l-l",
+      "name": "DESSERTS",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "630000630000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "new-croissant-perdu-كرواسون-بيردو-630000630000-l-l",
+      "name": "NEW - CROISSANT PERDU كرواسون بيردو",
+      "arabicName": "",
+      "description": "Warm flaky croissant topped with vanilla ice cream and drizzled with c... Classic Waffles - وافل بالسكر Crispy golden waffle dusted with a light sprinkle of powdered sugar. Chocolate Waffles - وافل بالشوكولا Golden Belgi",
+      "price": "630000630000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1779439134_83cbdde1.jpeg",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "630000-and-630000630000-l-l",
+      "name": "630000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "630000630000 L.L",
+      "image": "",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "classic-waffles-وافل-بالسكر-550000550000-l-l",
+      "name": "Classic Waffles - وافل بالسكر",
+      "arabicName": "",
+      "description": "Crispy golden waffle dusted with a light sprinkle of powdered sugar.",
+      "price": "550000550000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639128599.png",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "550000-and-550000550000-l-l",
+      "name": "550000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "chocolate-waffles-وافل-بالشوكولا-800000800000-l-l",
+      "name": "Chocolate Waffles - وافل بالشوكولا",
+      "arabicName": "",
+      "description": "Golden Belgian waffle topped with decadent melted Belgian chocolate. ...",
+      "price": "800000800000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1672744948.png",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "800000-and-800000800000-l-l",
+      "name": "800000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "800000800000 L.L",
+      "image": "",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "chuby-crepe-شابي-كريب-850000850000-l-l",
+      "name": "Chuby Crepe - شابي كريب",
+      "arabicName": "",
+      "description": "Chocolate, fresh banana slices, and crunchy hazelnuts",
+      "price": "850000850000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639128475.png",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "850000-and-850000850000-l-l",
+      "name": "850000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "850000850000 L.L",
+      "image": "",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "kouky-crepe-كندر-كريب-850000850000-l-l",
+      "name": "Kouky Crepe - كندر كريب",
+      "arabicName": "",
+      "description": "Delicate crepe filled with smooth Kinder chocolate",
+      "price": "850000850000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20251024070658Kouky.jpg",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "fondant-pistachio-فوندان-بالفستق-الحلبي-11500001150000-l-l",
+      "name": "Fondant Pistachio - فوندان بالفستق الحلبي",
+      "arabicName": "",
+      "description": "Warm chocolate fondant filled with rich pistachio chocolate, served wi...",
+      "price": "11500001150000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20251109140507WhatsApp%20Image%202025-11-09%20at%2015.34.15_99d2009b.jpg",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "1150000-and-11500001150000-l-l",
+      "name": "1150000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "11500001150000 L.L",
+      "image": "",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "fondant-au-chocolat-فوندان-شوكولا-950000950000-l-l",
+      "name": "Fondant Au Chocolat - فوندان شوكولا",
+      "arabicName": "",
+      "description": "Gooey chocolate fondant served with a scoop of creamy vanilla ice crea...",
+      "price": "950000950000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639128729.png",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "950000-and-950000950000-l-l",
+      "name": "950000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "950000950000 L.L",
+      "image": "",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "kinder-bueno-fondant-فوندان-كيندر-بوينو-990000990000-l-l",
+      "name": "Kinder Bueno Fondant - فوندان كيندر بوينو",
+      "arabicName": "",
+      "description": "A rich molten chocolate fondant filled with creamy Bueno chocolate, se...",
+      "price": "990000990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20251109082955WhatsApp%20Image%202025-11-08%20at%2022.14.07_36a74f45.jpg",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "990000-and-990000990000-l-l",
+      "name": "990000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "990000990000 L.L",
+      "image": "",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "ice-cream-ثلاثة-ا-نواع-بوظة-850000850000-l-l",
+      "name": "Ice Cream - ثلاثة أنواع بوظة",
+      "arabicName": "",
+      "description": "Pick any 3 scoops from our delicious flavors: Kinder, Chocolate, Vanil...",
+      "price": "850000850000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1639128826.png",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "chocolate-brownie-براوني-بالشوكولات-850000850000-l-l",
+      "name": "Chocolate Brownie - براوني بالشوكولات",
+      "arabicName": "",
+      "description": "A warm, fudgy brownie served with creamy vanilla ice cream, topped wit...",
+      "price": "850000850000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/20250718101334Chocolate-Brownies-25-720x720.jpg",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "othmaliyeh-ice-cream-عثمليه-ايس-كريم-950000950000-l-l",
+      "name": "Othmaliyeh Ice Cream - عثمليه ايس كريم",
+      "arabicName": "",
+      "description": "Creamy vanilla ice cream wrapped in crispy Othmaliyeh dough, topped wi...",
+      "price": "950000950000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1680870448.png",
+      "categoryId": "desserts"
+    },
+    {
+      "id": "fresh-juice-605000605000-l-l",
+      "name": "FRESH JUICE",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "605000605000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "orange-ليمون-605000605000-l-l",
+      "name": "Orange - ليمون",
+      "arabicName": "",
+      "description": "Watermelon - بطيخ Carrot - جزر Lemonade - ليموناضة Minted Lemonade - ليموناضة بالنعناع Milkshake - ميلك شيك Your choice of chocolate, vanilla or strawberry Milkshake Oreo - أوريو ميلك شيك",
+      "price": "605000605000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "605000-and-605000605000-l-l",
+      "name": "605000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "605000605000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "watermelon-بطيخ-605000605000-l-l",
+      "name": "Watermelon - بطيخ",
+      "arabicName": "",
+      "description": "",
+      "price": "605000605000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "carrot-جزر-605000605000-l-l",
+      "name": "Carrot - جزر",
+      "arabicName": "",
+      "description": "",
+      "price": "605000605000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "lemonade-ليموناضة-605000605000-l-l",
+      "name": "Lemonade - ليموناضة",
+      "arabicName": "",
+      "description": "",
+      "price": "605000605000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "minted-lemonade-ليموناضة-بالنعناع-649000649000-l-l",
+      "name": "Minted Lemonade - ليموناضة بالنعناع",
+      "arabicName": "",
+      "description": "",
+      "price": "649000649000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "649000-and-649000649000-l-l",
+      "name": "649000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "649000649000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "milkshake-ميلك-شيك-605000605000-l-l",
+      "name": "Milkshake - ميلك شيك",
+      "arabicName": "",
+      "description": "Your choice of chocolate, vanilla or strawberry",
+      "price": "605000605000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "milkshake-oreo-ا-وريو-ميلك-شيك-660000660000-l-l",
+      "name": "Milkshake Oreo - أوريو ميلك شيك",
+      "arabicName": "",
+      "description": "",
+      "price": "660000660000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "660000-and-660000660000-l-l",
+      "name": "660000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "660000660000 L.L",
+      "image": "",
+      "categoryId": "fresh-juice"
+    },
+    {
+      "id": "drinks-250000250000-l-l",
+      "name": "DRINKS",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "250000250000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "soft-drinks-مشروبات-غازية-250000250000-l-l",
+      "name": "Soft Drinks - مشروبات غازية",
+      "arabicName": "",
+      "description": "Mineral Water Large - مياه معدنية Mineral Water Small - مياه معدنية Sparkling Water Large - مياه غازية Sparkling Water Small - مياه غازية Rim Flavours: Regular, Lemon, Apple, Orange and Grapefruit Iced Tea - ايس تي Flavo",
+      "price": "250000250000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "250000-and-250000250000-l-l",
+      "name": "250000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "250000250000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "mineral-water-large-مياه-معدنية-270000270000-l-l",
+      "name": "Mineral Water Large - مياه معدنية",
+      "arabicName": "",
+      "description": "",
+      "price": "270000270000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "270000-and-270000270000-l-l",
+      "name": "270000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "270000270000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "mineral-water-small-مياه-معدنية-130000130000-l-l",
+      "name": "Mineral Water Small - مياه معدنية",
+      "arabicName": "",
+      "description": "",
+      "price": "130000130000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "130000-and-130000130000-l-l",
+      "name": "130000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "130000130000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "sparkling-water-large-مياه-غازية-590000590000-l-l",
+      "name": "Sparkling Water Large - مياه غازية",
+      "arabicName": "",
+      "description": "",
+      "price": "590000590000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "590000-and-590000590000-l-l",
+      "name": "590000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "590000590000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "sparkling-water-small-مياه-غازية-270000270000-l-l",
+      "name": "Sparkling Water Small - مياه غازية",
+      "arabicName": "",
+      "description": "Rim Flavours: Regular, Lemon, Apple, Orange and Grapefruit",
+      "price": "270000270000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "iced-tea-ايس-تي-300000300000-l-l",
+      "name": "Iced Tea - ايس تي",
+      "arabicName": "",
+      "description": "Flavours: Peach, Peach Light, Lemon and Exotic",
+      "price": "300000300000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "300000-and-300000300000-l-l",
+      "name": "300000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "300000300000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "almaza-giraffe-3-l-الماسه-32500003250000-l-l",
+      "name": "Almaza Giraffe 3 L - الماسه",
+      "arabicName": "",
+      "description": "",
+      "price": "32500003250000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "3250000-and-32500003250000-l-l",
+      "name": "3250000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "32500003250000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "almaza-الماسة-550000550000-l-l",
+      "name": "Almaza - الماسة",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "550000-and-550000550000-l-l",
+      "name": "550000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "heineken-هاينكن-720000720000-l-l",
+      "name": "Heineken - هاينكن",
+      "arabicName": "",
+      "description": "",
+      "price": "720000720000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "720000-and-720000720000-l-l",
+      "name": "720000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "720000720000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "laziza-بيرة-خالية-من-الكحول-500000500000-l-l",
+      "name": "Laziza - بيرة خالية من الكحول",
+      "arabicName": "",
+      "description": "Regular or apple flavour",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "500000-and-500000500000-l-l",
+      "name": "500000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "almaza-draft-beer-درافت-550000550000-l-l",
+      "name": "Almaza Draft Beer - درافت",
+      "arabicName": "",
+      "description": "",
+      "price": "550000550000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "energy-drink-مشروب-الطاقة-540-000-l-l",
+      "name": "Energy Drink - مشروب الطاقة",
+      "arabicName": "",
+      "description": "",
+      "price": "540.000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "xxl400-000-l-lred-bull-540-000-l-l",
+      "name": "XXL400.000 L.LRed Bull",
+      "arabicName": "",
+      "description": "",
+      "price": "540.000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "crackers-mix-مكسرات-150000150000-l-l",
+      "name": "Crackers Mix - مكسرات",
+      "arabicName": "",
+      "description": "",
+      "price": "150000150000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "150000-and-150000150000-l-l",
+      "name": "150000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "150000150000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "open-american-coffee-امريكان-كوفي-495000495000-l-l",
+      "name": "Open American Coffee - امريكان كوفي",
+      "arabicName": "",
+      "description": "",
+      "price": "495000495000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "495000-and-495000495000-l-l",
+      "name": "495000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "495000495000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "caffe-latte-كافيه-لاتيه-450000450000-l-l",
+      "name": "Caffe Latte - كافيه لاتيه",
+      "arabicName": "",
+      "description": "",
+      "price": "450000450000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "450000-and-450000450000-l-l",
+      "name": "450000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "450000450000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "nescafe-نسكافيه-350000350000-l-l",
+      "name": "Nescafe - نسكافيه",
+      "arabicName": "",
+      "description": "",
+      "price": "350000350000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "350000-and-350000350000-l-l",
+      "name": "350000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "350000350000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "cappuccino-كابوشينو-450000450000-l-l",
+      "name": "Cappuccino - كابوشينو",
+      "arabicName": "",
+      "description": "",
+      "price": "450000450000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "espresso-ا-سبرسو-300000300000-l-l",
+      "name": "Espresso - أسبرسو",
+      "arabicName": "",
+      "description": "",
+      "price": "300000300000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "turkish-coffee-فنجان-قهوة-تركي-250000250000-l-l",
+      "name": "Turkish Coffee - فنجان قهوة تركي",
+      "arabicName": "",
+      "description": "",
+      "price": "250000250000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "tea-zhourat-yansoun-شاي-زهورات-يانسون-300000300000-l-l",
+      "name": "Tea/ Zhourat / Yansoun - شاي / زهورات/ يانسون",
+      "arabicName": "",
+      "description": "",
+      "price": "300000300000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "hot-chocolate-شكولاته-ساخنة-500000500000-l-l",
+      "name": "Hot Chocolate - شكولاته ساخنة",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "mochaccino-موكاتشينو-500000500000-l-l",
+      "name": "Mochaccino - موكاتشينو",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "hot-chocolate-light-شوكولاتة-ساخنة-لايت-450000450000-l-l",
+      "name": "Hot Chocolate Light – شوكولاتة ساخنة لايت",
+      "arabicName": "",
+      "description": "Light Hot Chocolate Selection: White Chocolate – Hazelnut – Class...",
+      "price": "450000450000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "iced-mocha-ا-يس-موكا-500000500000-l-l",
+      "name": "Iced Mocha - آيس موكا",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "caramel-macchiato-كراميل-مكياتو-500000500000-l-l",
+      "name": "Caramel Macchiato - كراميل مكياتو",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "chocolate-frappuccino-شوكولا-فرابتشينو-500000500000-l-l",
+      "name": "Chocolate Frappuccino - شوكولا فرابتشينو",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "coconut-latte-لاتيه-جوز-الهند-500000500000-l-l",
+      "name": "Coconut Latte - لاتيه جوز الهند",
+      "arabicName": "",
+      "description": "",
+      "price": "500000500000 L.L",
+      "image": "",
+      "categoryId": "drinks"
+    },
+    {
+      "id": "alcohol-cocktails-450-000-l-l",
+      "name": "ALCOHOL & COCKTAILS",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "450.000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "smoothies-سموذي-450-000-l-l",
+      "name": "Smoothies - سموذي",
+      "arabicName": "",
+      "description": "Golden Pine Milk, Pineapple Juice, Coconut Syrup and Fresh Pineapple Jamaica Sunrise Orange Juice, Pineapple Juice, Gernadine Syrup and a choice with or w... Go Mango Mango, pineapple, with blossom water Irish Cream Blue",
+      "price": "450.000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "passion-fruitmango450-000-l-lstrawberry450-000-l-l-450-000-l-l",
+      "name": "Passion FruitMango450.000 L.LStrawberry450.000 L.L",
+      "arabicName": "",
+      "description": "",
+      "price": "450.000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "golden-pine-495000495000-l-l",
+      "name": "Golden Pine",
+      "arabicName": "",
+      "description": "Milk, Pineapple Juice, Coconut Syrup and Fresh Pineapple",
+      "price": "495000495000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "495000-and-495000495000-l-l",
+      "name": "495000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "495000495000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "jamaica-sunrise-495000495000-l-l",
+      "name": "Jamaica Sunrise",
+      "arabicName": "",
+      "description": "Orange Juice, Pineapple Juice, Gernadine Syrup and a choice with or w...",
+      "price": "495000495000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "go-mango-446000446000-l-l",
+      "name": "Go Mango",
+      "arabicName": "",
+      "description": "Mango, pineapple, with blossom water",
+      "price": "446000446000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "446000-and-446000446000-l-l",
+      "name": "446000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "446000446000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "irish-cream-644000644000-l-l",
+      "name": "Irish Cream",
+      "arabicName": "",
+      "description": "",
+      "price": "644000644000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "644000-and-644000644000-l-l",
+      "name": "644000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "644000644000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "blue-ocean-446000446000-l-l",
+      "name": "Blue Ocean",
+      "arabicName": "",
+      "description": "Pineapple, coconut syrup, milk and blue curacao",
+      "price": "446000446000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "passion-love-446000446000-l-l",
+      "name": "Passion Love",
+      "arabicName": "",
+      "description": "Fresh Lemon, Strawberry, Orange Juice with Passion Fruit and Cranberry...",
+      "price": "446000446000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "strawberry-surpise-446000446000-l-l",
+      "name": "Strawberry Surpise",
+      "arabicName": "",
+      "description": "Fresh Pineapple, Strawberry and Banana Juice with Coconut and Grenadin...",
+      "price": "446000446000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "hazy-mojito-446000446000-l-l",
+      "name": "Hazy Mojito",
+      "arabicName": "",
+      "description": "Fresh Strawberry, Lemon and Mint Juice with Coconut and Cranberry syru...",
+      "price": "446000446000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "strawberry-smoothie-446000446000-l-l",
+      "name": "Strawberry Smoothie",
+      "arabicName": "",
+      "description": "Strawberry Fresh, Milk and Banana",
+      "price": "446000446000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "arak-عرق-347-000-ll",
+      "name": "Arak - عرق",
+      "arabicName": "",
+      "description": "1/1 Btl -",
+      "price": "347,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "1-1-btl-347-000-ll",
+      "name": "1/1 Btl -",
+      "arabicName": "",
+      "description": "",
+      "price": "347,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "2770000-and-27700002770000-l-l",
+      "name": "2770000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "27700002770000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "wine-نبيذ-655-000-ll",
+      "name": "Wine - نبيذ",
+      "arabicName": "",
+      "description": "1/1 Btl",
+      "price": "655,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "1-1-btl-655-000-ll",
+      "name": "1/1 Btl",
+      "arabicName": "",
+      "description": "",
+      "price": "655,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "2200000-and-22000002200000-l-l",
+      "name": "2200000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "22000002200000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "whiskey-ويسكي-644-000-ll",
+      "name": "Whiskey - ويسكي",
+      "arabicName": "",
+      "description": "1/1 Btl - 5,...",
+      "price": "644,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "1-1-btl-5-644-000-ll",
+      "name": "1/1 Btl - 5,...",
+      "arabicName": "",
+      "description": "",
+      "price": "644,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "6930000-and-69300006930000-l-l",
+      "name": "6930000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "69300006930000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "vodka-فودكا-396-000-ll",
+      "name": "Vodka - فودكا",
+      "arabicName": "",
+      "description": "1/2 Btl - 2,47...",
+      "price": "396,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "1-2-btl-2-47-396-000-ll",
+      "name": "1/2 Btl - 2,47...",
+      "arabicName": "",
+      "description": "",
+      "price": "396,000 LL",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "3465000-and-34650003465000-l-l",
+      "name": "3465000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "34650003465000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "gin-جن-44550004455000-l-l",
+      "name": "Gin - جن",
+      "arabicName": "",
+      "description": "",
+      "price": "44550004455000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "4455000-and-44550004455000-l-l",
+      "name": "4455000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "44550004455000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "shots-347-000-l-l",
+      "name": "Shots",
+      "arabicName": "",
+      "description": "",
+      "price": "347.000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "doodoo297-000-l-ltequilla-white297-000-l-ltequilla-gold-347-000-l-l",
+      "name": "Doodoo297.000 L.LTequilla White297.000 L.LTequilla Gold",
+      "arabicName": "",
+      "description": "",
+      "price": "347.000 L.L",
+      "image": "",
+      "categoryId": "alcohol-cocktails"
+    },
+    {
+      "id": "hooka-800000800000-l-l",
+      "name": "HOOKA",
+      "arabicName": "",
+      "description": "/* ── Reset & Base ──────────────────────────────────────────── */ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'DM Sans', sans-serif; background: #eeeeee; color: #1c1917;",
+      "price": "800000800000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1686906946.png",
+      "categoryId": "hooka"
+    },
+    {
+      "id": "mouassal-معسل-800000800000-l-l",
+      "name": "Mouassal - معسل",
+      "arabicName": "",
+      "description": "Mouassal Exotic - اكزوتيك معسل",
+      "price": "800000800000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781766454_c815c32f.png",
+      "categoryId": "hooka"
+    },
+    {
+      "id": "800000-and-800000800000-l-l",
+      "name": "800000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "800000800000 L.L",
+      "image": "",
+      "categoryId": "hooka"
+    },
+    {
+      "id": "mouassal-exotic-اكزوتيك-معسل-900000900000-l-l",
+      "name": "Mouassal Exotic - اكزوتيك معسل",
+      "arabicName": "",
+      "description": "",
+      "price": "900000900000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/1781766439_c521d679.png",
+      "categoryId": "hooka"
+    },
+    {
+      "id": "900000-and-900000900000-l-l",
+      "name": "900000 and",
+      "arabicName": "",
+      "description": "",
+      "price": "900000900000 L.L",
+      "image": "",
+      "categoryId": "hooka"
+    }
+  ]
+}
