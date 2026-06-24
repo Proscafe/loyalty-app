@@ -4,7 +4,6 @@ import path from "node:path";
 
 const SOURCE_URL = "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?category_id=1562";
 const OUTPUT_PATH = path.join(process.cwd(), "src/app/menu.dekwaneh/pros-menu-dekwaneh.json");
-const BASE_URL = new URL(SOURCE_URL).origin;
 
 function normalizeId(value, fallback = "menu") {
   const normalized = String(value || "")
@@ -18,6 +17,37 @@ function normalizeId(value, fallback = "menu") {
   return normalized || fallback;
 }
 
+function cleanPrice(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const match = text.match(/(\d[\d,.\s]*)\s*(?:L\.?\s*L\.?|LL|LBP|ل\.?\s*ل\.?)\b/i);
+  if (!match) return "";
+
+  let digits = match[1].replace(/\D/g, "");
+  if (digits.length % 2 === 0) {
+    const half = digits.length / 2;
+    const first = digits.slice(0, half);
+    const second = digits.slice(half);
+    if (first === second) digits = first;
+  }
+
+  return digits ? `${digits} L.L` : "";
+}
+
+function isBadTitle(value) {
+  const title = String(value || "").trim();
+  if (!title) return true;
+
+  const letters = title.replace(/[^\p{Letter}]/gu, "");
+  const digits = title.replace(/\D/g, "");
+
+  if (letters.length === 0 && digits.length > 0) return true;
+  if (/^\d+[\d\s,.]*$/i.test(title)) return true;
+  if (/^\d+[\d\s,.]*(and|&)?\s*$/i.test(title)) return true;
+  if (digits.length >= 5 && letters.length <= 3) return true;
+
+  return false;
+}
+
 function uniqueBy(items, getKey) {
   const seen = new Set();
   return items.filter((item) => {
@@ -26,6 +56,15 @@ function uniqueBy(items, getKey) {
     seen.add(key);
     return true;
   });
+}
+
+async function readExistingMenu() {
+  try {
+    const text = await fs.readFile(OUTPUT_PATH, "utf8");
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 async function extractCategories(page) {
@@ -38,35 +77,37 @@ async function extractCategories(page) {
       }
     };
 
-    const links = Array.from(document.querySelectorAll("a[href*='category_id']"));
+    const links = Array.from(document.querySelectorAll("a[href*='category_id'], button, .category, [class*='category']"));
+
     return links
-      .map((link, index) => {
-        const href = link.getAttribute("href") || "";
-        const url = abs(href);
-        const text = (link.textContent || "").trim().replace(/\s+/g, " ");
-        const image = link.querySelector("img")?.getAttribute("src") || "";
-        const categoryId = new URL(url).searchParams.get("category_id") || `category-${index + 1}`;
-        return { sourceId: categoryId, name: text, image: abs(image), url };
+      .map((element, index) => {
+        const href = element.getAttribute("href") || "";
+        const url = href ? abs(href) : "";
+        const text = (element.textContent || "").trim().replace(/\s+/g, " ");
+        const image = element.querySelector("img")?.getAttribute("src") || "";
+        let sourceId = "";
+        try {
+          sourceId = url ? new URL(url).searchParams.get("category_id") || "" : "";
+        } catch {}
+        return { sourceId: sourceId || `category-${index + 1}`, name: text, image: abs(image), url };
       })
-      .filter((category) => category.name && category.url);
+      .filter((category) => category.name && category.name.length <= 45);
   });
 
   const categories = uniqueBy(raw, (category) => category.sourceId || category.name.toLowerCase())
-    .filter((category) => category.name.length <= 45)
     .map((category, index) => ({
       ...category,
       id: normalizeId(category.name || category.sourceId, `category-${index + 1}`),
       name: category.name || `Category ${index + 1}`,
+      url: category.url || SOURCE_URL,
     }));
 
   if (categories.length > 0) return categories;
 
-  return [
-    { id: "menu", sourceId: "1562", name: "MENU", image: "", url: SOURCE_URL },
-  ];
+  return [{ id: "menu", sourceId: "1562", name: "MENU", image: "", url: SOURCE_URL }];
 }
 
-async function extractItemsFromPage(page, categoryId) {
+async function extractItemsFromPage(page, category) {
   const rawItems = await page.evaluate(() => {
     const abs = (value) => {
       try {
@@ -77,49 +118,42 @@ async function extractItemsFromPage(page, categoryId) {
     };
 
     const priceRegex = /(?:\d[\d,.\s]*)\s*(?:L\.?\s*L\.?|LL|LBP|ل\.?\s*ل\.?)\b/i;
-    const blockedTags = new Set(["HTML", "BODY", "SCRIPT", "STYLE", "NOSCRIPT", "SVG", "PATH"]);
+    const preferredCards = Array.from(document.querySelectorAll(".item, .product, .card, article, li, [class*='item'], [class*='product'], [class*='meal'], [class*='dish'], [class*='food']"));
 
-    const elementsWithPrice = Array.from(document.querySelectorAll("body *"))
-      .filter((element) => !blockedTags.has(element.tagName))
-      .filter((element) => priceRegex.test((element.textContent || "").replace(/\s+/g, " ")));
+    const priceCards = Array.from(document.querySelectorAll("body *"))
+      .filter((element) => priceRegex.test((element.textContent || "").replace(/\s+/g, " ")))
+      .map((element) => {
+        let best = element;
+        let current = element;
+        for (let depth = 0; depth < 5 && current; depth += 1) {
+          const text = (current.textContent || "").replace(/\s+/g, " ").trim();
+          if (text.length >= 8 && text.length <= 700 && (current.querySelector("img") || /item|product|card|meal|dish|food/i.test(String(current.className || "")))) {
+            best = current;
+            break;
+          }
+          if (text.length >= 8 && text.length <= 500) best = current;
+          current = current.parentElement;
+        }
+        return best;
+      });
 
-    const cards = [];
+    const allCards = [...preferredCards, ...priceCards];
     const seen = new Set();
 
-    for (const priceElement of elementsWithPrice) {
-      let current = priceElement;
-      let best = priceElement;
-
-      for (let depth = 0; depth < 7 && current; depth += 1) {
-        const text = (current.textContent || "").trim().replace(/\s+/g, " ");
-        const hasUsefulClass = /item|product|menu|card|meal|dish|food/i.test(current.className || "");
-        const hasImage = Boolean(current.querySelector("img"));
-        const hasTitle = Boolean(current.querySelector("h1,h2,h3,h4,h5,strong,b,[class*='title'],[class*='name']"));
-
-        if (text.length > 8 && text.length <= 900 && (hasUsefulClass || hasImage || hasTitle || depth >= 2)) {
-          best = current;
-          if (hasUsefulClass || hasImage || hasTitle) break;
-        }
-
-        current = current.parentElement;
-      }
-
-      const key = `${best.tagName}-${best.className}-${(best.textContent || "").trim().slice(0, 140)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        cards.push(best);
-      }
-    }
-
-    return cards
+    return allCards
       .map((card, index) => {
-        const rawText = (card.textContent || "").trim();
-        const compactText = rawText.replace(/\s+/g, " ");
-        const price = compactText.match(priceRegex)?.[0]?.replace(/\s+/g, " ").trim() || "";
+        const compactText = (card.textContent || "").trim().replace(/\s+/g, " ");
+        if (!compactText || compactText.length < 8 || !priceRegex.test(compactText)) return null;
+
+        const dedupeKey = `${card.tagName}-${String(card.className || "")}-${compactText.slice(0, 160)}`;
+        if (seen.has(dedupeKey)) return null;
+        seen.add(dedupeKey);
+
+        const rawPrice = compactText.match(priceRegex)?.[0] || "";
         const image = card.querySelector("img")?.getAttribute("src") || "";
 
         const titleElement = card.querySelector("h1,h2,h3,h4,h5,strong,b,[class*='title'],[class*='name']");
-        const lines = rawText
+        const lines = (card.textContent || "")
           .split(/\n+/)
           .map((line) => line.trim().replace(/\s+/g, " "))
           .filter(Boolean)
@@ -127,60 +161,73 @@ async function extractItemsFromPage(page, categoryId) {
 
         let title = (titleElement?.textContent || "").trim().replace(/\s+/g, " ");
         if (!title || priceRegex.test(title) || title.length > 90) {
-          title = lines.find((line) => line.length >= 2 && line.length <= 90) || compactText.replace(price, "").trim().slice(0, 90);
+          title = lines.find((line) => line.length >= 2 && line.length <= 90 && /\p{Letter}/u.test(line)) || "";
+        }
+        if (!title) {
+          title = compactText.replace(rawPrice, "").trim().slice(0, 90);
         }
 
         const description = lines
           .filter((line) => line !== title)
           .join(" ")
           .replace(title, "")
-          .replace(price, "")
+          .replace(rawPrice, "")
           .trim()
-          .slice(0, 220);
-
-        if (!title || !price) return null;
+          .slice(0, 240);
 
         return {
           id: `item-${index + 1}`,
           name: title,
           arabicName: "",
           description,
-          price,
+          price: rawPrice,
           image: abs(image),
         };
       })
       .filter(Boolean);
   });
 
-  return uniqueBy(rawItems, (item) => `${item.name.toLowerCase()}-${item.price.toLowerCase()}`)
+  const items = uniqueBy(rawItems, (item) => `${item.name.toLowerCase()}-${cleanPrice(item.price).toLowerCase()}`)
     .map((item, index) => ({
       ...item,
-      id: normalizeId(`${item.name}-${item.price}`, `item-${categoryId}-${index + 1}`),
-      categoryId,
-    }));
+      price: cleanPrice(item.price),
+      id: normalizeId(`${item.name}-${cleanPrice(item.price)}`, `item-${category.id}-${index + 1}`),
+      categoryId: category.id,
+    }))
+    .filter((item) => item.price && !isBadTitle(item.name));
+
+  return items;
 }
 
 async function scrape() {
+  const existing = await readExistingMenu();
+  const existingCount = Array.isArray(existing?.items) ? existing.items.length : 0;
+
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 
   await page.goto(SOURCE_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1800);
 
   const categories = await extractCategories(page);
   const allItems = [];
 
   for (const category of categories) {
-    const url = category.url || `${BASE_URL}/menu/Pros_cafe_dekwaneh/index.php?category_id=${category.sourceId}`;
+    const url = category.url || SOURCE_URL;
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(1200);
+    await page.waitForTimeout(1400);
 
-    const items = await extractItemsFromPage(page, category.id);
+    const items = await extractItemsFromPage(page, category);
     console.log(`${category.name}: ${items.length} items`);
     allItems.push(...items);
   }
 
   await browser.close();
+
+  if (allItems.length === 0 && existingCount > 0) {
+    console.log(`Scraper found 0 items. Keeping existing JSON with ${existingCount} items instead of overwriting it.`);
+    return;
+  }
 
   await fs.mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await fs.writeFile(
