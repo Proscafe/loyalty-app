@@ -1,0 +1,41 @@
+{
+  "sourceUrl": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/index.php?category_id=1562",
+  "categories": [
+    { "id": "salads", "name": "SALADS", "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/categories/salads.png" },
+    { "id": "mains", "name": "MAINS", "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/categories/mains.png" },
+    { "id": "burgers", "name": "BURGERS", "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/categories/burgers.png" },
+    { "id": "pasta", "name": "PASTA", "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/categories/pasta.png" },
+    { "id": "pizza", "name": "PIZZA", "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/categories/pizza.png" },
+    { "id": "lebanese", "name": "LEBANESE", "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/categories/lebanese.png" },
+    { "id": "starters", "name": "STARTERS", "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/categories/starters.png" }
+  ],
+  "items": [
+    {
+      "id": "cheese-nachos",
+      "categoryId": "starters",
+      "name": "Cheese Nachos",
+      "arabicName": "ناتشوز بالجبنة",
+      "description": "Crispy tortilla chips smothered in melted cheese, served with cool sour cream and salsa.",
+      "price": "990000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/items/cheese-nachos.jpg"
+    },
+    {
+      "id": "chicken-caesar",
+      "categoryId": "salads",
+      "name": "Chicken Caesar",
+      "arabicName": "سيزر دجاج",
+      "description": "Fresh lettuce, grilled chicken, parmesan, croutons, and caesar dressing.",
+      "price": "850000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/items/chicken-caesar.jpg"
+    },
+    {
+      "id": "pros-burger",
+      "categoryId": "burgers",
+      "name": "PRO's Burger",
+      "arabicName": "برغر بروز",
+      "description": "Juicy beef patty with cheese, sauce, lettuce, tomato, and fries on the side.",
+      "price": "1100000 L.L",
+      "image": "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/images/items/pros-burger.jpg"
+    }
+  ]
+}

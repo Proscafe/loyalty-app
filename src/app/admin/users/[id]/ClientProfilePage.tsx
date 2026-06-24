@@ -632,93 +632,37 @@ export default function ClientProfilePage({
   async function updateStamp(categoryId: string, direction: 1 | -1) {
     if (!profile?.id) return;
 
-    const current = stampByCategory.get(categoryId);
-    const currentCount = Math.max(0, current?.stamp_count ?? 0);
-    const nextCount = Math.max(0, Math.min(5, currentCount + direction));
-    const canCompleteAlreadyFullCard = direction > 0 && currentCount >= 5;
+    const categoryName = displayCategoryName(categoryById.get(categoryId)?.name);
 
-    if (nextCount === currentCount && !canCompleteAlreadyFullCard) return;
+    const response = await fetch("/api/profile-stamps/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: profile.id,
+        categoryId,
+        direction,
+        staffId: adminId,
+      }),
+    }).catch(() => null);
 
-    const now = new Date().toISOString();
-    const completionReached = direction > 0 && (nextCount >= 5 || currentCount >= 5);
-    const stampCountToSave = completionReached ? 0 : nextCount;
+    const payload = (await response?.json().catch(() => null)) as {
+      error?: string;
+      completed?: boolean;
+      reward_type?: string;
+      stamp_count?: number;
+    } | null;
 
-    const result = current
-      ? await supabase
-          .from("client_stamps")
-          .update({
-            stamp_count: stampCountToSave,
-            updated_at: now,
-          })
-          .eq("client_id", profile.id)
-          .eq("category_id", categoryId)
-      : await supabase.from("client_stamps").insert({
-          client_id: profile.id,
-          category_id: categoryId,
-          stamp_count: stampCountToSave,
-          updated_at: now,
-        });
-
-    if (result.error) {
-      flash(result.error.message, "error");
+    if (!response?.ok) {
+      flash(payload?.error || "Could not update stamps.", "error");
       return;
     }
 
-    await supabase.from("stamp_transactions").insert({
-      client_id: profile.id,
-      category_id: categoryId,
-      action_type: direction > 0 ? "add_stamp" : "remove_stamp",
-      stamp_count: 1,
-      stamp_count_before: currentCount,
-      stamp_count_after: nextCount,
-      staff_id: adminId,
-      created_at: now,
-    });
-
-    if (completionReached) {
-      const categoryName = displayCategoryName(categoryById.get(categoryId)?.name);
-      const rewardType = `Free ${categoryName}`;
-      const earnedAt = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-      const { data: reward, error: rewardError } = await supabase
-        .from("rewards")
-        .insert({
-          client_id: profile.id,
-          category_id: categoryId,
-          reward_type: rewardType,
-          status: "available",
-          earned_at: earnedAt,
-          expires_at: expiresAt,
-          source: "loyalty_card",
-          source_label: categoryName,
-        })
-        .select("id")
-        .single();
-
-      if (rewardError) {
-        flash(rewardError.message, "error");
-        return;
-      }
-
-      await supabase.from("stamp_transactions").insert({
-        client_id: profile.id,
-        category_id: categoryId,
-        action_type: "reward_earned",
-        stamp_count: 5,
-        stamp_count_before: currentCount,
-        stamp_count_after: 0,
-        reward_id: reward?.id ?? null,
-        staff_id: adminId,
-        created_at: new Date().toISOString(),
-      });
-
-      flash(`${rewardType} earned and stamps reset.`);
-      router.refresh();
-      return;
+    if (payload?.completed) {
+      flash(`${payload.reward_type || `Free ${categoryName}`} earned and stamps reset.`);
+    } else {
+      flash(direction > 0 ? "Stamp added." : "Stamp removed.");
     }
 
-    flash(direction > 0 ? "Stamp added." : "Stamp removed.");
     router.refresh();
   }
 
