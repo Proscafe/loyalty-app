@@ -24,15 +24,15 @@ function base64(value: string | Buffer) {
 }
 
 function base64Mime(value: string) {
-  return Buffer.from(value, "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n").trim();
+  return Buffer.from(value, "utf8")
+    .toString("base64")
+    .replace(/(.{76})/g, "$1\r\n")
+    .trim();
 }
 
 function encodedSubject(value: string) {
   return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }
-
-
-
 
 function normalizeAppPassword(value: string) {
   return value.replace(/\s+/g, "");
@@ -78,7 +78,9 @@ function predictionText(match: any, entry: any) {
             ? match.home_team
             : match.away_team;
 
-    const margin = entry.predicted_margin ?? Math.max(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0));
+    const margin =
+      entry.predicted_margin ??
+      Math.max(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0));
 
     return `${winner} by ${margin}`;
   }
@@ -88,8 +90,13 @@ function predictionText(match: any, entry: any) {
 
 function actualResultText(match: any) {
   if (match.sport_type === "basketball") {
-    const winner = Number(match.home_score ?? 0) >= Number(match.away_score ?? 0) ? match.home_team : match.away_team;
-    const margin = Math.abs(Number(match.home_score ?? 0) - Number(match.away_score ?? 0));
+    const winner =
+      Number(match.home_score ?? 0) >= Number(match.away_score ?? 0)
+        ? match.home_team
+        : match.away_team;
+    const margin = Math.abs(
+      Number(match.home_score ?? 0) - Number(match.away_score ?? 0),
+    );
 
     return `${winner} by ${margin}`;
   }
@@ -103,25 +110,39 @@ function winnerCategoryForEntry(match: any, entry: any) {
   const actualWinner = winnerForScores(actualHome, actualAway);
   const predictedWinner =
     match.sport_type === "basketball"
-      ? entry.predicted_winner || (Number(entry.home_score ?? 0) >= Number(entry.away_score ?? 0) ? "home" : "away")
-      : winnerForScores(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0));
+      ? entry.predicted_winner ||
+        (Number(entry.home_score ?? 0) >= Number(entry.away_score ?? 0)
+          ? "home"
+          : "away")
+      : winnerForScores(
+          Number(entry.home_score ?? 0),
+          Number(entry.away_score ?? 0),
+        );
 
   if (predictedWinner !== actualWinner) return null;
 
   if (match.sport_type === "basketball") {
     const actualMargin = Math.abs(actualHome - actualAway);
-    const predictedMargin = entry.predicted_margin ?? Math.max(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0));
+    const predictedMargin =
+      entry.predicted_margin ??
+      Math.max(Number(entry.home_score ?? 0), Number(entry.away_score ?? 0));
 
-    return Number(predictedMargin) === actualMargin ? "Exact margin" : "Right team";
+    return Number(predictedMargin) === actualMargin
+      ? "Exact margin"
+      : "Right team";
   }
 
-  return Number(entry.home_score ?? 0) === actualHome && Number(entry.away_score ?? 0) === actualAway
+  return Number(entry.home_score ?? 0) === actualHome &&
+    Number(entry.away_score ?? 0) === actualAway
     ? "Exact score"
     : "Right team";
 }
 
 function gameName(match: any) {
-  const sport = match.sport_type === "basketball" ? "Basketball Prediction" : "Football Prediction";
+  const sport =
+    match.sport_type === "basketball"
+      ? "Basketball Prediction"
+      : "Football Prediction";
   return `${match.home_team} vs ${match.away_team} ${sport}`;
 }
 
@@ -259,7 +280,11 @@ function createEmailMessage({
     .join("\r\n");
 }
 
-function smtpCommand(socket: tls.TLSSocket, command: string, expected: number[]) {
+function smtpCommand(
+  socket: tls.TLSSocket,
+  command: string,
+  expected: number[],
+) {
   return new Promise<string>((resolve, reject) => {
     let data = "";
 
@@ -367,7 +392,9 @@ async function sendWithGmailSmtp({
   await new Promise<void>((resolve, reject) => {
     socket.once("secureConnect", () => resolve());
     socket.once("error", reject);
-    socket.once("timeout", () => reject(new Error("SMTP connection timed out.")));
+    socket.once("timeout", () =>
+      reject(new Error("SMTP connection timed out.")),
+    );
   });
 
   try {
@@ -404,7 +431,8 @@ export async function POST(req: Request, context: RouteContext) {
       error: userError,
     } = await supabase.auth.getUser();
 
-    if (userError || !user) return jsonError("Please sign in as admin first.", 401);
+    if (userError || !user)
+      return jsonError("Please sign in as admin first.", 401);
 
     const admin = getAdminClient();
     if (!admin) return jsonError("SUPABASE_SERVICE_ROLE_KEY is missing.", 500);
@@ -421,9 +449,13 @@ export async function POST(req: Request, context: RouteContext) {
 
     const body = (await req.json().catch(() => ({}))) as {
       winner_client_ids?: string[];
+      gifts?: GiftPayload[];
+      randomize?: boolean;
     };
 
-    const winnerClientIds = Array.from(new Set((body.winner_client_ids ?? []).filter(Boolean))).slice(0, 3);
+    const winnerClientIds = Array.from(
+      new Set((body.winner_client_ids ?? []).filter(Boolean)),
+    ).slice(0, 3);
 
     if (winnerClientIds.length === 0) {
       return jsonError("Select winners first.", 400);
@@ -438,12 +470,22 @@ export async function POST(req: Request, context: RouteContext) {
     if (!match) return jsonError("Game not found.", 404);
 
     const matchGiftMarker = `prediction_match:${id}`;
-    const gifts = [
-      {
-        label: "Free Dessert",
-        description: `Free Dessert for ${match.home_team} vs ${match.away_team} prediction winner. ${matchGiftMarker}`,
-      },
-    ];
+    const requestedGifts = (body.gifts ?? [])
+      .map((gift) => ({
+        label: clean(gift.label),
+        description: clean(gift.description),
+      }))
+      .filter((gift) => gift.label);
+
+    const gifts =
+      requestedGifts.length > 0
+        ? requestedGifts
+        : [
+            {
+              label: "Free Dessert",
+              description: `Free Dessert for ${match.home_team} vs ${match.away_team} prediction winner. ${matchGiftMarker}`,
+            },
+          ];
 
     const { data: entries, error: entriesError } = await admin
       .from("prediction_entries")
@@ -453,17 +495,36 @@ export async function POST(req: Request, context: RouteContext) {
 
     if (entriesError) return jsonError(entriesError.message, 400);
 
+    const eligibleEntries = (entries ?? []).filter((entry: any) =>
+      winnerCategoryForEntry(match, entry),
+    );
+    const eligibleClientIds = new Set(
+      eligibleEntries.map((entry: any) => entry.client_id),
+    );
+    const validWinnerClientIds = winnerClientIds.filter((clientId) =>
+      eligibleClientIds.has(clientId),
+    );
+
+    if (validWinnerClientIds.length === 0) {
+      return jsonError(
+        "No selected clients have a correct prediction for this game. No gifts were sent.",
+        400,
+      );
+    }
+
     const { data: profiles, error: profilesError } = await admin
       .from("profiles")
       .select("id, full_name, email, phone, client_code")
-      .in("id", winnerClientIds);
+      .in("id", validWinnerClientIds);
 
     if (profilesError) return jsonError(profilesError.message, 400);
 
-    const profilesById = Object.fromEntries((profiles ?? []).map((row: any) => [row.id, { ...row }]));
+    const profilesById = Object.fromEntries(
+      (profiles ?? []).map((row: any) => [row.id, { ...row }]),
+    );
 
     await Promise.all(
-      winnerClientIds.map(async (clientId) => {
+      validWinnerClientIds.map(async (clientId) => {
         const currentProfile = profilesById[clientId] ?? { id: clientId };
 
         if (clean(currentProfile.email)) {
@@ -472,7 +533,8 @@ export async function POST(req: Request, context: RouteContext) {
         }
 
         try {
-          const { data: authUserData } = await admin.auth.admin.getUserById(clientId);
+          const { data: authUserData } =
+            await admin.auth.admin.getUserById(clientId);
           const authEmail = clean(authUserData?.user?.email);
 
           profilesById[clientId] = {
@@ -498,35 +560,54 @@ export async function POST(req: Request, context: RouteContext) {
       (categories ?? [])[0];
 
     if (!category) {
-      return jsonError("Create at least one active loyalty category before sending gifts.", 400);
+      return jsonError(
+        "Create at least one active loyalty category before sending gifts.",
+        400,
+      );
     }
 
-    const { data: existingGiftLinks, error: existingGiftLinksError } = await admin
-      .from("prediction_match_gifts")
-      .select("client_id, gift_type")
-      .eq("match_id", id)
-      .in("client_id", winnerClientIds)
-      .eq("gift_type", "Free Dessert");
+    const { data: existingGiftLinks, error: existingGiftLinksError } =
+      await admin
+        .from("prediction_match_gifts")
+        .select("client_id, gift_type")
+        .eq("match_id", id)
+        .in("client_id", validWinnerClientIds)
+        .eq("gift_type", "Free Dessert");
 
-    if (existingGiftLinksError) return jsonError(existingGiftLinksError.message, 400);
+    if (existingGiftLinksError)
+      return jsonError(existingGiftLinksError.message, 400);
 
     const alreadyRewardedClientIds = new Set(
-      (existingGiftLinks ?? []).map((gift: any) => gift.client_id).filter(Boolean),
+      (existingGiftLinks ?? [])
+        .map((gift: any) => gift.client_id)
+        .filter(Boolean),
     );
 
-    const winnersForInsert = (entries ?? []).filter(
-      (entry: any) => !alreadyRewardedClientIds.has(entry.client_id),
+    const winnersForInsert = eligibleEntries.filter(
+      (entry: any) =>
+        validWinnerClientIds.includes(entry.client_id) &&
+        !alreadyRewardedClientIds.has(entry.client_id),
     );
 
     const nowIso = new Date().toISOString();
-    const expiresAtIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAtIso = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    ).toISOString();
 
     const rewardRows = winnersForInsert.flatMap((entry: any) =>
       gifts.map((gift) => ({
         client_id: entry.client_id,
         category_id: category.id,
         reward_type: gift.label,
+        reward_name: gift.label,
+        title: gift.label,
+        description: gift.description,
+        gift_type: "gift",
+        reward_icon: "gift",
+        is_birthday: false,
+        birthday_reward: false,
         status: "available",
+        reward_status: "available",
         earned_at: nowIso,
         expires_at: expiresAtIso,
         source: "game_prediction",
@@ -536,7 +617,11 @@ export async function POST(req: Request, context: RouteContext) {
       })),
     );
 
-    let insertedRewards: Array<{ id: string; client_id: string; reward_type: string }> = [];
+    let insertedRewards: Array<{
+      id: string;
+      client_id: string;
+      reward_type: string;
+    }> = [];
 
     if (rewardRows.length > 0) {
       const { data: rewardData, error: rewardError } = await admin
@@ -546,7 +631,11 @@ export async function POST(req: Request, context: RouteContext) {
 
       if (rewardError) return jsonError(rewardError.message, 400);
 
-      insertedRewards = (rewardData ?? []) as Array<{ id: string; client_id: string; reward_type: string }>;
+      insertedRewards = (rewardData ?? []) as Array<{
+        id: string;
+        client_id: string;
+        reward_type: string;
+      }>;
 
       const giftLinkRows = insertedRewards.map((reward) => ({
         match_id: id,
@@ -571,7 +660,8 @@ export async function POST(req: Request, context: RouteContext) {
         already_sent: true,
         duplicate_scope: "same_match_only",
         gift_label: "Free Dessert",
-        locked_winner_client_ids: winnerClientIds,
+        locked_winner_client_ids: validWinnerClientIds,
+        selected_winners: validWinnerClientIds.length,
         admin_email_sent: false,
         winner_emails_sent: 0,
         winner_emails_skipped: 0,
@@ -581,7 +671,9 @@ export async function POST(req: Request, context: RouteContext) {
 
     const csv = createWinnersCsv({
       match,
-      winners: entries ?? [],
+      winners: eligibleEntries.filter((entry: any) =>
+        validWinnerClientIds.includes(entry.client_id),
+      ),
       profilesById,
       gifts,
     });
@@ -598,20 +690,26 @@ export async function POST(req: Request, context: RouteContext) {
 Gifts sent:
 ${gifts.map((gift) => `- ${gift.label}: ${gift.description}`).join("\n")}
 
-Winners: ${winnerClientIds.length}
+Winners: ${validWinnerClientIds.length}
 
 CSV:
 ${csv}`,
       });
       adminEmailSent = true;
     } catch (error) {
-      emailErrors.push(error instanceof Error ? error.message : "Could not email winners file.");
+      emailErrors.push(
+        error instanceof Error
+          ? error.message
+          : "Could not email winners file.",
+      );
     }
 
     let winnerEmailsSent = 0;
     let winnerEmailsSkipped = 0;
 
-    for (const entry of entries ?? []) {
+    for (const entry of eligibleEntries.filter((item: any) =>
+      validWinnerClientIds.includes(item.client_id),
+    )) {
       const winnerProfile = profilesById[entry.client_id] ?? {};
       const winnerEmail = clean(winnerProfile.email);
 
@@ -642,17 +740,21 @@ ${csv}`,
 
     return NextResponse.json({
       ok: true,
-      rewards_created: rewardRows.length,
+      rewards_created: insertedRewards.length,
       already_sent: rewardRows.length === 0,
       duplicate_scope: "same_match_only",
       gift_label: "Free Dessert",
-      locked_winner_client_ids: winnerClientIds,
+      locked_winner_client_ids: validWinnerClientIds,
+      selected_winners: validWinnerClientIds.length,
       admin_email_sent: adminEmailSent,
       winner_emails_sent: winnerEmailsSent,
       winner_emails_skipped: winnerEmailsSkipped,
       email_errors: emailErrors.slice(0, 3),
     });
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Could not send gifts.", 500);
+    return jsonError(
+      error instanceof Error ? error.message : "Could not send gifts.",
+      500,
+    );
   }
 }

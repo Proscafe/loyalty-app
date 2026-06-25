@@ -59,6 +59,8 @@ type SendGiftResponse = {
   smtp_from?: string;
   smtp_configured?: boolean;
   locked_winner_client_ids?: string[];
+  already_sent?: boolean;
+  selected_winners?: number;
 };
 
 type EditForm = {
@@ -375,7 +377,9 @@ export function GameLinkDetailsClient({
   const [randomizeGifts, setRandomizeGifts] = useState(true);
   const [sendingGifts, setSendingGifts] = useState(false);
   const [sendResultPopupOpen, setSendResultPopupOpen] = useState(false);
-  const [sendGiftResult, setSendGiftResult] = useState<SendGiftResponse | null>(null);
+  const [sendGiftResult, setSendGiftResult] = useState<SendGiftResponse | null>(
+    null,
+  );
 
   const sortedEntries = useMemo(() => {
     return entries.slice().sort((a, b) => {
@@ -444,20 +448,57 @@ export function GameLinkDetailsClient({
   const featuredWinners = useMemo(() => {
     const selectedEntries = selectedWinnerIds
       .map((clientId) =>
-        exactScoreWinnerEntries.find((entry) => entry.client_id === clientId),
+        correctPredictionEntries.find((entry) => entry.client_id === clientId),
       )
       .filter((entry): entry is EntryRow => Boolean(entry));
 
     return selectedEntries.length > 0
       ? selectedEntries
-      : exactScoreWinnerEntries.slice(0, 3);
-  }, [exactScoreWinnerEntries, selectedWinnerIds]);
+      : correctPredictionEntries.slice(0, 3);
+  }, [correctPredictionEntries, selectedWinnerIds]);
 
   const visibleFeaturedWinners = savedWinnersLoaded ? featuredWinners : [];
 
+  const giftStatusMessage = useMemo(() => {
+    if (!resultSaved) return null;
+
+    if (sendGiftResult?.ok === false) {
+      return sendGiftResult.error || "Gift sending failed. No gifts were sent.";
+    }
+
+    const createdCount = Number(sendGiftResult?.rewards_created ?? 0);
+    if (createdCount > 0) {
+      return `Draw completed. ${createdCount} ${createdCount === 1 ? "gift was" : "gifts were"} sent successfully.`;
+    }
+
+    if (sendGiftResult?.already_sent) {
+      const selectedCount = Number(
+        sendGiftResult.selected_winners ??
+          sendGiftResult.locked_winner_client_ids?.length ??
+          selectedWinnerIds.length,
+      );
+      return `${selectedCount} ${selectedCount === 1 ? "winner was" : "winners were"} already gifted for this game.`;
+    }
+
+    if (selectedWinnerIds.length > 0) {
+      return `${selectedWinnerIds.length} ${selectedWinnerIds.length === 1 ? "winner is" : "winners are"} selected. Send gifts to complete the draw.`;
+    }
+
+    if (correctPredictionEntries.length > 0) {
+      return "Select winners from the right answers below, then send gifts.";
+    }
+
+    return "No winners yet. No gifts sent.";
+  }, [
+    correctPredictionEntries.length,
+    resultSaved,
+    selectedWinnerIds.length,
+    sendGiftResult,
+  ]);
+
   useEffect(() => {
     const validClientIds = new Set(
-      exactScoreWinnerEntries.map((entry) => entry.client_id),
+      correctPredictionEntries.map((entry) => entry.client_id),
     );
     const savedIds = readSavedWinnerIds(match.id)
       .filter((clientId) => validClientIds.has(clientId))
@@ -465,7 +506,7 @@ export function GameLinkDetailsClient({
 
     setSelectedWinnerIds(savedIds);
     setSavedWinnersLoaded(true);
-  }, [exactScoreWinnerEntries, match.id]);
+  }, [correctPredictionEntries, match.id]);
 
   useEffect(() => {
     if (!savedWinnersLoaded) return;
@@ -474,12 +515,12 @@ export function GameLinkDetailsClient({
   }, [match.id, savedWinnersLoaded, selectedWinnerIds]);
 
   function toggleWinner(clientId: string) {
-    const canReceiveGift = exactScoreWinnerEntries.some(
+    const canReceiveGift = correctPredictionEntries.some(
       (entry) => entry.client_id === clientId,
     );
 
     if (!canReceiveGift) {
-      setMessage("Only exact-score winners can receive Free Dessert gifts.");
+      setMessage("Only correct predictions can receive Free Dessert gifts.");
       return;
     }
 
@@ -493,10 +534,10 @@ export function GameLinkDetailsClient({
   }
 
   function randomizeThreeGiftWinners() {
-    const candidates = exactScoreWinnerEntries.slice();
+    const candidates = correctPredictionEntries.slice();
 
     if (candidates.length === 0) {
-      setMessage("No exact-score predictions available yet.");
+      setMessage("No correct predictions available yet.");
       return;
     }
 
@@ -654,17 +695,34 @@ export function GameLinkDetailsClient({
             away_score: Number(awayScore),
           };
 
-    const automaticWinnerIds = exactWinnerEntriesForMatch(
-      savedMatch,
-      entries,
-      profileNames,
-    )
-      .slice(0, 3)
-      .map((entry) => entry.client_id);
+    const automaticWinnerIds = (() => {
+      const groups = {
+        teamWinners: [] as EntryRow[],
+        exactWinners: [] as EntryRow[],
+      };
+
+      entries.forEach((entry) => {
+        const category = winnerCategoryForEntry(savedMatch, entry);
+
+        if (category === "exact") groups.exactWinners.push(entry);
+        if (category === "team") groups.teamWinners.push(entry);
+      });
+
+      const winners = [...groups.exactWinners, ...groups.teamWinners].filter(
+        (entry, index, all) =>
+          all.findIndex((item) => item.client_id === entry.client_id) === index,
+      );
+
+      return sortEntriesByPointsThenName(winners, profileNames)
+        .slice(0, 3)
+        .map((entry) => entry.client_id);
+    })();
 
     if (automaticWinnerIds.length === 0) {
       setSaving(false);
-      setMessage("Result saved. No exact-score winners found for gifts.");
+      setMessage(
+        "Result saved. No correct prediction winners found for gifts.",
+      );
       window.setTimeout(() => window.location.reload(), 1200);
       return;
     }
@@ -687,7 +745,9 @@ export function GameLinkDetailsClient({
       },
     );
 
-    const giftJson = (await giftResponse.json().catch(() => ({}))) as SendGiftResponse;
+    const giftJson = (await giftResponse
+      .json()
+      .catch(() => ({}))) as SendGiftResponse;
 
     setSaving(false);
 
@@ -706,14 +766,18 @@ export function GameLinkDetailsClient({
         smtp_from: giftJson.smtp_from,
         smtp_configured: giftJson.smtp_configured,
       });
-      setMessage("Result saved, but gifts were not sent. Check the gift details.");
+      setMessage(
+        "Result saved, but gifts were not sent. Check the gift details.",
+      );
       return;
     }
 
     setSelectedWinnerIds(automaticWinnerIds);
     writeSavedWinnerIds(match.id, automaticWinnerIds);
     setSendGiftResult(giftJson);
-    setMessage(`Result saved. Free Dessert sent to ${automaticWinnerIds.length} exact-score winner(s).`);
+    setMessage(
+      `Result saved. Free Dessert sent to ${Number(giftJson.rewards_created ?? automaticWinnerIds.length)} winner(s).`,
+    );
     window.setTimeout(() => window.location.reload(), 1800);
   }
 
@@ -731,15 +795,15 @@ export function GameLinkDetailsClient({
       return;
     }
 
-    const validExactWinnerIds = new Set(
-      exactScoreWinnerEntries.map((entry) => entry.client_id),
+    const validWinnerIds = new Set(
+      correctPredictionEntries.map((entry) => entry.client_id),
     );
     const exactSelectedWinnerIds = selectedWinnerIds.filter((clientId) =>
-      validExactWinnerIds.has(clientId),
+      validWinnerIds.has(clientId),
     );
 
     if (exactSelectedWinnerIds.length === 0) {
-      setMessage("Only exact-score winners can receive Free Dessert gifts.");
+      setMessage("Only correct predictions can receive Free Dessert gifts.");
       return;
     }
 
@@ -863,7 +927,6 @@ export function GameLinkDetailsClient({
             </div>
           </div>
 
-
           {resultSaved ? (
             <div className="mt-5 rounded-[26px] bg-white/8 p-4">
               <div>
@@ -874,11 +937,17 @@ export function GameLinkDetailsClient({
                   Correct predictions
                 </h2>
                 <p className="mt-1 text-[12px] font-bold text-white/62">
-                  {inferSportType(match) === "basketball" ? "Right margin" : "Right score"}: {winnerGroups.exactWinners.length} · Right team: {correctPredictionEntries.length}
+                  {inferSportType(match) === "basketball"
+                    ? "Right margin"
+                    : "Right score"}
+                  : {winnerGroups.exactWinners.length} · Right team:{" "}
+                  {correctPredictionEntries.length}
                 </p>
-                <p className="mt-3 text-[16px] font-bold text-[#ffd66b]">
-                  Draw completed. 3 winners selected and gifts sent successfully.
-                </p>
+                {giftStatusMessage ? (
+                  <p className="mt-3 text-[16px] font-bold text-[#ffd66b]">
+                    {giftStatusMessage}
+                  </p>
+                ) : null}
               </div>
 
               <div className="mt-3 grid gap-3 lg:grid-cols-3">
@@ -1003,7 +1072,9 @@ export function GameLinkDetailsClient({
               className="flex w-full items-center justify-between gap-4 text-left"
             >
               <div>
-                <h2 className="text-[22px] font-black text-white">Save Result</h2>
+                <h2 className="text-[22px] font-black text-white">
+                  Save Result
+                </h2>
                 <p className="mt-1 text-[12px] font-bold text-white/62">
                   Save the final score to calculate winners.
                 </p>
@@ -1015,59 +1086,59 @@ export function GameLinkDetailsClient({
 
             {saveResultOpen ? (
               <>
-            {inferSportType(match) === "basketball" ? (
-              <div className="mt-5 grid gap-3">
-                <label className="block">
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
-                    Winner
-                  </span>
-                  <select
-                    value={basketWinner}
-                    onChange={(event) =>
-                      setBasketWinner(event.target.value as "home" | "away")
-                    }
-                    className="h-12 w-full rounded-[14px] border border-white/20 bg-white px-3 text-[13px] font-black text-[#365665] outline-none"
-                  >
-                    <option value="home">{match.home_team}</option>
-                    <option value="away">{match.away_team}</option>
-                  </select>
-                </label>
+                {inferSportType(match) === "basketball" ? (
+                  <div className="mt-5 grid gap-3">
+                    <label className="block">
+                      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">
+                        Winner
+                      </span>
+                      <select
+                        value={basketWinner}
+                        onChange={(event) =>
+                          setBasketWinner(event.target.value as "home" | "away")
+                        }
+                        className="h-12 w-full rounded-[14px] border border-white/20 bg-white px-3 text-[13px] font-black text-[#365665] outline-none"
+                      >
+                        <option value="home">{match.home_team}</option>
+                        <option value="away">{match.away_team}</option>
+                      </select>
+                    </label>
 
-                <ResultInput
-                  label="Win by"
-                  value={basketMargin}
-                  onChange={setBasketMargin}
-                />
-              </div>
-            ) : (
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <ResultInput
-                  label={match.home_team}
-                  value={homeScore}
-                  onChange={setHomeScore}
-                />
-                <ResultInput
-                  label={match.away_team}
-                  value={awayScore}
-                  onChange={setAwayScore}
-                />
-              </div>
-            )}
+                    <ResultInput
+                      label="Win by"
+                      value={basketMargin}
+                      onChange={setBasketMargin}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <ResultInput
+                      label={match.home_team}
+                      value={homeScore}
+                      onChange={setHomeScore}
+                    />
+                    <ResultInput
+                      label={match.away_team}
+                      value={awayScore}
+                      onChange={setAwayScore}
+                    />
+                  </div>
+                )}
 
-            {message ? (
-              <div className="mt-4 rounded-[16px] bg-white/12 px-4 py-3 text-[12px] font-black text-[#ffd66b]">
-                {message}
-              </div>
-            ) : null}
+                {message ? (
+                  <div className="mt-4 rounded-[16px] bg-white/12 px-4 py-3 text-[12px] font-black text-[#ffd66b]">
+                    {message}
+                  </div>
+                ) : null}
 
-            <button
-              type="button"
-              onClick={() => void saveResult()}
-              disabled={saving}
-              className="mt-5 h-12 w-full rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] disabled:opacity-55"
-            >
-              {saving ? "Saving..." : "Save Result"}
-            </button>
+                <button
+                  type="button"
+                  onClick={() => void saveResult()}
+                  disabled={saving}
+                  className="mt-5 h-12 w-full rounded-full bg-[#ffd66b] text-[11px] font-black uppercase tracking-[0.18em] text-[#365665] disabled:opacity-55"
+                >
+                  {saving ? "Saving..." : "Save Result"}
+                </button>
               </>
             ) : null}
           </div>
@@ -1342,10 +1413,13 @@ export function GameLinkDetailsClient({
                   Send status
                 </div>
                 <h3 className="mt-1 text-[24px] font-black tracking-[-0.04em] text-white">
-                  {sendGiftResult.ok === false ? "Action failed" : "Action completed"}
+                  {sendGiftResult.ok === false
+                    ? "Action failed"
+                    : "Action completed"}
                 </h3>
                 <p className="mt-1 text-[12px] font-bold text-white/62">
-                  Gifts can be created even when one email fails. Check the details below.
+                  Gifts can be created even when one email fails. Check the
+                  details below.
                 </p>
               </div>
 
@@ -1366,33 +1440,61 @@ export function GameLinkDetailsClient({
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-[18px] border border-white/14 bg-white/10 p-3">
-                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">Rewards created</div>
-                <div className="mt-1 text-[22px] font-black text-white">{sendGiftResult.rewards_created ?? 0}</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">
+                  Rewards created
+                </div>
+                <div className="mt-1 text-[22px] font-black text-white">
+                  {sendGiftResult.rewards_created ?? 0}
+                </div>
               </div>
               <div className="rounded-[18px] border border-white/14 bg-white/10 p-3">
-                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">Admin email</div>
-                <div className="mt-1 text-[13px] font-black text-white">{sendGiftResult.admin_email_sent ? "Sent" : "Not sent"}</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">
+                  Admin email
+                </div>
+                <div className="mt-1 text-[13px] font-black text-white">
+                  {sendGiftResult.admin_email_sent ? "Sent" : "Not sent"}
+                </div>
               </div>
               <div className="rounded-[18px] border border-white/14 bg-white/10 p-3">
-                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">Winner emails sent</div>
-                <div className="mt-1 text-[22px] font-black text-white">{sendGiftResult.winner_emails_sent ?? 0}</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">
+                  Winner emails sent
+                </div>
+                <div className="mt-1 text-[22px] font-black text-white">
+                  {sendGiftResult.winner_emails_sent ?? 0}
+                </div>
               </div>
               <div className="rounded-[18px] border border-white/14 bg-white/10 p-3">
-                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">Skipped / failed</div>
-                <div className="mt-1 text-[22px] font-black text-white">{sendGiftResult.winner_emails_skipped ?? 0}</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/54">
+                  Skipped / failed
+                </div>
+                <div className="mt-1 text-[22px] font-black text-white">
+                  {sendGiftResult.winner_emails_skipped ?? 0}
+                </div>
               </div>
             </div>
 
             <div className="mt-4 rounded-[18px] border border-white/14 bg-black/10 p-4">
               <div className="grid gap-2 text-[12px] font-bold text-white/70 sm:grid-cols-2">
-                <div>SMTP configured: <span className="font-black text-white">{sendGiftResult.smtp_configured === false ? "No" : "Yes"}</span></div>
-                <div>Sending from: <span className="font-black text-white">{sendGiftResult.smtp_from || "—"}</span></div>
+                <div>
+                  SMTP configured:{" "}
+                  <span className="font-black text-white">
+                    {sendGiftResult.smtp_configured === false ? "No" : "Yes"}
+                  </span>
+                </div>
+                <div>
+                  Sending from:{" "}
+                  <span className="font-black text-white">
+                    {sendGiftResult.smtp_from || "—"}
+                  </span>
+                </div>
               </div>
             </div>
 
             {sendGiftResult.email_errors?.length ? (
               <div className="mt-4 rounded-[18px] border border-red-200/40 bg-red-500/16 p-4">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-red-50">Email errors</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-red-50">
+                  Email errors
+                </div>
                 <div className="mt-2 space-y-1 text-[12px] font-bold text-red-50">
                   {sendGiftResult.email_errors.map((error, index) => (
                     <div key={`${error}-${index}`}>• {error}</div>
@@ -1411,17 +1513,35 @@ export function GameLinkDetailsClient({
               <div className="divide-y divide-white/10">
                 {(sendGiftResult.email_debug ?? []).length > 0 ? (
                   (sendGiftResult.email_debug ?? []).map((row, index) => (
-                    <div key={`${row.type}-${row.client_id ?? row.to}-${index}`} className="grid grid-cols-[0.7fr_1.2fr_0.8fr_1.6fr] gap-3 px-4 py-3 text-[11px] font-bold text-white/72">
-                      <div className="font-black uppercase text-white">{row.type ?? "—"}</div>
-                      <div className="min-w-0">
-                        <div className="truncate font-black text-white">{row.name || row.to || "—"}</div>
-                        <div className="truncate text-white/50">{row.to || row.client_id || "—"}</div>
+                    <div
+                      key={`${row.type}-${row.client_id ?? row.to}-${index}`}
+                      className="grid grid-cols-[0.7fr_1.2fr_0.8fr_1.6fr] gap-3 px-4 py-3 text-[11px] font-bold text-white/72"
+                    >
+                      <div className="font-black uppercase text-white">
+                        {row.type ?? "—"}
                       </div>
-                      <div className={row.status === "sent" ? "font-black text-emerald-200" : row.status === "failed" ? "font-black text-red-100" : "font-black text-[#ffd66b]"}>
+                      <div className="min-w-0">
+                        <div className="truncate font-black text-white">
+                          {row.name || row.to || "—"}
+                        </div>
+                        <div className="truncate text-white/50">
+                          {row.to || row.client_id || "—"}
+                        </div>
+                      </div>
+                      <div
+                        className={
+                          row.status === "sent"
+                            ? "font-black text-emerald-200"
+                            : row.status === "failed"
+                              ? "font-black text-red-100"
+                              : "font-black text-[#ffd66b]"
+                        }
+                      >
                         {row.status ?? "—"}
                       </div>
                       <div className="break-words text-white/62">
-                        {row.email_source ? `${row.email_source}: ` : ""}{row.detail || "—"}
+                        {row.email_source ? `${row.email_source}: ` : ""}
+                        {row.detail || "—"}
                       </div>
                     </div>
                   ))
