@@ -3,12 +3,12 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Toast } from "@/components/Toast";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 import { AdminMobileHeader } from "@/components/AdminMobileHeader";
+import { AdminSidebar } from "@/components/AdminSidebar";
 import type { Profile, Reward, StampTransaction, UserRole } from "@/types";
 
 type AdminUser = Profile & {
@@ -20,6 +20,9 @@ type AdminUser = Profile & {
   giftsCount?: number;
   lifetimeValue?: number;
   stamps?: { category_id: string; stamp_count: number }[];
+  playedFromGames?: boolean;
+  gamePlayerId?: string | null;
+  isGameOnly?: boolean;
 };
 
 type AdminCategory = {
@@ -123,7 +126,17 @@ function desktopUniqueCount(values: Array<string | null | undefined>) {
 
 type DesktopTimeRange = "today" | "week" | "month" | "all";
 type DesktopProfileTab = "all" | UserRole | "deactivated";
-type DesktopSmartSegment = "all" | "new" | "returning" | "one_time" | "high_spenders" | "inactive_30" | "at_risk" | "lost";
+type DesktopSmartSegment =
+  | "all"
+  | "active"
+  | "new"
+  | "returning"
+  | "one_time"
+  | "high_spenders"
+  | "inactive_30"
+  | "at_risk"
+  | "lost"
+  | "from_games";
 function getDesktopTimeRangeStart(range: DesktopTimeRange) {
   if (range === "all") return null;
 
@@ -242,6 +255,49 @@ function normalizePhoneForMatch(value?: string | null) {
   if (digits.length === 7) return `0${digits}`;
   if (digits.length > 8) return digits.slice(-8);
   return digits;
+}
+
+function getGameRowClientId(row: any) {
+  return String(row?.client_id ?? row?.profile_id ?? row?.user_id ?? row?.customer_id ?? "").trim();
+}
+
+function getGameRowPlayerId(row: any) {
+  return String(row?.player_id ?? row?.id ?? row?.entry_id ?? row?.prediction_id ?? "").trim();
+}
+
+function getGameRowName(row: any) {
+  return String(
+    row?.full_name ??
+      row?.client_name ??
+      row?.player_name ??
+      row?.name ??
+      row?.user_name ??
+      row?.display_name ??
+      "",
+  ).trim();
+}
+
+function getGameRowPhone(row: any) {
+  return String(
+    row?.phone ??
+      row?.client_phone ??
+      row?.player_phone ??
+      row?.user_phone ??
+      row?.mobile ??
+      row?.contact ??
+      "",
+  ).trim();
+}
+
+function getGameRowDate(row: any) {
+  return String(
+    row?.last_played_at ??
+      row?.first_played_at ??
+      row?.submitted_at ??
+      row?.created_at ??
+      row?.updated_at ??
+      "",
+  ).trim();
 }
 
 function daysAgoClass(days: number | null) {
@@ -1023,6 +1079,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>([]);
+  const [rewardRows, setRewardRows] = useState<any[]>([]);
+  const [gamePredictionRows, setGamePredictionRows] = useState<any[]>([]);
+  const [gamePlayersRefreshError, setGamePlayersRefreshError] = useState<string | null>(null);
+  const [gamePlayerRows, setGamePlayerRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const adminProfile = useMemo(
     () =>
@@ -1046,7 +1106,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleUserCount, setVisibleUserCount] = useState(50);
   const [filter, setFilter] = useState<DesktopProfileTab>("client");
-  const [timeRange, setTimeRange] = useState<DesktopTimeRange>("all");
+  const [timeRange, setTimeRange] = useState<DesktopTimeRange>("month");
   const [lastVisitFilter, setLastVisitFilter] = useState<"all" | "active" | "inactive">("all");
   const [customerStatusFilter, setCustomerStatusFilter] = useState<"all" | "active" | "inactive" | "at_risk" | "vip">("all");
   const [customerGenderFilter, setCustomerGenderFilter] = useState<"all" | "male" | "female">("all");
@@ -1057,7 +1117,6 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [customerSort, setCustomerSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "lifetime", direction: "desc" });
   const [smartSegment, setSmartSegment] = useState<DesktopSmartSegment>("all");
 
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [contactHistory, setContactHistory] = useState<Record<string, string[]>>({});
 
   function flash(message: string, t: "success" | "error" = "success") {
@@ -1130,7 +1189,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
     async function loadData() {
       setLoading(true);
       try {
-        const [profilesRes, txnsRes, rewardsRes, categoriesRes] = await Promise.all([
+        const [profilesRes, txnsRes, rewardsRes, categoriesRes, gamePredictionsRes, gamePlayersRes] = await Promise.all([
           supabase
             .from("profiles")
             .select("id, full_name, email, phone, client_code, role, is_active, gender, birthday, created_at")
@@ -1141,18 +1200,45 @@ export function UsersPage({ adminId }: { adminId: string }) {
             .select("*")
             .neq("action_type", "manual_adjustment")
             .order("created_at", { ascending: false })
-            .limit(250),
+            .limit(1000),
 
           supabase
             .from("rewards")
             .select("*")
             .order("created_at", { ascending: false })
-            .limit(250),
+            .limit(1000),
 
           supabase
             .from("loyalty_categories")
             .select("id, name, average_price, sort_order")
             .order("sort_order", { ascending: true }),
+
+          supabase
+            .from("prediction_entries")
+            .select("*, prediction_matches(match_label, home_team, away_team, kickoff_at)")
+            .order("created_at", { ascending: false })
+            .limit(5000),
+
+          fetch("/api/admin/game-players", { cache: "no-store" })
+            .then(async (response) => {
+              const json = await response.json().catch(() => ({}));
+
+              if (!response.ok) {
+                return {
+                  data: [],
+                  error: { message: json?.error || "Could not load game players." },
+                };
+              }
+
+              return {
+                data: json?.players ?? [],
+                error: null,
+              };
+            })
+            .catch((error) => ({
+              data: [],
+              error: { message: error instanceof Error ? error.message : "Could not load game players." },
+            })),
         ]);
 
         if (!isMounted) return;
@@ -1161,10 +1247,14 @@ export function UsersPage({ adminId }: { adminId: string }) {
         if (profilesRes.error) console.error("[UsersPage] profiles error:", profilesRes.error);
         if (txnsRes.error) console.error("[UsersPage] txns error:", txnsRes.error);
         if (rewardsRes.error) console.error("[UsersPage] rewards error:", rewardsRes.error);
+        if (gamePredictionsRes.error) console.warn("[UsersPage] prediction entries unavailable:", gamePredictionsRes.error.message);
+        if (gamePlayersRes.error) console.warn("[UsersPage] game players database unavailable:", gamePlayersRes.error.message);
         console.log("[UsersPage] loaded:", {
           profiles: profilesRes.data?.length,
           txns: txnsRes.data?.length,
           rewards: rewardsRes.data?.length,
+          predictionEntries: gamePredictionsRes.data?.length,
+          gamePlayersDatabase: gamePlayersRes.data?.length,
         });
 
         const txns = (txnsRes.data ?? []) as StampTransaction[];
@@ -1206,20 +1296,115 @@ export function UsersPage({ adminId }: { adminId: string }) {
           rewardsByUser.set(r.client_id, (rewardsByUser.get(r.client_id) ?? 0) + 1);
         });
 
-        const enriched = ((profilesRes.data ?? []) as any[]).map((p: any) => ({
-          ...p,
-          totalVisits:        visitDaysByUser.get(p.id)?.size ?? 0,
-          lastVisit:          lastVisitByUser.get(p.id) ?? null,
-          daysSinceLastVisit: lastVisitByUser.get(p.id)
-            ? Math.floor((Date.now() - new Date(lastVisitByUser.get(p.id)!).getTime()) / 86400000)
-            : null,
-          giftsCount:   rewardsByUser.get(p.id) ?? 0,
-          lifetimeValue: lifetimeByUser.get(p.id) ?? 0,
-        }));
+        const gameRows = [
+          ...((gamePlayersRes.data ?? []) as any[]),
+          ...((gamePredictionsRes.data ?? []) as any[]),
+        ];
 
-        setUsers(enriched as AdminUser[]);
+        const gameStatsByKey = new Map<
+          string,
+          { rows: number; lastPlayed: string | null; name: string; phone: string; clientId: string; playerId: string }
+        >();
+
+        gameRows.forEach((row: any) => {
+          const clientId = getGameRowClientId(row);
+          const phone = getGameRowPhone(row);
+          const normalizedPhone = normalizePhoneForMatch(phone);
+          const name = getGameRowName(row);
+          const playerId = getGameRowPlayerId(row);
+          const key =
+            clientId ||
+            (normalizedPhone ? `phone:${normalizedPhone}` : "") ||
+            (name ? `name:${name.toLowerCase()}` : "") ||
+            (playerId ? `player:${playerId}` : "");
+
+          if (!key) return;
+
+          const playedAt = getGameRowDate(row);
+          const existing = gameStatsByKey.get(key) ?? {
+            rows: 0,
+            lastPlayed: null,
+            name,
+            phone,
+            clientId,
+            playerId,
+          };
+
+          existing.rows += 1;
+          if (!existing.name && name) existing.name = name;
+          if (!existing.phone && phone) existing.phone = phone;
+          if (!existing.clientId && clientId) existing.clientId = clientId;
+          if (!existing.playerId && playerId) existing.playerId = playerId;
+          if (playedAt && (!existing.lastPlayed || new Date(playedAt).getTime() > new Date(existing.lastPlayed).getTime())) {
+            existing.lastPlayed = playedAt;
+          }
+
+          gameStatsByKey.set(key, existing);
+        });
+
+        const usedGameKeys = new Set<string>();
+
+        const enriched = ((profilesRes.data ?? []) as any[]).map((p: any) => {
+          const profilePhone = normalizePhoneForMatch(p.phone);
+          const profileName = String(p.full_name ?? "").trim().toLowerCase();
+          const matchingGameKey =
+            (gameStatsByKey.has(p.id) ? p.id : "") ||
+            (profilePhone && gameStatsByKey.has(`phone:${profilePhone}`) ? `phone:${profilePhone}` : "") ||
+            (profileName && gameStatsByKey.has(`name:${profileName}`) ? `name:${profileName}` : "");
+
+          const gameStats = matchingGameKey ? gameStatsByKey.get(matchingGameKey) : null;
+          if (matchingGameKey) usedGameKeys.add(matchingGameKey);
+
+          return {
+            ...p,
+            playedFromGames: Boolean(gameStats),
+            gamePlayerId: gameStats?.playerId ?? null,
+            totalVisits:        visitDaysByUser.get(p.id)?.size ?? 0,
+            lastVisit:          lastVisitByUser.get(p.id) ?? null,
+            daysSinceLastVisit: lastVisitByUser.get(p.id)
+              ? Math.floor((Date.now() - new Date(lastVisitByUser.get(p.id)!).getTime()) / 86400000)
+              : null,
+            giftsCount:   rewardsByUser.get(p.id) ?? 0,
+            lifetimeValue: lifetimeByUser.get(p.id) ?? 0,
+          };
+        });
+
+        const gameOnlyUsers = Array.from(gameStatsByKey.entries())
+          .filter(([key]) => !usedGameKeys.has(key))
+          .map(([key, gameStats]) => {
+            const lastPlayed = gameStats.lastPlayed ?? null;
+            const safeId = key.replace(/[^a-zA-Z0-9_-]+/g, "-");
+
+            return {
+              id: `game-${safeId}`,
+              full_name: gameStats.name || "Game Player",
+              email: null,
+              phone: gameStats.phone || null,
+              client_code: gameStats.playerId ? `GAME-${gameStats.playerId.slice(-6).toUpperCase()}` : "GAME PLAYER",
+              role: "client" as UserRole,
+              is_active: true,
+              gender: null,
+              birthday: null,
+              created_at: lastPlayed,
+              playedFromGames: true,
+              gamePlayerId: gameStats.playerId || null,
+              isGameOnly: true,
+              totalVisits: gameStats.rows,
+              lastVisit: lastPlayed,
+              daysSinceLastVisit: lastPlayed
+                ? Math.floor((Date.now() - new Date(lastPlayed).getTime()) / 86400000)
+                : null,
+              giftsCount: 0,
+              lifetimeValue: 0,
+            };
+          });
+
+        setUsers([...enriched, ...gameOnlyUsers] as AdminUser[]);
         setCategories(cats);
         setActivityTxns(txns);
+        setRewardRows((rewards as any[]) ?? []);
+        setGamePredictionRows((gamePredictionsRes.data ?? []) as any[]);
+        setGamePlayerRows((gamePlayersRes.data ?? []) as any[]);
       } catch (err) {
         flash(err instanceof Error ? err.message : "Could not load data.", "error");
       } finally {
@@ -1452,6 +1637,93 @@ export function UsersPage({ adminId }: { adminId: string }) {
     });
   }, [users]);
 
+  const fromGamesUserIds = useMemo(() => {
+    const ids = new Set<string>();
+
+    function addMatchedGameUser(row: any, dateFields: string[]) {
+      const created =
+        dateFields.map((key) => row?.[key]).find(Boolean) ??
+        row?.last_played_at ??
+        row?.first_played_at ??
+        row?.created_at ??
+        row?.updated_at ??
+        null;
+
+      if (created && !isWithinDesktopTimeRange(created, timeRange)) return;
+      if (!created && timeRange !== "all") return;
+
+      const directId = getGameRowClientId(row);
+      if (directId) ids.add(directId);
+
+      const rowPhoneRaw = getGameRowPhone(row);
+      const rowNameRaw = getGameRowName(row);
+      const rowPlayerId = getGameRowPlayerId(row);
+      const syntheticKey =
+        directId ||
+        (normalizePhoneForMatch(rowPhoneRaw) ? `phone:${normalizePhoneForMatch(rowPhoneRaw)}` : "") ||
+        (rowNameRaw ? `name:${rowNameRaw.toLowerCase()}` : "") ||
+        (rowPlayerId ? `player:${rowPlayerId}` : "");
+
+      if (syntheticKey) ids.add(`game-${syntheticKey.replace(/[^a-zA-Z0-9_-]+/g, "-")}`);
+
+      const phone = normalizePhoneForMatch(
+        row?.phone ??
+          row?.client_phone ??
+          row?.player_phone ??
+          row?.user_phone ??
+          row?.mobile ??
+          row?.contact ??
+          null,
+      );
+      if (phone) {
+        users.forEach((user) => {
+          if (normalizePhoneForMatch(user.phone) === phone) ids.add(user.id);
+        });
+      }
+
+      const name = String(
+        row?.full_name ??
+          row?.client_name ??
+          row?.player_name ??
+          row?.name ??
+          row?.user_name ??
+          "",
+      )
+        .trim()
+        .toLowerCase();
+      if (name) {
+        users.forEach((user) => {
+          if (String(user.full_name ?? "").trim().toLowerCase() === name) ids.add(user.id);
+        });
+      }
+    }
+
+    // Preferred source: the dedicated table created from Games players.
+    gamePlayerRows.forEach((row) => {
+      addMatchedGameUser(row, ["last_played_at", "first_played_at", "created_at", "updated_at"]);
+    });
+
+    // Fallback source: raw prediction entries, when available.
+    gamePredictionRows.forEach((row) => {
+      addMatchedGameUser(row, ["created_at", "updated_at", "submitted_at"]);
+    });
+
+    // Fallback source: rewards created by game winners.
+    rewardRows.forEach((row) => {
+      const isGameReward =
+        row?.source === "game_prediction" ||
+        row?.source_match_id ||
+        String(row?.reward_type ?? row?.reward_name ?? row?.title ?? "")
+          .toLowerCase()
+          .includes("prediction");
+      if (!isGameReward) return;
+
+      addMatchedGameUser(row, ["created_at", "earned_at", "updated_at"]);
+    });
+
+    return ids;
+  }, [gamePlayerRows, gamePredictionRows, rewardRows, timeRange, users]);
+
   const filteredCustomerReportRows = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     const normalizedSearch = normalizePhoneForMatch(searchTerm.trim());
@@ -1468,6 +1740,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
       if (smartSegment !== "all") {
         if (!isClient) return false;
+        if (smartSegment === "active" && (!row.lastVisit || row.inactive)) return false;
+        if (smartSegment === "from_games" && !fromGamesUserIds.has(user.id)) return false;
         if (smartSegment === "new" && row.totalVisits > 1) return false;
         if (smartSegment === "returning" && row.totalVisits <= 1) return false;
         if (smartSegment === "one_time" && row.totalVisits !== 1) return false;
@@ -1481,7 +1755,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       // This keeps the desktop Profile Tab filter working for Staff and Admin.
       if (isClient) {
         const created = (user as any).created_at;
-        if (!isWithinDesktopTimeRange(created, timeRange)) return false;
+        if (smartSegment !== "from_games" && !isWithinDesktopTimeRange(created, timeRange)) return false;
         if (lastVisitFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 14)) return false;
         if (lastVisitFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 14)) return false;
         if (customerStatusFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 7)) return false;
@@ -1504,7 +1778,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       if (phone && normalizedSearch && phone.includes(normalizedSearch)) return true;
       return [user.full_name, user.email, user.phone, user.client_code, desktopRoleLabel(user.role), user.is_active === false ? "deactivated" : "active"].filter(Boolean).join(" ").toLowerCase().includes(search);
     });
-  }, [allProfileReportRows, filter, smartSegment, timeRange, searchTerm, lastVisitFilter, customerStatusFilter, customerGenderFilter, customerAgeRangeFilter]);
+  }, [allProfileReportRows, filter, smartSegment, timeRange, searchTerm, lastVisitFilter, customerStatusFilter, customerGenderFilter, customerAgeRangeFilter, fromGamesUserIds]);
 
   const sortedCustomerReportRows = useMemo(() => {
     const dir = customerSort.direction === "asc" ? 1 : -1;
@@ -1568,26 +1842,69 @@ export function UsersPage({ adminId }: { adminId: string }) {
     return `text-left ${customerSort.key === key ? "font-black text-[#ffd66b]" : ""}`;
   }
 
-  // Stats
-  // Stats match AdminDashboard exactly — computed from ALL client rows, not filtered
-  const newCustomerCount      = customerReportRows.filter(r => r.totalVisits <= 1).length;
-  const returningCustomerCount = customerReportRows.filter(r => r.totalVisits > 1).length;
-  const inactiveCustomerCount = customerReportRows.filter(r => r.inactive).length;
-  const activeReportCustomers = customerReportRows.length - inactiveCustomerCount;
-  const atRiskCustomerCount   = customerReportRows.filter(r => r.isAtRisk).length;
-  const vipCustomerCount      = customerReportRows.filter(r => r.isVip).length;
-  const averageVisitsPerCustomer = customerReportRows.length > 0
-    ? (customerReportRows.reduce((sum, r) => sum + r.totalVisits, 0) / customerReportRows.length).toFixed(1)
+  // Stats — desktop cards and segment counts follow the selected date range and selected segment.
+  const dateScopedCustomerRows = useMemo(() => {
+    return customerReportRows.filter(row =>
+      isWithinDesktopTimeRange((row.user as any).created_at ?? row.lastVisit, timeRange),
+    );
+  }, [customerReportRows, timeRange]);
+
+  const activityScopedCustomerRows = useMemo(() => {
+    if (timeRange === "all") return customerReportRows;
+    return customerReportRows.filter(row => isWithinDesktopTimeRange(row.lastVisit, timeRange));
+  }, [customerReportRows, timeRange]);
+
+  const fromGamesCount = fromGamesUserIds.size;
+
+  const baseSegmentRows = useMemo(() => {
+    if (smartSegment === "active") {
+      return activityScopedCustomerRows.filter(row => row.lastVisit && !row.inactive);
+    }
+
+    if (smartSegment === "from_games") {
+      return customerReportRows.filter(row => fromGamesUserIds.has(row.user.id));
+    }
+
+    return dateScopedCustomerRows;
+  }, [activityScopedCustomerRows, customerReportRows, dateScopedCustomerRows, fromGamesUserIds, smartSegment]);
+
+  const statsScopedCustomerRows = useMemo(() => {
+    return baseSegmentRows.filter(row => {
+      if (smartSegment === "all" || smartSegment === "active" || smartSegment === "from_games") return true;
+      if (smartSegment === "new") return row.totalVisits <= 1;
+      if (smartSegment === "returning") return row.totalVisits > 1;
+      if (smartSegment === "one_time") return row.totalVisits === 1;
+      if (smartSegment === "high_spenders") return row.lifetimeValue >= 100;
+      if (smartSegment === "inactive_30") return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 30;
+      if (smartSegment === "at_risk") return row.isAtRisk;
+      if (smartSegment === "lost") return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 60;
+      return true;
+    });
+  }, [baseSegmentRows, smartSegment]);
+
+  const totalCustomerCount = statsScopedCustomerRows.length;
+  const returningCustomerCount = statsScopedCustomerRows.filter(r => r.totalVisits > 1).length;
+  const activeReportCustomers = statsScopedCustomerRows.filter(r => r.lastVisit && !r.inactive).length;
+  const inactiveCustomerCount = statsScopedCustomerRows.filter(r => r.inactive).length;
+  const atRiskCustomerCount = statsScopedCustomerRows.filter(r => r.isAtRisk).length;
+  const vipCustomerCount = statsScopedCustomerRows.filter(r => r.isVip).length;
+  const averageVisitsPerCustomer = statsScopedCustomerRows.length > 0
+    ? (statsScopedCustomerRows.reduce((sum, r) => sum + r.totalVisits, 0) / statsScopedCustomerRows.length).toFixed(1)
     : "0";
 
+  const segmentBaseRows = dateScopedCustomerRows;
+  const activeSegmentCount = activityScopedCustomerRows.filter(r => r.lastVisit && !r.inactive).length;
+
   const smartSegments = [
-    { key: "new" as const, label: "New customers", count: customerReportRows.filter(r => r.totalVisits <= 1).length },
-    { key: "returning" as const, label: "Returning customers", count: customerReportRows.filter(r => r.totalVisits > 1).length },
-    { key: "one_time" as const, label: "One-time visitors", count: customerReportRows.filter(r => r.totalVisits === 1).length },
-    { key: "high_spenders" as const, label: "High spenders", count: customerReportRows.filter(r => r.lifetimeValue >= 100).length },
-    { key: "inactive_30" as const, label: "Inactive 30+ days", count: customerReportRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 30).length },
-    { key: "at_risk" as const, label: "At risk", count: atRiskCustomerCount },
-    { key: "lost" as const, label: "Lost customers", count: customerReportRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 60).length },
+    { key: "active" as const, label: "Active users", count: activeSegmentCount },
+    { key: "new" as const, label: "New customers", count: segmentBaseRows.filter(r => r.totalVisits <= 1).length },
+    { key: "returning" as const, label: "Returning customers", count: segmentBaseRows.filter(r => r.totalVisits > 1).length },
+    { key: "one_time" as const, label: "One-time visitors", count: segmentBaseRows.filter(r => r.totalVisits === 1).length },
+    { key: "high_spenders" as const, label: "High spenders", count: segmentBaseRows.filter(r => r.lifetimeValue >= 100).length },
+    { key: "inactive_30" as const, label: "Inactive 30+ days", count: segmentBaseRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 30).length },
+    { key: "at_risk" as const, label: "At risk", count: segmentBaseRows.filter(r => r.isAtRisk).length },
+    { key: "lost" as const, label: "Lost customers", count: segmentBaseRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 60).length },
+    { key: "from_games" as const, label: "From games", count: fromGamesCount },
   ];
 
   function downloadVisibleCustomerTable() {
@@ -1615,90 +1932,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
       <div className="flex min-h-screen w-full gap-3 overflow-visible bg-transparent p-3 pb-24 lg:gap-6 lg:p-6 lg:pb-6 lg:min-h-screen">
 
-        {/* Sidebar — exact match to AdminDashboard */}
-        <aside
-          className={`hidden min-h-[calc(100vh-48px)] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.24)] backdrop-blur-2xl transition-all duration-300 lg:flex ${
-            isDesktopSidebarOpen ? "w-[238px]" : "w-[76px]"
-          }`}
-        >
-          <div className={`flex h-20 items-center bg-white/5 ${isDesktopSidebarOpen ? "justify-between gap-3 px-5" : "justify-center px-3"}`}>
-            {isDesktopSidebarOpen ? (
-              <div className="min-w-0">
-                <div className="text-[19px] font-black leading-none text-white">Dashboard</div>
-                <div className="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">PRO&apos;s Admin</div>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setIsDesktopSidebarOpen(c => !c)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[20px] font-black text-[#365665] shadow-[0_12px_28px_rgba(255,214,107,0.2)] transition hover:scale-105"
-              title={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
-              aria-label={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
-            >
-              {isDesktopSidebarOpen ? "←" : "☰"}
-            </button>
-          </div>
-
-                    <nav className="flex-1 px-3 py-4">
-              <Link href="/admin" title="Dashboard"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>⌂</span>
-                {isDesktopSidebarOpen ? "Dashboard" : null}
-              </Link>
-              <Link href="/admin/activity" title="Activity"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>↯</span>
-                {isDesktopSidebarOpen ? "Activity" : null}
-              </Link>
-<Link href="/admin/news" title="News"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>📰</span>
-                {isDesktopSidebarOpen ? "News" : null}
-              </Link>
-              <Link href="/admin/users" title="Customer behavior"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)] ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[15px] text-[#365665]`}>👤</span>
-                {isDesktopSidebarOpen ? "Customer behavior" : null}
-              </Link>
-              <Link href="/admin/comment-cards" title="Comment Cards"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>✎</span>
-                {isDesktopSidebarOpen ? "Comment Cards" : null}
-              </Link>
-              <Link href="/admin/birthdays" title="Birthdays"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎂</span>
-                {isDesktopSidebarOpen ? "Birthdays" : null}
-              </Link>
-              <Link href="/admin/gifts" title="Gifts"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎁</span>
-                {isDesktopSidebarOpen ? "Gifts" : null}
-              </Link>
-              <Link href="/admin/loyalty" title="Loyalty Program"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>★</span>
-                {isDesktopSidebarOpen ? "Loyalty Program" : null}
-              </Link>
-              <Link href="/admin/games" title="Games"
-                className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}>
-                <span className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}>🎮</span>
-                {isDesktopSidebarOpen ? "Games" : null}
-              </Link>
-          </nav>
-
-          <div className="border-t border-white/8 px-3 py-5">
-            {isDesktopSidebarOpen ? (
-              <div className="space-y-3 text-left">
-                <a href="https://wissamdesigns.com" target="_blank" rel="noreferrer" className="block text-left text-[11px] font-black uppercase leading-5 text-[#ffd66b] transition hover:text-white">
-                  © WISSAMDESIGNS.COM
-                </a>
-              </div>
-            ) : (
-              <div className="text-center text-[14px] font-black text-[#ffd66b]">©</div>
-            )}
-          </div>
-        </aside>
+        {/* Sidebar */}
+        <AdminSidebar active="users" />
 
         {/* Content */}
         <section className="min-h-[calc(100vh-24px)] min-w-0 flex-1 overflow-visible lg:min-h-[calc(100vh-48px)]">
@@ -1770,9 +2005,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
             {/* Stats row */}
             <div className="mb-4 hidden w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid lg:grid-cols-7">
-              <DesktopReportMetric label="New Customers" value={newCustomerCount} />
+              <DesktopReportMetric label="Total Customers" value={totalCustomerCount} />
               <DesktopReportMetric label="Returning" value={returningCustomerCount} />
-              <DesktopReportMetric label="Active" value={activeReportCustomers} />
+              <DesktopReportMetric label="Active Users" value={activeReportCustomers} />
               <DesktopReportMetric label="Inactive" value={inactiveCustomerCount} />
               <DesktopReportMetric label="At Risk" value={atRiskCustomerCount} />
               <DesktopReportMetric label="VIP" value={vipCustomerCount} />
@@ -1786,7 +2021,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                 onClick={() => setSmartSegment("all")}
                 className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${smartSegment === "all" ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.24)]" : "bg-white/12 text-white/82 hover:bg-white/18"}`}
               >
-                All
+                {desktopTimeRangeLabel(timeRange)}
               </button>
               {smartSegments.map(segment => (
                 <button
@@ -1880,7 +2115,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                       <div className="font-black text-white">{row.giftsCount}</div>
                       <div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoClass(row.daysSinceLastVisit)}`}>{daysAgoStatusLabel(row.daysSinceLastVisit)}</span></div>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {row.user.role === "client" ? (
+                        {row.user.role === "client" && !row.user.isGameOnly ? (
                           <button type="button" onClick={() => void openUserProfile(row.user)} className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]">Gift</button>
                         ) : <span className="text-white/36">—</span>}
                         {whatsappUrl ? (
