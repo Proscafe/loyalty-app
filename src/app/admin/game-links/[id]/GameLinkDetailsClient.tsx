@@ -417,6 +417,8 @@ export function GameLinkDetailsClient({
     return exactWinnerEntriesForMatch(match, entries, profileNames);
   }, [entries, match, profileNames]);
 
+  const giftEligibleWinnerEntries = exactScoreWinnerEntries;
+
   const correctPredictionEntries = useMemo(() => {
     const uniqueWinners = [
       ...winnerGroups.exactWinners,
@@ -448,14 +450,14 @@ export function GameLinkDetailsClient({
   const featuredWinners = useMemo(() => {
     const selectedEntries = selectedWinnerIds
       .map((clientId) =>
-        correctPredictionEntries.find((entry) => entry.client_id === clientId),
+        giftEligibleWinnerEntries.find((entry) => entry.client_id === clientId),
       )
       .filter((entry): entry is EntryRow => Boolean(entry));
 
     return selectedEntries.length > 0
       ? selectedEntries
-      : correctPredictionEntries.slice(0, 3);
-  }, [correctPredictionEntries, selectedWinnerIds]);
+      : giftEligibleWinnerEntries.slice(0, 3);
+  }, [giftEligibleWinnerEntries, selectedWinnerIds]);
 
   const visibleFeaturedWinners = savedWinnersLoaded ? featuredWinners : [];
 
@@ -484,13 +486,15 @@ export function GameLinkDetailsClient({
       return `${selectedWinnerIds.length} ${selectedWinnerIds.length === 1 ? "winner is" : "winners are"} selected. Send gifts to complete the draw.`;
     }
 
-    if (correctPredictionEntries.length > 0) {
-      return "Select winners from the right answers below, then send gifts.";
+    if (giftEligibleWinnerEntries.length > 0) {
+      return giftEligibleWinnerEntries.length >= 3
+        ? "Select 3 winners from the right-score pool, then send gifts."
+        : `Only ${giftEligibleWinnerEntries.length} right-score ${giftEligibleWinnerEntries.length === 1 ? "winner is" : "winners are"} available. Select from that pool to send gifts.`;
     }
 
-    return "No winners yet. No gifts sent.";
+    return "No right-score winners yet. No gifts sent.";
   }, [
-    correctPredictionEntries.length,
+    giftEligibleWinnerEntries.length,
     resultSaved,
     selectedWinnerIds.length,
     sendGiftResult,
@@ -498,7 +502,7 @@ export function GameLinkDetailsClient({
 
   useEffect(() => {
     const validClientIds = new Set(
-      correctPredictionEntries.map((entry) => entry.client_id),
+      giftEligibleWinnerEntries.map((entry) => entry.client_id),
     );
     const savedIds = readSavedWinnerIds(match.id)
       .filter((clientId) => validClientIds.has(clientId))
@@ -506,7 +510,7 @@ export function GameLinkDetailsClient({
 
     setSelectedWinnerIds(savedIds);
     setSavedWinnersLoaded(true);
-  }, [correctPredictionEntries, match.id]);
+  }, [giftEligibleWinnerEntries, match.id]);
 
   useEffect(() => {
     if (!savedWinnersLoaded) return;
@@ -515,12 +519,12 @@ export function GameLinkDetailsClient({
   }, [match.id, savedWinnersLoaded, selectedWinnerIds]);
 
   function toggleWinner(clientId: string) {
-    const canReceiveGift = correctPredictionEntries.some(
+    const canReceiveGift = giftEligibleWinnerEntries.some(
       (entry) => entry.client_id === clientId,
     );
 
     if (!canReceiveGift) {
-      setMessage("Only correct predictions can receive Free Dessert gifts.");
+      setMessage("Only right-score predictions can receive Free Dessert gifts.");
       return;
     }
 
@@ -534,10 +538,10 @@ export function GameLinkDetailsClient({
   }
 
   function randomizeThreeGiftWinners() {
-    const candidates = correctPredictionEntries.slice();
+    const candidates = giftEligibleWinnerEntries.slice();
 
     if (candidates.length === 0) {
-      setMessage("No correct predictions available yet.");
+      setMessage("No right-score predictions available yet.");
       return;
     }
 
@@ -696,19 +700,7 @@ export function GameLinkDetailsClient({
           };
 
     const automaticWinnerIds = (() => {
-      const groups = {
-        teamWinners: [] as EntryRow[],
-        exactWinners: [] as EntryRow[],
-      };
-
-      entries.forEach((entry) => {
-        const category = winnerCategoryForEntry(savedMatch, entry);
-
-        if (category === "exact") groups.exactWinners.push(entry);
-        if (category === "team") groups.teamWinners.push(entry);
-      });
-
-      const winners = [...groups.exactWinners, ...groups.teamWinners].filter(
+      const winners = exactWinnerEntriesForMatch(savedMatch, entries, profileNames).filter(
         (entry, index, all) =>
           all.findIndex((item) => item.client_id === entry.client_id) === index,
       );
@@ -720,9 +712,7 @@ export function GameLinkDetailsClient({
 
     if (automaticWinnerIds.length === 0) {
       setSaving(false);
-      setMessage(
-        "Result saved. No correct prediction winners found for gifts.",
-      );
+      setMessage("Result saved. No right-score winners found. No gifts sent.");
       window.setTimeout(() => window.location.reload(), 1200);
       return;
     }
@@ -796,14 +786,14 @@ export function GameLinkDetailsClient({
     }
 
     const validWinnerIds = new Set(
-      correctPredictionEntries.map((entry) => entry.client_id),
+      giftEligibleWinnerEntries.map((entry) => entry.client_id),
     );
     const exactSelectedWinnerIds = selectedWinnerIds.filter((clientId) =>
       validWinnerIds.has(clientId),
     );
 
     if (exactSelectedWinnerIds.length === 0) {
-      setMessage("Only correct predictions can receive Free Dessert gifts.");
+      setMessage("Only right-score predictions can receive Free Dessert gifts.");
       return;
     }
 
@@ -941,7 +931,7 @@ export function GameLinkDetailsClient({
                     ? "Right margin"
                     : "Right score"}
                   : {winnerGroups.exactWinners.length} · Right team:{" "}
-                  {correctPredictionEntries.length}
+                  {winnerGroups.teamWinners.length}
                 </p>
                 {giftStatusMessage ? (
                   <p className="mt-3 text-[16px] font-bold text-[#ffd66b]">
@@ -1000,8 +990,7 @@ export function GameLinkDetailsClient({
                       All right answers
                     </div>
                     <div className="mt-1 text-[12px] font-bold text-white/60">
-                      These are all users who picked the right team. Right
-                      margin winners are included here too.
+                      These are all users who picked the right team. Gifts can only be sent to Right Score winners.
                     </div>
                   </div>
                   <div className="rounded-full bg-white/16 px-3 py-1 text-[11px] font-black text-white">
@@ -1021,11 +1010,15 @@ export function GameLinkDetailsClient({
                       <button
                         key={entry.id}
                         type="button"
+                        disabled={category !== "exact"}
                         onClick={() => toggleWinner(entry.client_id)}
+                        title={category === "exact" ? "Select as gift winner" : "Right Team only — not eligible for gifts"}
                         className={`flex items-center justify-between gap-3 rounded-[16px] px-3 py-3 text-left transition backdrop-blur-md ${
                           selected
                             ? "bg-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
-                            : "bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] hover:bg-white/14"
+                            : category === "exact"
+                              ? "bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] hover:bg-white/14"
+                              : "bg-white/7 opacity-65"
                         }`}
                       >
                         <div className="min-w-0">
