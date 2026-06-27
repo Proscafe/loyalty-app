@@ -7,6 +7,7 @@ const PAGE_BG =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 const GLASS_CARD =
   "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
+const WORLD_CUP_WINNER_PICK_LOCKED = true;
 
 type WinnerPick = {
   teamName: string;
@@ -99,7 +100,7 @@ export function WorldCupClient({
   const pickerStartY = useRef<number | null>(null);
 
   async function selectWinner(team: { rank: number; name: string }) {
-    if (winnerPick || savingTeam) return;
+    if (WORLD_CUP_WINNER_PICK_LOCKED || winnerPick || savingTeam) return;
 
     setSavingTeam(team.name);
     setError(null);
@@ -199,32 +200,21 @@ export function WorldCupClient({
           <button
             type="button"
             onClick={() => {
-              if (!winnerPick) setIsPickerOpen(true);
+              if (!WORLD_CUP_WINNER_PICK_LOCKED && !winnerPick) setIsPickerOpen(true);
             }}
-            disabled={Boolean(winnerPick)}
+            disabled={WORLD_CUP_WINNER_PICK_LOCKED || Boolean(winnerPick)}
             className="mt-4 flex min-h-[64px] w-full items-center justify-between rounded-2xl bg-[#365665]/58 px-4 py-3 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl disabled:opacity-100"
           >
             <span className="min-w-0">
               <span className="block truncate text-[15px] font-black">
-                {winnerPick ? winnerPick.teamName : "Pick up your squad"}
+                {winnerPick ? winnerPick.teamName : "Champion picks are closed"}
               </span>
-              {winnerPick ? (
-                <span className="mt-1 block text-[11px] font-semibold text-white/58">
-                  Locked answer
-                </span>
-              ) : null}
             </span>
 
             <span className="shrink-0 rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]">
-              {winnerPick ? "Locked" : "Choose"}
+              {winnerPick || WORLD_CUP_WINNER_PICK_LOCKED ? "Locked" : "Choose"}
             </span>
           </button>
-
-          {winnerPick ? (
-            <p className="mt-3 text-[11px] font-semibold leading-5 text-white/56">
-              Your answer is locked &amp; can&apos;t be modified.
-            </p>
-          ) : null}
 
           {error ? (
             <div className="mt-3 rounded-2xl bg-red-500/14 px-4 py-3 text-[12px] font-bold text-red-100">
