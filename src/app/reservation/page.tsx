@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clock3,
+  Download,
   Share2,
   Star,
   Table2,
@@ -12,7 +16,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import AdminMobileHeader from "@/components/AdminMobileHeader";
 
 type EventItem = {
   id: string;
@@ -37,7 +40,8 @@ type Reservation = {
   phone: string;
   guests: number;
   table: string;
-  status: "Confirmed" | "Late" | "No Show" | "Pending";
+  status: "Confirmed" | "Arrived" | "Late" | "No Show" | "Pending" | "Cancelled";
+  confirmedAt?: string;
 };
 
 const upcomingEvents: EventItem[] = [
@@ -323,7 +327,73 @@ function getEventMonthLabel(event: EventItem, fallbackDate: string) {
   }).toUpperCase();
 }
 
+function escapeHtml(value: string | number | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function safeFileName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "reservations";
+}
+
+function buildReservationsExcelBlob(title: string, subtitle: string, rows: Reservation[]) {
+  const tableRows = rows
+    .map(
+      (reservation) => `
+        <tr>
+          <td>${escapeHtml(reservation.time)}</td>
+          <td>${escapeHtml(reservation.fullName)}</td>
+          <td>${escapeHtml(reservation.phone)}</td>
+          <td>${escapeHtml(reservation.guests)}</td>
+          <td>${escapeHtml(reservation.table)}</td>
+          <td>${escapeHtml(reservation.confirmedAt || "")}</td>
+          <td>${escapeHtml(reservation.status)}</td>
+        </tr>`,
+    )
+    .join("");
+
+  const workbook = `<!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          @page { size: A4 landscape; margin: 0.35in; }
+          body { font-family: Arial, sans-serif; color: #22110f; }
+          h1 { font-size: 22px; margin: 0 0 4px; }
+          p { margin: 0 0 12px; font-size: 12px; }
+          table { border-collapse: collapse; width: 100%; }
+          th { background: #f5ebe5; color: #8f3f38; text-align: left; }
+          th, td { border: 1px solid #8f3f38; padding: 7px; font-size: 11px; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <p>${escapeHtml(subtitle)}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Full Name</th>
+              <th>Phone</th>
+              <th>Guests</th>
+              <th>Table</th>
+              <th>Confirmed</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </body>
+    </html>`;
+
+  return new Blob([workbook], { type: "application/vnd.ms-excel;charset=utf-8;" });
+}
+
 export default function ReservationPage() {
+  const router = useRouter();
   const dates = useMemo(() => buildDateRange(), []);
   const times = useMemo(() => buildTimes(), []);
   const todayValue = getTodayDateValue();
@@ -337,9 +407,13 @@ export default function ReservationPage() {
   );
   const [eventView, setEventView] = useState<"list" | "month">("list");
   const [reservationModalOpen, setReservationModalOpen] = useState(false);
+  const [shareFallbackOpen, setShareFallbackOpen] = useState(false);
   const [eventCreationModalOpen, setEventCreationModalOpen] = useState(false);
   const [createEventFavorite, setCreateEventFavorite] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
+  const [bookingRows, setBookingRows] = useState<Reservation[]>(reservations);
+  const [selectedBooking, setSelectedBooking] = useState<Reservation | null>(null);
+  const [statusBooking, setStatusBooking] = useState<Reservation | null>(null);
   const dateRef = useRef<HTMLDivElement | null>(null);
   const timeRef = useRef<HTMLDivElement | null>(null);
   const dateInputRef = useRef<HTMLInputElement | null>(null);
@@ -381,6 +455,43 @@ export default function ReservationPage() {
     () => new Set(reservations.map((reservation) => reservation.table)).size,
     [],
   );
+
+  function updateBookingRow(id: string, updates: Partial<Reservation>) {
+    setBookingRows((rows) =>
+      rows.map((row) => (row.id === id ? { ...row, ...updates } : row)),
+    );
+  }
+
+  function getConfirmStamp() {
+    const now = new Date();
+    return `${now.getDate()}/${now.getMonth() + 1} - ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function getNowTimeLabel() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function getStatusLabel(reservation: Reservation) {
+    if (reservation.status === "Arrived") return `Arrived - ${reservation.confirmedAt?.split(" - ")[1] || getNowTimeLabel()}`;
+    return reservation.status;
+  }
+
+  function setBookingStatus(reservation: Reservation, status: Reservation["status"]) {
+    const updates: Partial<Reservation> = { status };
+    if (status === "Arrived") updates.confirmedAt = getConfirmStamp();
+    updateBookingRow(reservation.id, updates);
+    setStatusBooking((current) => (current?.id === reservation.id ? { ...reservation, ...updates } : current));
+    setSelectedBooking((current) => (current?.id === reservation.id ? { ...reservation, ...updates } : current));
+  }
+
+  function getBookingStatusClass(status: Reservation["status"]) {
+    if (status === "Arrived" || status === "Confirmed") return "border-[#b9ead1] bg-[#d9f8e6] text-[#23663f]";
+    if (status === "Late") return "border-[#ffd6a0] bg-[#fff0d8] text-[#9a5018]";
+    if (status === "No Show") return "border-[#ffbdb6] bg-[#ffe1dc] text-[#9b4439]";
+    if (status === "Cancelled") return "border-[#d8d0ca] bg-[#eee9e4] text-[#6d625f]";
+    return "border-[#f1c847] bg-[#fff1a8] text-[#4a3410]";
+  }
   const totalEventGuests = useMemo(
     () =>
       upcomingEvents.reduce((sum, event) => {
@@ -433,15 +544,59 @@ export default function ReservationPage() {
     }
   }, [activeSection, hasEvents]);
 
-  function openReservationForEvent(event: EventItem) {
-    const eventDateValue = getEventDateValue(event, selectedDate);
+  function getSelectedDateRows() {
+    return bookingRows;
+  }
 
-    if (isPastDateTime(eventDateValue, event.timeLabel, todayValue)) return;
+  function getSelectedDateExportFile() {
+    const label = selectedDateLabel.replace(/\s+/g, " ");
+    const blob = buildReservationsExcelBlob(
+      `Reservations - ${label}`,
+      `${getSelectedDateRows().length} reservations for ${label}`,
+      getSelectedDateRows(),
+    );
+    return new File([blob], `${safeFileName(`reservations-${label}`)}.xls`, {
+      type: "application/vnd.ms-excel",
+    });
+  }
 
-    setSelectedEvent(event);
-    setSelectedDate(eventDateValue);
-    setSelectedTime(event.timeLabel);
-    setReservationModalOpen(true);
+  function downloadSelectedDateExcel() {
+    const file = getSelectedDateExportFile();
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  async function shareSelectedDateExcel() {
+    const file = getSelectedDateExportFile();
+    const shareData: ShareData & { files?: File[] } = {
+      title: `Reservations - ${selectedDateLabel}`,
+      text: `Reservation table for ${selectedDateLabel}`,
+      files: [file],
+    };
+
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    downloadSelectedDateExcel();
+    setShareFallbackOpen(true);
+  }
+
+  function openEventDetails(event: EventItem) {
+    router.push(`/reservation/events/${event.id}`);
   }
 
   return (
@@ -459,10 +614,6 @@ export default function ReservationPage() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(255,217,82,0.18),transparent_28%),radial-gradient(circle_at_85%_18%,rgba(166,93,82,0.15),transparent_26%),linear-gradient(135deg,#fff8f1_0%,#fbf2eb_46%,#f5e4dc_100%)]" />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1480px] flex-col px-4 py-3 sm:px-8 lg:px-14 lg:py-5">
-        <div className="mb-4 overflow-hidden rounded-[30px] border border-white/25 bg-gradient-to-r from-[#893b35] via-[#a65d52] to-[#c0735e] shadow-xl shadow-[#5f2b26]/15 lg:mb-6">
-          <AdminMobileHeader />
-        </div>
-
         <section className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between lg:mb-5">
           <div>
             <h1 className="text-[30px] font-black leading-[0.95] tracking-[-0.055em] text-[#351614] sm:text-[36px] lg:text-[42px]">
@@ -495,10 +646,19 @@ export default function ReservationPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={shareSelectedDateExcel}
               className="grid h-12 w-12 place-items-center rounded-[16px] border border-[#ead6ce] bg-white/80 text-[#5a302b] shadow-sm transition hover:bg-[#ffdb57]"
               aria-label="Share reservations"
             >
               <Share2 size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={downloadSelectedDateExcel}
+              className="grid h-12 w-12 place-items-center rounded-[16px] border border-[#ead6ce] bg-white/80 text-[#5a302b] shadow-sm transition hover:bg-[#ffdb57]"
+              aria-label="Download reservations"
+            >
+              <Download size={18} />
             </button>
             <button
               type="button"
@@ -534,70 +694,58 @@ export default function ReservationPage() {
               const eventInPast = isPastDateTime(eventDateValue, event.timeLabel, todayValue);
 
               return (
-                <article
+                <Link
                   key={event.id}
-                  role="button"
-                  tabIndex={eventInPast ? -1 : 0}
-                  aria-disabled={eventInPast}
-                  onClick={() => {
-                    if (!eventInPast) openReservationForEvent(event);
-                  }}
-                  onKeyDown={(keyboardEvent) => {
-                    if (eventInPast) return;
-                    if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-                      keyboardEvent.preventDefault();
-                      openReservationForEvent(event);
-                    }
-                  }}
-                  className={`relative flex min-w-0 overflow-hidden rounded-[24px] bg-gradient-to-br ${cardStyles[index % cardStyles.length]} p-5 text-white shadow-lg shadow-[#9a5048]/12 transition ${eventInPast ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:-translate-y-0.5 hover:shadow-xl"}`}
+                  href={`/reservation/events/${event.id}`}
+                  className="group relative flex min-h-[134px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-[22px] border border-[#ead6ce] bg-white text-[#2b211f] shadow-lg shadow-[#9a5048]/12 transition hover:-translate-y-0.5 hover:shadow-xl"
                 >
-                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_18%,rgba(255,219,87,0.18),transparent_30%)]" />
-                  <div className="relative flex h-[104px] w-[74px] shrink-0 flex-col items-center justify-center rounded-[20px] bg-[#ffdb57] text-center text-[#2b211f] shadow-lg shadow-black/10">
-                    <span className="block text-[11px] font-black uppercase leading-none">
-                      {eventDayName}
-                    </span>
-                    <span className="mt-1.5 block text-[30px] font-black leading-none tracking-[-0.06em]">
-                      {eventDay}
-                    </span>
-                    <span className="mt-1.5 block text-[11px] font-black uppercase leading-none">
-                      {getEventMonthLabel(event, selectedDate)}
-                    </span>
-                    <span className="mt-2 block text-[10px] font-black leading-none">
+                  <div className="flex items-center gap-3 bg-[#ffdb57] px-5 py-3 text-[#2b211f]">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-[12px] font-black uppercase leading-none">
+                        {eventDayName}
+                      </span>
+                      <span className="text-[25px] font-black leading-none tracking-[-0.06em]">
+                        {eventDay}
+                      </span>
+                      <span className="text-[12px] font-black uppercase leading-none">
+                        {getEventMonthLabel(event, selectedDate)}
+                      </span>
+                    </div>
+                    <span className="h-6 w-px bg-[#d6a83f]/50" />
+                    <span className="inline-flex items-center gap-1.5 text-[12px] font-black leading-none">
+                      <Clock3 size={15} />
                       {event.timeLabel}
                     </span>
                   </div>
 
-                  <div className="relative ml-5 min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="line-clamp-1 text-[19px] font-black leading-tight tracking-[-0.04em]">
-                        {event.title}
-                      </h3>
-                    </div>
-
-                    <p className="mt-1.5 line-clamp-2 text-[13px] font-semibold leading-snug text-white/88">
+                  <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
+                    <h3 className="line-clamp-1 text-[20px] font-black leading-tight tracking-[-0.04em] text-[#2b211f]">
+                      {event.title}
+                    </h3>
+                    <p className="mt-1 line-clamp-2 text-[13px] font-semibold leading-snug text-[#7a605a]">
                       {event.subtitle}
                     </p>
-
-                    <div className="mt-5 grid grid-cols-2 gap-3 text-[11px] font-black text-white/95 xl:text-[12px]">
-                      <span className="flex items-center gap-1.5 leading-tight">
-                        <Users
-                          size={15}
-                          className="shrink-0 text-[#ffdb57]"
-                          fill="currentColor"
-                        />
-                        <span className="min-w-0 truncate">
-                          {event.guests.replace(/\s*guests/i, "")}
-                        </span>
-                      </span>
-                      <span className="flex items-center gap-1.5 leading-tight">
-                        <Table2 size={15} className="shrink-0 text-[#ffdb57]" />
-                        <span className="min-w-0">
-                          {event.tables.replace(/\s*tables/i, "")}
-                        </span>
-                      </span>
-                    </div>
                   </div>
-                </article>
+
+                  <div className="grid grid-cols-2 border-t border-[#eadbd6] px-5 py-3 text-[12px] font-black text-[#2b211f]">
+                    <span className="flex items-center gap-2 leading-tight">
+                      <Users
+                        size={17}
+                        className="shrink-0 text-[#ffbf21]"
+                        fill="currentColor"
+                      />
+                      <span className="min-w-0 truncate">
+                        {event.guests.replace(/\s*guests/i, "")}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-2 border-l border-[#eadbd6] pl-4 leading-tight">
+                      <Table2 size={17} className="shrink-0 text-[#ffbf21]" />
+                      <span className="min-w-0">
+                        {event.tables.replace(/\s*tables/i, "")}
+                      </span>
+                    </span>
+                  </div>
+                </Link>
               );
             })}
           </div>
@@ -754,18 +902,9 @@ export default function ReservationPage() {
 
         {hasEvents && activeSection === "events" ? (
           <section className="mb-10 overflow-hidden rounded-[26px] border border-[#ead6ce] bg-white/88 text-[#2b211f] shadow-xl shadow-[#9a5048]/10 backdrop-blur-md">
-            <div className="grid gap-4 border-b border-[#eadbd6] px-5 py-5 sm:grid-cols-[1fr_auto_1fr] sm:items-center lg:px-8">
-              <div className="flex flex-wrap items-baseline gap-4">
-                <h2 className="text-[21px] font-black tracking-[-0.05em]">
-                  Events
-                </h2>
-                <p className="text-[12px] font-black uppercase tracking-[0.1em] text-[#8a746f]">
-                  {upcomingEvents.length} events · {totalEventGuests} guests
-                </p>
-              </div>
-
+            <div className="grid gap-4 border-b border-[#eadbd6] px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center lg:px-8">
               {eventView === "month" ? (
-                <div className="inline-flex items-center justify-center gap-3">
+                <div className="inline-flex items-center justify-start gap-3">
                   <button
                     type="button"
                     onClick={() =>
@@ -791,7 +930,14 @@ export default function ReservationPage() {
                   </button>
                 </div>
               ) : (
-                <div />
+                <div className="flex flex-wrap items-baseline gap-4">
+                  <h2 className="text-[21px] font-black tracking-[-0.05em]">
+                    Events
+                  </h2>
+                  <p className="text-[12px] font-black uppercase tracking-[0.1em] text-[#8a746f]">
+                    {upcomingEvents.length} events · {totalEventGuests} guests
+                  </p>
+                </div>
               )}
 
               <div className="flex flex-wrap items-center justify-start gap-3 sm:justify-end">
@@ -819,8 +965,8 @@ export default function ReservationPage() {
               <>
                 <div className="overflow-x-auto">
                   <table className="min-w-[760px] w-full border-collapse text-left">
-                    <thead>
-                      <tr className="bg-[#f5ebe5] text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-[#f5ebe5] text-[9px] font-black uppercase tracking-[0.1em] text-[#8f3f38]">
                         <th className="px-5 py-3 lg:px-8">Event</th>
                         <th className="px-5 py-3">Date</th>
                         <th className="px-5 py-3">Time</th>
@@ -838,10 +984,16 @@ export default function ReservationPage() {
                         return (
                         <tr
                           key={event.id}
-                          onClick={() => {
-                            if (!eventInPast) openReservationForEvent(event);
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openEventDetails(event)}
+                          onKeyDown={(keyboardEvent) => {
+                            if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                              keyboardEvent.preventDefault();
+                              openEventDetails(event);
+                            }
                           }}
-                          className={`bg-white/50 transition ${eventInPast ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:bg-[#fff8ec]"}`}
+                          className="cursor-pointer bg-white/50 transition hover:bg-[#fff8ec] focus:outline-none focus:ring-2 focus:ring-[#ffdb57]"
                         >
                           <td className="px-5 py-4 lg:px-8">
                             <div className="min-w-0">
@@ -955,18 +1107,9 @@ export default function ReservationPage() {
 
         {activeSection === "bookings" ? (
           <section className="mb-10 overflow-hidden rounded-[26px] border border-[#ead6ce] bg-white/88 text-[#2b211f] shadow-xl shadow-[#9a5048]/10 backdrop-blur-md">
-            <div className="grid gap-4 border-b border-[#eadbd6] px-5 py-5 sm:grid-cols-[1fr_auto_1fr] sm:items-center lg:px-8">
-              <div className="flex flex-wrap items-baseline gap-4">
-                <h2 className="text-[21px] font-black tracking-[-0.05em]">
-                  Bookings
-                </h2>
-                <p className="text-[12px] font-black uppercase tracking-[0.1em] text-[#8a746f]">
-                  {totalGuests} guests · {totalTables} tables
-                </p>
-              </div>
-
+            <div className="grid gap-4 border-b border-[#eadbd6] px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center lg:px-8">
               {reservationView === "month" ? (
-                <div className="inline-flex items-center justify-center gap-3">
+                <div className="inline-flex items-center justify-start gap-3">
                   <button
                     type="button"
                     onClick={() =>
@@ -992,7 +1135,14 @@ export default function ReservationPage() {
                   </button>
                 </div>
               ) : (
-                <div />
+                <div className="flex flex-wrap items-baseline gap-4">
+                  <h2 className="text-[21px] font-black tracking-[-0.05em]">
+                    Bookings
+                  </h2>
+                  <p className="text-[12px] font-black uppercase tracking-[0.1em] text-[#8a746f]">
+                    {totalGuests} guests · {totalTables} tables
+                  </p>
+                </div>
               )}
 
               <div className="flex flex-wrap items-center justify-start gap-3 sm:justify-end">
@@ -1017,105 +1167,105 @@ export default function ReservationPage() {
 
             {reservationView === "table" ? (
               <>
-                <div className="overflow-x-auto">
-                  <table className="min-w-[560px] w-full table-fixed border-collapse text-left">
-                    <thead>
-                      <tr className="bg-[#f5ebe5] text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">
-                        <th className="w-[54px] px-2 py-3">Time</th>
-                        <th className="w-[120px] px-2 py-3">Full Name</th>
-                        <th className="w-[92px] px-2 py-3">Phone</th>
-                        <th className="w-[34px] px-1 py-3 text-center">#</th>
-                        <th className="w-[76px] px-2 py-3">Table</th>
-                        <th className="w-[136px] px-2 py-3 text-center">
-                          Actions
-                        </th>
+                <div className="max-h-[460px] overflow-auto">
+                  <table className="min-w-[640px] w-full table-fixed border-collapse text-left sm:min-w-[760px]">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-[#f5ebe5] text-[9px] font-black uppercase tracking-[0.1em] text-[#8f3f38]">
+                        <th className="w-[52px] px-1.5 py-2 sm:w-[62px] sm:px-2 sm:py-2.5">Time</th>
+                        <th className="w-[104px] px-1.5 py-2 sm:w-[126px] sm:px-2 sm:py-2.5">Full Name</th>
+                        <th className="w-[92px] px-1.5 py-2 sm:w-[112px] sm:px-2 sm:py-2.5">Phone</th>
+                        <th className="w-[54px] px-1 py-2 text-center sm:w-[68px] sm:px-2 sm:py-2.5">Guests</th>
+                        <th className="w-[86px] px-1.5 py-2 sm:w-[112px] sm:px-2 sm:py-2.5">Table</th>
+                        <th className="w-[92px] px-1.5 py-2 text-center sm:w-[112px] sm:px-2 sm:py-2.5">Confirm</th>
+                        <th className="w-[104px] px-1.5 py-2 text-center sm:w-[126px] sm:px-2 sm:py-2.5">Status</th>
+                        <th className="w-[30px] px-1 py-2 sm:w-[40px] sm:py-2.5" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#eadbd6]">
-                      {reservations.map((reservation) => (
+                      {bookingRows.map((reservation) => (
                         <tr
                           key={reservation.id}
                           className="bg-white/50 transition hover:bg-[#fff8ec]"
                         >
-                          <td className="px-2 py-2.5 text-[12.5px] font-black text-[#2b211f]">
+                          <td className="px-1.5 py-1.5 text-[10px] font-black text-[#2b211f] sm:px-2 sm:py-2 sm:text-[12px]">
                             {reservation.time}
                           </td>
-                          <td className="px-2 py-2.5">
-                            <p className="truncate text-[12.5px] font-black leading-none text-[#2b211f]">
-                              {reservation.fullName}
-                            </p>
-                          </td>
-                          <td className="px-2 py-2.5">
-                            <a
-                              href={`tel:${reservation.phone.replace(/\s/g, "")}`}
-                              className="block truncate text-[12.5px] font-bold leading-none text-[#2b211f]"
+                          <td className="px-1.5 py-1.5 sm:px-2 sm:py-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBooking(reservation)}
+                              className="block max-w-full truncate text-left text-[10px] font-black leading-none text-[#2b211f] transition hover:text-[#8f3f38] sm:text-[12px]"
                             >
-                              {reservation.phone}
-                            </a>
+                              {reservation.fullName}
+                            </button>
                           </td>
-                          <td className="px-1 py-2.5 text-center text-[12.5px] font-black">
-                            {reservation.guests}
+                          <td className="px-1.5 py-1.5 text-[10px] font-black text-[#2b211f] sm:px-2 sm:py-2 sm:text-[12px]">
+                            {reservation.phone}
                           </td>
-                          <td className="px-2 py-2.5 text-[12.5px] font-black">
-                            <span className="block truncate">
-                              {reservation.table}
-                            </span>
+                          <td className="px-1 py-1.5 text-center sm:px-2 sm:py-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={reservation.guests}
+                              onChange={(event) =>
+                                updateBookingRow(reservation.id, {
+                                  guests: Number(event.target.value) || 1,
+                                })
+                              }
+                              className="mx-auto h-7 w-[38px] rounded-[10px] border border-[#ead6ce] bg-white px-1 text-center text-[10px] font-black text-[#2b211f] outline-none focus:border-[#ffdb57] sm:h-8 sm:w-[50px] sm:rounded-[12px] sm:px-2 sm:text-[12px]"
+                            />
                           </td>
-                          <td className="px-2 py-2.5 text-center">
-                            <div className="mx-auto flex w-[124px] items-center justify-center gap-1">
-                              <button
-                                className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#ffe3df] text-[#c9453f] transition hover:scale-105"
-                                aria-label={`Delete reservation for ${reservation.fullName}`}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                              <button
-                                className={`inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-full px-2 py-1.5 text-[10px] font-bold ${reservation.status === "Confirmed" ? "bg-[#eaf7e2] text-[#315d2c]" : reservation.status === "Late" ? "bg-[#ffe9d9] text-[#b85e22]" : reservation.status === "No Show" ? "bg-[#ece8e5] text-[#6d625f]" : "bg-[#ffdb57] text-[#2b211f]"}`}
-                              >
-                                <span
-                                  className={`h-2 w-2 shrink-0 rounded-full ${reservation.status === "Confirmed" ? "bg-[#5db84f]" : reservation.status === "Late" ? "bg-[#ee8a2f]" : reservation.status === "No Show" ? "bg-[#a79f9a]" : "bg-[#2b211f]"}`}
-                                />
-                                {reservation.status === "Pending"
-                                  ? "Confirm"
-                                  : reservation.status}
-                              </button>
-                              <button
-                                className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#fff7f1] text-[#8f3f38] transition hover:bg-[#ffdb57]"
-                                aria-label={`Open reservation for ${reservation.fullName}`}
-                              >
-                                <ChevronRight size={13} />
-                              </button>
-                            </div>
+                          <td className="px-1.5 py-1.5 sm:px-2 sm:py-2">
+                            <input
+                              value={reservation.table}
+                              onChange={(event) =>
+                                updateBookingRow(reservation.id, {
+                                  table: event.target.value,
+                                })
+                              }
+                              className="h-7 w-full rounded-[10px] border border-[#ead6ce] bg-white px-2 text-[10px] font-black text-[#2b211f] outline-none focus:border-[#ffdb57] sm:h-8 sm:rounded-[12px] sm:px-3 sm:text-[12px]"
+                            />
+                          </td>
+                          <td className="px-1 py-1.5 text-center sm:px-2 sm:py-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateBookingRow(reservation.id, {
+                                  confirmedAt: getConfirmStamp(),
+                                })
+                              }
+                              className="inline-flex h-7 min-w-[70px] items-center justify-center rounded-full border border-[#ead6ce] bg-white px-2 text-[9px] font-black text-[#2b211f] transition hover:bg-[#fff8dd] sm:h-8 sm:min-w-[90px] sm:px-4 sm:text-[11px]"
+                            >
+                              {reservation.confirmedAt ?? "Confirm"}
+                            </button>
+                          </td>
+                          <td className="px-1 py-1.5 text-center sm:px-2 sm:py-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (reservation.status === "Pending") {
+                                  setBookingStatus(reservation, "Arrived");
+                                }
+                              }}
+                              className={`inline-flex h-7 min-w-[82px] items-center justify-center rounded-full border px-2 text-[9px] font-black sm:h-8 sm:min-w-[100px] sm:px-4 sm:text-[11px] ${getBookingStatusClass(reservation.status)}`}
+                            >
+                              {getStatusLabel(reservation)}
+                            </button>
+                          </td>
+                          <td className="px-1 py-1.5 text-center sm:px-2 sm:py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setStatusBooking(reservation)}
+                              className="grid h-6 w-6 place-items-center rounded-full border border-[#ead6ce] bg-white text-[#8f3f38] transition hover:bg-[#ffdb57] sm:h-7 sm:w-7"
+                              aria-label={`Change status for ${reservation.fullName}`}
+                            >
+                              <ChevronRight size={14} />
+                            </button>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
-
-                <div className="flex flex-col gap-4 border-t border-[#eadbd6] px-5 py-5 text-[14px] font-medium text-[#6b5651] sm:flex-row sm:items-center sm:justify-between lg:px-8">
-                  <p>Showing 1 to 5 of 25 reservations</p>
-                  <div className="flex items-center gap-2">
-                    <button className="grid h-10 w-10 place-items-center rounded-xl border border-[#ead6ce] bg-white">
-                      <ChevronLeft size={18} />
-                    </button>
-                    <button className="grid h-10 w-10 place-items-center rounded-xl bg-[#ffdb57] font-black text-[#2b211f]">
-                      1
-                    </button>
-                    <button className="grid h-10 w-10 place-items-center rounded-xl border border-[#ead6ce] bg-white font-black">
-                      2
-                    </button>
-                    <button className="grid h-10 w-10 place-items-center rounded-xl border border-[#ead6ce] bg-white font-black">
-                      3
-                    </button>
-                    <span className="px-2 font-black">...</span>
-                    <button className="grid h-10 w-10 place-items-center rounded-xl border border-[#ead6ce] bg-white font-black">
-                      5
-                    </button>
-                    <button className="grid h-10 w-10 place-items-center rounded-xl border border-[#ead6ce] bg-white">
-                      <ChevronRight size={18} />
-                    </button>
-                  </div>
                 </div>
               </>
             ) : (
@@ -1447,6 +1597,126 @@ export default function ReservationPage() {
                   Save reservation
                 </button>
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {statusBooking ? (
+          <div
+            className="fixed inset-0 z-50 grid place-items-center bg-[#2b1714]/45 px-4 py-6 backdrop-blur-sm"
+            onClick={() => setStatusBooking(null)}
+          >
+            <div
+              className="w-full max-w-[430px] overflow-hidden rounded-[28px] border border-[#ead6ce] bg-[#fff9f4] text-[#2b211f] shadow-2xl shadow-[#5f2b26]/25"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-[#eadbd6] px-5 py-4">
+                <div>
+                  <h3 className="text-[22px] font-black tracking-[-0.045em]">Change status</h3>
+                  <p className="mt-1 text-[12px] font-black uppercase tracking-[0.08em] text-[#8a746f]">{statusBooking.fullName}</p>
+                </div>
+                <button type="button" onClick={() => setStatusBooking(null)} className="grid h-10 w-10 place-items-center rounded-full border border-[#ead6ce] bg-white text-[#8f3f38] transition hover:bg-[#ffdb57]" aria-label="Close status popup">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="grid gap-3 px-5 py-5">
+                {(["Pending", "Arrived", "No Show", "Cancelled", "Late"] as Reservation["status"][]).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => {
+                      setBookingStatus(statusBooking, status);
+                      setStatusBooking(null);
+                    }}
+                    className={`flex min-h-[44px] items-center justify-between rounded-[16px] border px-4 text-[13px] font-black ${getBookingStatusClass(status)}`}
+                  >
+                    <span>{status}</span>
+                    {status === "Arrived" ? <span>{getNowTimeLabel()}</span> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {selectedBooking ? (
+          <div
+            className="fixed inset-0 z-50 grid place-items-center bg-[#2b1714]/45 px-4 py-6 backdrop-blur-sm"
+            onClick={() => setSelectedBooking(null)}
+          >
+            <div
+              className="w-full max-w-[620px] overflow-hidden rounded-[28px] border border-[#ead6ce] bg-[#fff9f4] text-[#2b211f] shadow-2xl shadow-[#5f2b26]/25"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-[#eadbd6] px-6 py-5">
+                <div>
+                  <h3 className="text-[20px] font-black tracking-[-0.045em]">Reservation details</h3>
+                </div>
+                <button type="button" onClick={() => setSelectedBooking(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#ead6ce] bg-white text-[#5a302b] transition hover:bg-[#ffdb57]" aria-label="Close reservation details">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Client name</span>
+                  <input value={selectedBooking.fullName} onChange={(event) => { updateBookingRow(selectedBooking.id, { fullName: event.target.value }); setSelectedBooking({ ...selectedBooking, fullName: event.target.value }); }} className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]" />
+                </label>
+                <label className="block rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Phone</span>
+                  <input value={selectedBooking.phone} onChange={(event) => { updateBookingRow(selectedBooking.id, { phone: event.target.value }); setSelectedBooking({ ...selectedBooking, phone: event.target.value }); }} className="mt-2 w-full rounded-[12px] border border-[#ead6ce] bg-white px-3 py-2 text-[13px] font-black outline-none focus:border-[#ffdb57]" />
+                </label>
+                <label className="block rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Guests</span>
+                  <input type="number" min="1" value={selectedBooking.guests} onChange={(event) => { const guests = Number(event.target.value) || 1; updateBookingRow(selectedBooking.id, { guests }); setSelectedBooking({ ...selectedBooking, guests }); }} className="mt-2 w-full rounded-[12px] border border-[#ead6ce] bg-white px-3 py-2 text-[13px] font-black outline-none focus:border-[#ffdb57]" />
+                </label>
+                <label className="block rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Table</span>
+                  <input value={selectedBooking.table} onChange={(event) => { updateBookingRow(selectedBooking.id, { table: event.target.value }); setSelectedBooking({ ...selectedBooking, table: event.target.value }); }} className="mt-2 w-full rounded-[12px] border border-[#ead6ce] bg-white px-3 py-2 text-[13px] font-black outline-none focus:border-[#ffdb57]" />
+                </label>
+                <div className="rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Status</p>
+                  <p className="mt-3 text-[14px] font-black">{getStatusLabel(selectedBooking)}</p>
+                </div>
+                <button type="button" onClick={() => { const stamp = getConfirmStamp(); updateBookingRow(selectedBooking.id, { confirmedAt: stamp }); setSelectedBooking({ ...selectedBooking, confirmedAt: stamp }); }} className="rounded-[18px] border border-[#ead6ce] bg-white/60 p-4 text-left transition hover:bg-[#fff8dd]">
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Confirmed</span>
+                  <span className="mt-2 block text-[13px] font-black">{selectedBooking.confirmedAt || "Press to add contact time"}</span>
+                </button>
+                <div className="rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Booking time</p>
+                  <p className="mt-3 text-[14px] font-black">{selectedBooking.time}</p>
+                </div>
+                <label className="block sm:col-span-2 rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Notes</span>
+                  <textarea rows={2} defaultValue="Prefers a table close to the screen." className="mt-2 w-full resize-none rounded-[12px] border border-[#ead6ce] bg-white px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffdb57]" />
+                </label>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+
+        {shareFallbackOpen ? (
+          <div
+            className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4 backdrop-blur-sm"
+            onClick={() => setShareFallbackOpen(false)}
+          >
+            <div
+              className="w-full max-w-[420px] rounded-[24px] border border-[#ead6ce] bg-[#fffaf5] p-6 text-[#2b211f] shadow-2xl shadow-black/20"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3 className="text-[22px] font-black tracking-[-0.04em]">
+                Excel downloaded
+              </h3>
+              <p className="mt-2 text-[14px] font-semibold leading-relaxed text-[#7a605a]">
+                Your device does not support sharing Excel files directly from the browser, so the reservation Excel file was downloaded instead.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShareFallbackOpen(false)}
+                className="mt-5 w-full rounded-[16px] bg-[#ffdb57] px-5 py-3 text-[12px] font-black uppercase tracking-[0.12em] text-[#2b211f]"
+              >
+                Done
+              </button>
             </div>
           </div>
         ) : null}
