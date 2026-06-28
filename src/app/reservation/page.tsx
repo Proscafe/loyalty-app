@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import AdminMobileHeader from "@/components/AdminMobileHeader";
 import {
   CalendarDays,
   ChevronLeft,
@@ -614,6 +614,10 @@ export default function ReservationPage() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(255,217,82,0.18),transparent_28%),radial-gradient(circle_at_85%_18%,rgba(166,93,82,0.15),transparent_26%),linear-gradient(135deg,#fff8f1_0%,#fbf2eb_46%,#f5e4dc_100%)]" />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1480px] flex-col px-4 py-3 sm:px-8 lg:px-14 lg:py-5">
+        <div className="mb-4 bg-transparent lg:mb-6">
+          <AdminMobileHeader />
+        </div>
+
         <section className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between lg:mb-5">
           <div>
             <h1 className="text-[30px] font-black leading-[0.95] tracking-[-0.055em] text-[#351614] sm:text-[36px] lg:text-[42px]">
@@ -629,7 +633,7 @@ export default function ReservationPage() {
                 onClick={() => setActiveSection("bookings")}
                 className={`rounded-[14px] px-5 py-3 text-[12px] font-black uppercase tracking-[0.1em] transition ${activeSection === "bookings" ? "bg-[#ffdb57] text-[#2b211f] shadow-md shadow-[#d6a83f]/20" : "text-[#6b5651] hover:bg-white"}`}
               >
-                Bookings
+                Reservations
               </button>
               {hasEvents ? (
                 <button
@@ -694,10 +698,21 @@ export default function ReservationPage() {
               const eventInPast = isPastDateTime(eventDateValue, event.timeLabel, todayValue);
 
               return (
-                <Link
+                <button
                   key={event.id}
-                  href={`/reservation/events/${event.id}`}
-                  className="group relative flex min-h-[134px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-[22px] border border-[#ead6ce] bg-white text-[#2b211f] shadow-lg shadow-[#9a5048]/12 transition hover:-translate-y-0.5 hover:shadow-xl"
+                  type="button"
+                  onClick={() => {
+                    if (activeSection === "events") {
+                      router.push(`/reservation/events/${event.id}`);
+                      return;
+                    }
+
+                    setSelectedEvent(event);
+                    setSelectedDate(getEventDateValue(event, selectedDate));
+                    setSelectedTime(event.timeLabel);
+                    setReservationModalOpen(true);
+                  }}
+                  className="group relative flex min-h-[134px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-[22px] border border-[#ead6ce] bg-white text-left text-[#2b211f] shadow-lg shadow-[#9a5048]/12 transition hover:-translate-y-0.5 hover:shadow-xl"
                 >
                   <div className="flex items-center gap-3 bg-[#ffdb57] px-5 py-3 text-[#2b211f]">
                     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -745,7 +760,7 @@ export default function ReservationPage() {
                       </span>
                     </span>
                   </div>
-                </Link>
+                </button>
               );
             })}
           </div>
@@ -972,7 +987,6 @@ export default function ReservationPage() {
                         <th className="px-5 py-3">Time</th>
                         <th className="px-5 py-3">Guests</th>
                         <th className="px-5 py-3">Tables</th>
-                        <th className="px-5 py-3">Entry</th>
                         <th className="px-5 py-3 text-center">Favorite</th>
                       </tr>
                     </thead>
@@ -1000,7 +1014,7 @@ export default function ReservationPage() {
                               <p className="truncate text-[14px] font-black text-[#2b211f]">
                                 {event.title}
                               </p>
-                              <p className="mt-1 truncate text-[12px] font-semibold text-[#7a605a]">
+                              <p className="mt-1 max-w-[210px] truncate text-[12px] font-semibold text-[#7a605a]">
                                 {event.subtitle}
                               </p>
                             </div>
@@ -1012,13 +1026,10 @@ export default function ReservationPage() {
                             {event.timeLabel}
                           </td>
                           <td className="px-5 py-4 text-[13px] font-black text-[#2b211f]">
-                            {event.guests}
+                            {event.guests.replace(/\s*guests/i, "")}
                           </td>
                           <td className="px-5 py-4 text-[13px] font-black text-[#2b211f]">
-                            {event.tables}
-                          </td>
-                          <td className="px-5 py-4 text-[13px] font-black text-[#2b211f]">
-                            {event.price}
+                            {event.tables.replace(/\s*tables/i, "")}
                           </td>
                           <td className="px-5 py-4 text-center">
                             <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${event.pinned ? "bg-[#ffefad] text-[#a67800]" : "bg-[#fff7f1] text-[#b79d95]"}`}>
@@ -1137,7 +1148,7 @@ export default function ReservationPage() {
               ) : (
                 <div className="flex flex-wrap items-baseline gap-4">
                   <h2 className="text-[21px] font-black tracking-[-0.05em]">
-                    Bookings
+                    Reservations
                   </h2>
                   <p className="text-[12px] font-black uppercase tracking-[0.1em] text-[#8a746f]">
                     {totalGuests} guests · {totalTables} tables
@@ -1168,17 +1179,17 @@ export default function ReservationPage() {
             {reservationView === "table" ? (
               <>
                 <div className="max-h-[460px] overflow-auto">
-                  <table className="min-w-[640px] w-full table-fixed border-collapse text-left sm:min-w-[760px]">
+                  <table className="min-w-[600px] w-full table-fixed border-collapse text-left sm:min-w-[720px]">
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-[#f5ebe5] text-[9px] font-black uppercase tracking-[0.1em] text-[#8f3f38]">
-                        <th className="w-[52px] px-1.5 py-2 sm:w-[62px] sm:px-2 sm:py-2.5">Time</th>
-                        <th className="w-[104px] px-1.5 py-2 sm:w-[126px] sm:px-2 sm:py-2.5">Full Name</th>
-                        <th className="w-[92px] px-1.5 py-2 sm:w-[112px] sm:px-2 sm:py-2.5">Phone</th>
-                        <th className="w-[54px] px-1 py-2 text-center sm:w-[68px] sm:px-2 sm:py-2.5">Guests</th>
-                        <th className="w-[86px] px-1.5 py-2 sm:w-[112px] sm:px-2 sm:py-2.5">Table</th>
-                        <th className="w-[92px] px-1.5 py-2 text-center sm:w-[112px] sm:px-2 sm:py-2.5">Confirm</th>
-                        <th className="w-[104px] px-1.5 py-2 text-center sm:w-[126px] sm:px-2 sm:py-2.5">Status</th>
-                        <th className="w-[30px] px-1 py-2 sm:w-[40px] sm:py-2.5" />
+                        <th className="w-[48px] px-1 py-2 sm:w-[58px] sm:px-2 sm:py-2.5">Time</th>
+                        <th className="w-[98px] px-1 py-2 sm:w-[118px] sm:px-2 sm:py-2.5">Full Name</th>
+                        <th className="w-[78px] px-1 py-2 sm:w-[96px] sm:px-2 sm:py-2.5">Phone</th>
+                        <th className="w-[58px] px-1 py-2 text-center sm:w-[64px] sm:px-2 sm:py-2.5">Guests</th>
+                        <th className="w-[78px] px-1 py-2 sm:w-[96px] sm:px-2 sm:py-2.5">Table</th>
+                        <th className="w-[86px] px-1 py-2 text-center sm:w-[104px] sm:px-2 sm:py-2.5">Confirm</th>
+                        <th className="w-[94px] px-1 py-2 text-center sm:w-[116px] sm:px-2 sm:py-2.5">Status</th>
+                        <th className="w-[26px] px-1 py-2 sm:w-[34px] sm:py-2.5" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#eadbd6]">
@@ -1199,7 +1210,7 @@ export default function ReservationPage() {
                               {reservation.fullName}
                             </button>
                           </td>
-                          <td className="px-1.5 py-1.5 text-[10px] font-black text-[#2b211f] sm:px-2 sm:py-2 sm:text-[12px]">
+                          <td className="px-1 py-1.5 text-[10px] font-black text-[#2b211f] sm:px-2 sm:py-2 sm:text-[12px]">
                             {reservation.phone}
                           </td>
                           <td className="px-1 py-1.5 text-center sm:px-2 sm:py-2">
@@ -1215,7 +1226,7 @@ export default function ReservationPage() {
                               className="mx-auto h-7 w-[38px] rounded-[10px] border border-[#ead6ce] bg-white px-1 text-center text-[10px] font-black text-[#2b211f] outline-none focus:border-[#ffdb57] sm:h-8 sm:w-[50px] sm:rounded-[12px] sm:px-2 sm:text-[12px]"
                             />
                           </td>
-                          <td className="px-1.5 py-1.5 sm:px-2 sm:py-2">
+                          <td className="px-1 py-1.5 sm:px-2 sm:py-2">
                             <input
                               value={reservation.table}
                               onChange={(event) =>
@@ -1371,7 +1382,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="Short event description"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1383,7 +1394,7 @@ export default function ReservationPage() {
                     type="date"
                     min={todayValue}
                     defaultValue={selectedDate}
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1394,7 +1405,7 @@ export default function ReservationPage() {
                   <input
                     type="time"
                     defaultValue={selectedTime}
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1406,7 +1417,7 @@ export default function ReservationPage() {
                     type="number"
                     min="1"
                     placeholder="40"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1417,7 +1428,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="8/20"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1450,13 +1461,13 @@ export default function ReservationPage() {
               <div className="flex items-start justify-between gap-4 border-b border-[#eadbd6] px-6 py-5">
                 <div>
                   <h3 className="text-[24px] font-black tracking-[-0.045em]">
-                    {selectedEvent ? "Event reservation" : "Reservation details"}
+                    Reservation details
                   </h3>
-                  {!selectedEvent ? (
-                    <p className="mt-1 text-[13px] font-bold text-[#8a746f]">
-                      {selectedDateLabel} · {selectedTime}
-                    </p>
-                  ) : null}
+                  <p className="mt-1 text-[13px] font-bold text-[#8a746f]">
+                    {selectedEvent
+                      ? `${selectedEvent.title} · ${selectedEvent.dateLabel} · ${selectedEvent.timeLabel}`
+                      : `${selectedDateLabel} · ${selectedTime}`}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -1475,7 +1486,7 @@ export default function ReservationPage() {
                       Event
                     </p>
                     <p className="mt-1 text-[14px] font-black text-[#2b211f]">
-                      {selectedEvent.title} · {selectedEvent.guests} · {selectedEvent.tables}
+                      {selectedEvent.title} · {selectedEvent.dateLabel} · {selectedEvent.timeLabel} · {selectedEvent.guests} · {selectedEvent.tables}
                     </p>
                   </div>
                 ) : null}
@@ -1487,7 +1498,7 @@ export default function ReservationPage() {
                   <input
                     type="tel"
                     placeholder="Phone number"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1498,7 +1509,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="Customer name"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1510,7 +1521,7 @@ export default function ReservationPage() {
                     type="number"
                     min="1"
                     placeholder="2"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1521,7 +1532,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="Indoor 12"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1537,7 +1548,7 @@ export default function ReservationPage() {
                         onChange={(event) => {
                           if (event.target.value) setSelectedDate(event.target.value);
                         }}
-                        className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                        className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                       />
                     </label>
 
@@ -1551,7 +1562,7 @@ export default function ReservationPage() {
                         onChange={(event) => {
                           if (event.target.value) setSelectedTime(event.target.value);
                         }}
-                        className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                        className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                       />
                     </label>
                   </>
@@ -1659,7 +1670,7 @@ export default function ReservationPage() {
               <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
                   <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Client name</span>
-                  <input value={selectedBooking.fullName} onChange={(event) => { updateBookingRow(selectedBooking.id, { fullName: event.target.value }); setSelectedBooking({ ...selectedBooking, fullName: event.target.value }); }} className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-[14px] font-bold outline-none transition focus:border-[#ffdb57]" />
+                  <input value={selectedBooking.fullName} onChange={(event) => { updateBookingRow(selectedBooking.id, { fullName: event.target.value }); setSelectedBooking({ ...selectedBooking, fullName: event.target.value }); }} className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]" />
                 </label>
                 <label className="block rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
                   <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Phone</span>
