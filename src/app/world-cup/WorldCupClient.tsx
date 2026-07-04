@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 
 const PAGE_BG =
@@ -98,6 +98,21 @@ export function WorldCupClient({
   const [savingTeam, setSavingTeam] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pickerStartY = useRef<number | null>(null);
+
+  const rankedLeaderboard = useMemo(
+    () =>
+      leaderboard
+        .filter((item) => item.totalPoints > 0)
+        .slice()
+        .sort((a, b) => {
+          if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+          if (a.totalPredictions !== b.totalPredictions) {
+            return a.totalPredictions - b.totalPredictions;
+          }
+          return firstNameOnly(a.name).localeCompare(firstNameOnly(b.name));
+        }),
+    [leaderboard],
+  );
 
   async function selectWinner(team: { rank: number; name: string }) {
     if (WORLD_CUP_WINNER_PICK_LOCKED || winnerPick || savingTeam) return;
@@ -243,7 +258,7 @@ export function WorldCupClient({
           </div>
 
           <div className="space-y-3">
-            {leaderboard.filter((item) => item.totalPoints > 0).map((item, index) => (
+            {rankedLeaderboard.map((item, index) => (
               <div
                 key={item.id}
                 className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${
@@ -256,7 +271,7 @@ export function WorldCupClient({
                       index < 3 ? "bg-[#ffd66b] text-[#365665]" : "bg-white/16 text-white"
                     }`}
                   >
-                    {item.rank}
+                    {index + 1}
                   </div>
 
                   <div className="min-w-0">
@@ -280,7 +295,7 @@ export function WorldCupClient({
               </div>
             ))}
 
-            {leaderboard.filter((item) => item.totalPoints > 0).length === 0 ? (
+            {rankedLeaderboard.length === 0 ? (
               <div className="rounded-2xl bg-white/10 px-4 py-5 text-center text-[13px] font-semibold text-white/60">
                 No users with points yet.
               </div>
