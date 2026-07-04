@@ -334,6 +334,7 @@ export default function EventReservationDetailsPage() {
   const [statusReservation, setStatusReservation] = useState<EventReservation | null>(null);
   const [activeGuestFilter, setActiveGuestFilter] = useState<number | null>(null);
   const [activeStatusFilter, setActiveStatusFilter] = useState<EventReservation["status"] | null>(null);
+  const [activeConfirmedFilter, setActiveConfirmedFilter] = useState(false);
   const [eventTitle, setEventTitle] = useState(event.title);
   const [eventDescription, setEventDescription] = useState(event.description);
   const [eventDate, setEventDate] = useState(event.isoDate);
@@ -351,6 +352,8 @@ export default function EventReservationDetailsPage() {
   const [quickReservationTable, setQuickReservationTable] = useState("");
   const [quickReservationNotes, setQuickReservationNotes] = useState("");
   const [shareFallbackOpen, setShareFallbackOpen] = useState(false);
+  const [shareFileUrl, setShareFileUrl] = useState("");
+  const [shareFileName, setShareFileName] = useState("");
   const reservationTableRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -376,6 +379,51 @@ export default function EventReservationDetailsPage() {
     }),
     [event, eventDate, eventDescription, eventEntry, eventFavorite, eventGuests, eventTables, eventTime, eventTitle],
   );
+
+  function getEventReservationsCsvFile() {
+    const header = [
+      "Event",
+      "Date",
+      "Time",
+      "Full Name",
+      "Phone",
+      "Guests",
+      "Table",
+      "Confirmed",
+      "Status",
+      "Notes",
+    ];
+
+    const escapeCsv = (value: string | number) => {
+      const text = String(value ?? "");
+      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const body = rows.map((reservation) =>
+      [
+        displayEvent.title,
+        displayEvent.dateLabel,
+        displayEvent.timeLabel,
+        reservation.fullName,
+        reservation.phone,
+        reservation.guests,
+        reservation.table,
+        reservation.confirmedAt || "",
+        reservation.status === "Arrived" && reservation.arrivedAt
+          ? `Arrived - ${getConfirmedTimeLabel(reservation.arrivedAt)}`
+          : reservation.status,
+        reservation.notes,
+      ]
+        .map(escapeCsv)
+        .join(","),
+    );
+
+    const csv = [header.map(escapeCsv).join(","), ...body].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    return new File([blob], `${safeFileName(displayEvent.title)}-reservations.csv`, {
+      type: "text/csv",
+    });
+  }
 
   function getEventReservationsExcelFile() {
     const printableRows = rows
@@ -436,25 +484,33 @@ export default function EventReservationDetailsPage() {
   }
 
   async function shareEvent() {
-    const file = getEventReservationsExcelFile();
+    const file = getEventReservationsCsvFile();
     const shareData: ShareData & { files?: File[] } = {
       title: displayEvent.title,
-      text: `${displayEvent.title} reservation table`,
+      text: `${displayEvent.title} reservation table CSV`,
       files: [file],
     };
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        await navigator.share(shareData);
-        return;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
+        if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+          await navigator.share(shareData);
           return;
         }
+        await navigator.share({
+          title: displayEvent.title,
+          text: `${displayEvent.title} reservation table CSV`,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
       }
     }
 
-    downloadReservationsExcel();
+    if (shareFileUrl) URL.revokeObjectURL(shareFileUrl);
+    const url = URL.createObjectURL(file);
+    setShareFileUrl(url);
+    setShareFileName(file.name);
     setShareFallbackOpen(true);
   }
 
@@ -606,12 +662,13 @@ export default function EventReservationDetailsPage() {
 
   const totals = useMemo(() => {
     const guests = rows.reduce((sum, reservation) => sum + reservation.guests, 0);
-    const tableCount = new Set(rows.map((reservation) => reservation.table)).size;
+    const tableCount = rows.length;
+    const confirmed = rows.filter((reservation) => getConfirmHistory(reservation).length > 0).length;
     const arrived = rows.filter((reservation) => reservation.status === "Arrived").length;
     const noShows = rows.filter((reservation) => reservation.status === "No Show").length;
     const pending = rows.filter((reservation) => reservation.status === "Pending").length;
     const cancelled = rows.filter((reservation) => reservation.status === "Cancelled").length;
-    return { guests, tableCount, arrived, noShows, pending, cancelled };
+    return { guests, tableCount, confirmed, arrived, noShows, pending, cancelled };
   }, [rows]);
 
   const guestSizeBreakdown = useMemo(() => {
@@ -632,9 +689,10 @@ export default function EventReservationDetailsPage() {
     return rows.filter((reservation) => {
       const guestMatch = activeGuestFilter ? reservation.guests === activeGuestFilter : true;
       const statusMatch = activeStatusFilter ? reservation.status === activeStatusFilter : true;
-      return guestMatch && statusMatch;
+      const confirmedMatch = activeConfirmedFilter ? getConfirmHistory(reservation).length > 0 : true;
+      return guestMatch && statusMatch && confirmedMatch;
     });
-  }, [activeGuestFilter, activeStatusFilter, rows]);
+  }, [activeConfirmedFilter, activeGuestFilter, activeStatusFilter, rows]);
 
   const alphabetLetters = useMemo(() => {
     return Array.from(new Set(visibleRows.map((reservation) => reservation.fullName.charAt(0).toUpperCase()))).sort();
@@ -740,7 +798,7 @@ export default function EventReservationDetailsPage() {
           </div>
         </section>
 
-        <section className="mb-5 grid grid-cols-6 gap-1.5 overflow-x-auto pb-1 sm:gap-2 sm:overflow-visible">
+        <section className="mb-5 grid grid-cols-7 gap-1.5 overflow-x-auto pb-1 sm:gap-2 sm:overflow-visible">
           <article className="min-w-[92px] rounded-[14px] border border-[#ead6ce] bg-white/88 p-2.5 shadow-md shadow-[#9a5048]/10 sm:min-w-0 sm:p-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[8px] font-black uppercase tracking-[0.08em] text-[#8f3f38] sm:text-[9px]">Tables</p>
@@ -761,6 +819,23 @@ export default function EventReservationDetailsPage() {
             type="button"
             onClick={() => {
               setActiveGuestFilter(null);
+              setActiveStatusFilter(null);
+              setActiveConfirmedFilter((current) => !current);
+            }}
+            className={`min-w-[92px] rounded-[14px] border p-2.5 text-left shadow-md shadow-[#9a5048]/10 transition hover:-translate-y-0.5 sm:min-w-0 sm:p-3 ${activeConfirmedFilter ? "border-[#ffdb57] bg-[#ffdb57]" : "border-[#ead6ce] bg-white/88"}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[8px] font-black uppercase tracking-[0.08em] text-[#8f3f38] sm:text-[9px]">Confirmed</p>
+              <UserRound size={14} className="text-[#8f3f38]" />
+            </div>
+            <p className="mt-1.5 text-[22px] font-black tracking-[-0.06em] text-[#2b211f] sm:text-[24px]">{totals.confirmed}</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveGuestFilter(null);
+              setActiveConfirmedFilter(false);
               setActiveStatusFilter((current) => (current === "Arrived" ? null : "Arrived"));
             }}
             className={`min-w-[92px] rounded-[14px] border p-2.5 text-left shadow-md shadow-[#9a5048]/10 transition hover:-translate-y-0.5 sm:min-w-0 sm:p-3 ${activeStatusFilter === "Arrived" ? "border-[#ffdb57] bg-[#ffdb57]" : "border-[#ead6ce] bg-white/88"}`}
@@ -776,6 +851,7 @@ export default function EventReservationDetailsPage() {
             type="button"
             onClick={() => {
               setActiveGuestFilter(null);
+              setActiveConfirmedFilter(false);
               setActiveStatusFilter((current) => (current === "Pending" ? null : "Pending"));
             }}
             className={`min-w-[92px] rounded-[14px] border p-2.5 text-left shadow-md shadow-[#9a5048]/10 transition hover:-translate-y-0.5 sm:min-w-0 sm:p-3 ${activeStatusFilter === "Pending" ? "border-[#ffdb57] bg-[#ffdb57]" : "border-[#ead6ce] bg-white/88"}`}
@@ -791,6 +867,7 @@ export default function EventReservationDetailsPage() {
             type="button"
             onClick={() => {
               setActiveGuestFilter(null);
+              setActiveConfirmedFilter(false);
               setActiveStatusFilter((current) => (current === "No Show" ? null : "No Show"));
             }}
             className={`min-w-[92px] rounded-[14px] border p-2.5 text-left shadow-md shadow-[#9a5048]/10 transition hover:-translate-y-0.5 sm:min-w-0 sm:p-3 ${activeStatusFilter === "No Show" ? "border-[#ffdb57] bg-[#ffdb57]" : "border-[#ead6ce] bg-white/88"}`}
@@ -806,6 +883,7 @@ export default function EventReservationDetailsPage() {
             type="button"
             onClick={() => {
               setActiveGuestFilter(null);
+              setActiveConfirmedFilter(false);
               setActiveStatusFilter((current) => (current === "Cancelled" ? null : "Cancelled"));
             }}
             className={`min-w-[92px] rounded-[14px] border p-2.5 text-left shadow-md shadow-[#9a5048]/10 transition hover:-translate-y-0.5 sm:min-w-0 sm:p-3 ${activeStatusFilter === "Cancelled" ? "border-[#ffdb57] bg-[#ffdb57]" : "border-[#ead6ce] bg-white/88"}`}
@@ -829,6 +907,7 @@ export default function EventReservationDetailsPage() {
                     type="button"
                     onClick={() => {
                       setActiveStatusFilter(null);
+                      setActiveConfirmedFilter(false);
                       setActiveGuestFilter((current) =>
                         current === item.guestCount ? null : item.guestCount,
                       );
@@ -857,7 +936,7 @@ export default function EventReservationDetailsPage() {
                   key={letter}
                   type="button"
                   onClick={() => scrollToLetter(letter)}
-                  className="grid h-7 w-7 place-items-center rounded-full border border-[#ead6ce] bg-white text-[11px] font-black text-[#5a302b] transition hover:bg-[#ffdb57]"
+                  className="grid h-[34px] w-[34px] place-items-center rounded-full border border-[#ead6ce] bg-white text-[13px] font-black text-[#5a302b] transition hover:bg-[#ffdb57]"
                 >
                   {letter}
                 </button>
@@ -1397,7 +1476,7 @@ export default function EventReservationDetailsPage() {
               <div>
                 <h3 className="text-[20px] font-black tracking-[-0.04em]">Share event</h3>
                 <p className="mt-2 text-[13px] font-bold text-[#7a605a]">
-                  Sharing is not available on this browser, so the event link was copied.
+                  Native file sharing is not available on this browser. You can download the CSV and share it manually.
                 </p>
               </div>
               <button
@@ -1409,6 +1488,16 @@ export default function EventReservationDetailsPage() {
                 <X size={17} />
               </button>
             </div>
+
+            {shareFileUrl ? (
+              <a
+                href={shareFileUrl}
+                download={shareFileName}
+                className="mt-5 inline-flex w-full items-center justify-center rounded-[16px] bg-[#ffdb57] px-5 py-3 text-[12px] font-black uppercase tracking-[0.1em] text-[#2b211f] shadow-lg shadow-[#d6a83f]/20"
+              >
+                Download CSV
+              </a>
+            ) : null}
           </section>
         </div>
       ) : null}

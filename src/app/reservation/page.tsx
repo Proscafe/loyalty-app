@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Download,
   Share2,
   Star,
   Table2,
@@ -42,6 +41,7 @@ type Reservation = {
   table: string;
   status: "Confirmed" | "Arrived" | "Late" | "No Show" | "Pending" | "Cancelled";
   confirmedAt?: string;
+  arrivedAt?: string;
 };
 
 const upcomingEvents: EventItem[] = [
@@ -339,6 +339,36 @@ function safeFileName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "reservations";
 }
 
+
+function csvCell(value: string | number | undefined) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function buildReservationsCsvBlob(rows: Reservation[]) {
+  const header = ["Time", "Full Name", "Phone", "Guests", "Table", "Confirmed", "Status"];
+  const lines = [
+    header.map(csvCell).join(","),
+    ...rows.map((reservation) =>
+      [
+        reservation.time,
+        reservation.fullName,
+        reservation.phone,
+        reservation.guests,
+        reservation.table,
+        reservation.confirmedAt || "",
+        reservation.status,
+      ]
+        .map(csvCell)
+        .join(","),
+    ),
+  ];
+
+  return new Blob([`\ufeff${lines.join("\n")}`], {
+    type: "text/csv;charset=utf-8;",
+  });
+}
+
 function buildReservationsExcelBlob(title: string, subtitle: string, rows: Reservation[]) {
   const tableRows = rows
     .map(
@@ -473,13 +503,15 @@ export default function ReservationPage() {
   }
 
   function getStatusLabel(reservation: Reservation) {
-    if (reservation.status === "Arrived") return `Arrived - ${reservation.confirmedAt?.split(" - ")[1] || getNowTimeLabel()}`;
+    if (reservation.status === "Arrived") return `Arrived - ${reservation.arrivedAt || getNowTimeLabel()}`;
     return reservation.status;
   }
 
   function setBookingStatus(reservation: Reservation, status: Reservation["status"]) {
     const updates: Partial<Reservation> = { status };
-    if (status === "Arrived") updates.confirmedAt = getConfirmStamp();
+    if (status === "Arrived") {
+      updates.arrivedAt = getNowTimeLabel();
+    }
     updateBookingRow(reservation.id, updates);
     setStatusBooking((current) => (current?.id === reservation.id ? { ...reservation, ...updates } : current));
     setSelectedBooking((current) => (current?.id === reservation.id ? { ...reservation, ...updates } : current));
@@ -548,7 +580,7 @@ export default function ReservationPage() {
     return bookingRows;
   }
 
-  function getSelectedDateExportFile() {
+  function getSelectedDateExcelFile() {
     const label = selectedDateLabel.replace(/\s+/g, " ");
     const blob = buildReservationsExcelBlob(
       `Reservations - ${label}`,
@@ -560,8 +592,16 @@ export default function ReservationPage() {
     });
   }
 
+  function getSelectedDateCsvFile() {
+    const label = selectedDateLabel.replace(/\s+/g, " ");
+    const blob = buildReservationsCsvBlob(getSelectedDateRows());
+    return new File([blob], `${safeFileName(`reservations-${label}`)}.csv`, {
+      type: "text/csv",
+    });
+  }
+
   function downloadSelectedDateExcel() {
-    const file = getSelectedDateExportFile();
+    const file = getSelectedDateExcelFile();
     const url = URL.createObjectURL(file);
     const link = document.createElement("a");
     link.href = url;
@@ -572,18 +612,33 @@ export default function ReservationPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function shareSelectedDateExcel() {
-    const file = getSelectedDateExportFile();
+  function downloadSelectedDateCsv() {
+    const file = getSelectedDateCsvFile();
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  async function shareSelectedDateCsv() {
+    const file = getSelectedDateCsvFile();
     const shareData: ShareData & { files?: File[] } = {
       title: `Reservations - ${selectedDateLabel}`,
-      text: `Reservation table for ${selectedDateLabel}`,
+      text: `Reservation CSV for ${selectedDateLabel}`,
       files: [file],
     };
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        await navigator.share(shareData);
-        return;
+        const canShareFiles = !navigator.canShare || navigator.canShare({ files: [file] });
+        if (canShareFiles) {
+          await navigator.share(shareData);
+          return;
+        }
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -591,7 +646,10 @@ export default function ReservationPage() {
       }
     }
 
-    downloadSelectedDateExcel();
+    downloadSelectedDateCsv();
+  }
+
+  function openSharePopup() {
     setShareFallbackOpen(true);
   }
 
@@ -650,19 +708,11 @@ export default function ReservationPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={shareSelectedDateExcel}
+              onClick={openSharePopup}
               className="grid h-12 w-12 place-items-center rounded-[16px] border border-[#ead6ce] bg-white/80 text-[#5a302b] shadow-sm transition hover:bg-[#ffdb57]"
               aria-label="Share reservations"
             >
               <Share2 size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={downloadSelectedDateExcel}
-              className="grid h-12 w-12 place-items-center rounded-[16px] border border-[#ead6ce] bg-white/80 text-[#5a302b] shadow-sm transition hover:bg-[#ffdb57]"
-              aria-label="Download reservations"
-            >
-              <Download size={18} />
             </button>
             <button
               type="button"
@@ -879,21 +929,20 @@ export default function ReservationPage() {
               ref={timeRef}
               className="hide-scrollbar flex flex-1 gap-4 overflow-x-auto scroll-smooth py-1"
             >
-              {times.map((time) => {
+              {times
+                .filter((time) => !isPastDateTime(selectedDate, time.value, todayValue))
+                .map((time) => {
                 const active = time.value === selectedTime;
-                const disabledTime = isPastDateTime(selectedDate, time.value, todayValue);
                 return (
                   <button
                     key={time.value}
                     type="button"
-                    disabled={disabledTime}
                     onClick={() => {
-                      if (disabledTime) return;
                       setSelectedEvent(null);
                       setSelectedTime(time.value);
                       setReservationModalOpen(true);
                     }}
-                    className={`min-w-[92px] rounded-[16px] border px-4 py-3 text-[14px] font-black transition ${disabledTime ? "cursor-not-allowed border-[#ead6ce] bg-[#f0e5df]/70 text-[#b5a4a0] opacity-55" : active ? "border-[#ffdb57] bg-[#ffdb57] text-[#2b211f] shadow-lg shadow-[#e6bc40]/25" : "border-[#ead6ce] bg-white/75 text-[#2b211f] hover:border-[#ffdb57] hover:bg-[#fff8dd]"}`}
+                    className={`min-w-[92px] rounded-[16px] border px-4 py-3 text-[14px] font-black transition ${active ? "border-[#ffdb57] bg-[#ffdb57] text-[#2b211f] shadow-lg shadow-[#e6bc40]/25" : "border-[#ead6ce] bg-white/75 text-[#2b211f] hover:border-[#ffdb57] hover:bg-[#fff8dd]"}`}
                   >
                     {time.label}
                   </button>
@@ -1240,11 +1289,12 @@ export default function ReservationPage() {
                           <td className="px-1 py-1.5 text-center sm:px-2 sm:py-2">
                             <button
                               type="button"
-                              onClick={() =>
+                              onClick={(event) => {
+                                event.stopPropagation();
                                 updateBookingRow(reservation.id, {
                                   confirmedAt: getConfirmStamp(),
-                                })
-                              }
+                                });
+                              }}
                               className="inline-flex h-7 min-w-[70px] items-center justify-center rounded-full border border-[#ead6ce] bg-white px-2 text-[9px] font-black text-[#2b211f] transition hover:bg-[#fff8dd] sm:h-8 sm:min-w-[90px] sm:px-4 sm:text-[11px]"
                             >
                               {reservation.confirmedAt ?? "Confirm"}
@@ -1253,10 +1303,13 @@ export default function ReservationPage() {
                           <td className="px-1 py-1.5 text-center sm:px-2 sm:py-2">
                             <button
                               type="button"
-                              onClick={() => {
+                              onClick={(event) => {
+                                event.stopPropagation();
                                 if (reservation.status === "Pending") {
                                   setBookingStatus(reservation, "Arrived");
+                                  return;
                                 }
+                                setStatusBooking(reservation);
                               }}
                               className={`inline-flex h-7 min-w-[82px] items-center justify-center rounded-full border px-2 text-[9px] font-black sm:h-8 sm:min-w-[100px] sm:px-4 sm:text-[11px] ${getBookingStatusClass(reservation.status)}`}
                             >
@@ -1335,8 +1388,14 @@ export default function ReservationPage() {
         ) : null}
 
         {eventCreationModalOpen ? (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-[#2b1714]/45 px-4 py-6 backdrop-blur-sm">
-            <div className="w-full max-w-[700px] overflow-hidden rounded-[28px] border border-[#ead6ce] bg-[#fff9f4] text-[#2b211f] shadow-2xl shadow-[#5f2b26]/25">
+          <div
+            className="fixed inset-0 z-50 grid place-items-center bg-[#2b1714]/45 px-4 py-6 backdrop-blur-sm"
+            onClick={() => setEventCreationModalOpen(false)}
+          >
+            <div
+              className="w-full max-w-[700px] overflow-hidden rounded-[28px] border border-[#ead6ce] bg-[#fff9f4] text-[#2b211f] shadow-2xl shadow-[#5f2b26]/25"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="flex items-start justify-between gap-4 border-b border-[#eadbd6] px-6 py-5">
                 <div>
                   <h3 className="text-[24px] font-black tracking-[-0.045em]">
@@ -1456,8 +1515,14 @@ export default function ReservationPage() {
         ) : null}
 
         {reservationModalOpen ? (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-[#2b1714]/45 px-4 py-6 backdrop-blur-sm">
-            <div className="w-full max-w-[620px] overflow-hidden rounded-[28px] border border-[#ead6ce] bg-[#fff9f4] text-[#2b211f] shadow-2xl shadow-[#5f2b26]/25">
+          <div
+            className="fixed inset-0 z-50 grid place-items-center bg-[#2b1714]/45 px-4 py-6 backdrop-blur-sm"
+            onClick={() => setReservationModalOpen(false)}
+          >
+            <div
+              className="w-full max-w-[620px] overflow-hidden rounded-[28px] border border-[#ead6ce] bg-[#fff9f4] text-[#2b211f] shadow-2xl shadow-[#5f2b26]/25"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="flex items-start justify-between gap-4 border-b border-[#eadbd6] px-6 py-5">
                 <div>
                   <h3 className="text-[24px] font-black tracking-[-0.045em]">
@@ -1642,7 +1707,7 @@ export default function ReservationPage() {
                     className={`flex min-h-[44px] items-center justify-between rounded-[16px] border px-4 text-[13px] font-black ${getBookingStatusClass(status)}`}
                   >
                     <span>{status}</span>
-                    {status === "Arrived" ? <span>{getNowTimeLabel()}</span> : null}
+                    {status === "Arrived" ? <span>{statusBooking.arrivedAt || getNowTimeLabel()}</span> : null}
                   </button>
                 ))}
               </div>
@@ -1716,18 +1781,23 @@ export default function ReservationPage() {
               onClick={(event) => event.stopPropagation()}
             >
               <h3 className="text-[22px] font-black tracking-[-0.04em]">
-                Excel downloaded
+                Share reservations
               </h3>
               <p className="mt-2 text-[14px] font-semibold leading-relaxed text-[#7a605a]">
-                Your device does not support sharing Excel files directly from the browser, so the reservation Excel file was downloaded instead.
+                Share the selected date reservations as a CSV file.
               </p>
-              <button
-                type="button"
-                onClick={() => setShareFallbackOpen(false)}
-                className="mt-5 w-full rounded-[16px] bg-[#ffdb57] px-5 py-3 text-[12px] font-black uppercase tracking-[0.12em] text-[#2b211f]"
-              >
-                Done
-              </button>
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await shareSelectedDateCsv();
+                    setShareFallbackOpen(false);
+                  }}
+                  className="w-full rounded-[16px] bg-[#ffdb57] px-5 py-3 text-[12px] font-black uppercase tracking-[0.12em] text-[#2b211f]"
+                >
+                  Share CSV
+                </button>
+              </div>
             </div>
           </div>
         ) : null}
