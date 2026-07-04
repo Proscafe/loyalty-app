@@ -1,178 +1,124 @@
 "use client";
 
-import type { FormEvent } from "react";
-import { useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { FormEvent, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
-  return new Promise((resolve) => {
-    const timer = window.setTimeout(() => resolve(null), timeoutMs);
-
-    promise
-      .then((value) => {
-        window.clearTimeout(timer);
-        resolve(value);
-      })
-      .catch(() => {
-        window.clearTimeout(timer);
-        resolve(null);
-      });
-  });
-}
-
-function safeNextPath(value: string | null) {
-  if (!value) return null;
-  if (!value.startsWith("/")) return null;
-  if (value.startsWith("//")) return null;
-
-  return value;
+function getSafeRedirectPath(path: string | null) {
+  if (!path) return "/dashboard";
+  if (!path.startsWith("/") || path.startsWith("//")) return "/dashboard";
+  if (path.startsWith("/login")) return "/dashboard";
+  return path;
 }
 
 export function LoginForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
+  const redirectTo = getSafeRedirectPath(searchParams.get("redirectTo"));
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [statusText, setStatusText] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (loading) return;
-
-    setError(null);
-    setStatusText("Signing in...");
     setLoading(true);
+    setError("");
+    setMessage("");
 
-    try {
-      const supabase = createClient();
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
 
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+    setLoading(false);
 
-      if (signInError) {
-        setError(signInError.message);
-        setStatusText(null);
-        setLoading(false);
-        return;
-      }
-
-      const userId = data.user?.id;
-
-      if (!userId) {
-        window.location.replace("/dashboard");
-        return;
-      }
-
-      setStatusText("Opening...");
-
-      const profileResult = await withTimeout(
-        (async () =>
-          await supabase
-            .from("profiles")
-            .select("role, is_active")
-            .eq("id", userId)
-            .maybeSingle())(),
-        900,
-      );
-
-      const profile = profileResult?.data as
-        | { role?: string | null; is_active?: boolean | null }
-        | null
-        | undefined;
-
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut({ scope: "local" });
-        setError("This account has been deactivated. Please contact Pro's Café staff.");
-        setStatusText(null);
-        setLoading(false);
-        return;
-      }
-
-      const role = profile?.role ?? "client";
-      const nextPath = safeNextPath(searchParams.get("next"));
-      const roleTarget =
-        role === "master_admin" || role === "admin"
-          ? "/admin"
-          : role === "staff"
-            ? "/staff"
-            : "/dashboard";
-
-      window.location.replace(nextPath ?? roleTarget);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not sign in.");
-      setStatusText(null);
-      setLoading(false);
+    if (signInError) {
+      setError("Wrong email or password.");
+      return;
     }
+
+    window.location.assign(redirectTo);
+  }
+
+  async function handleResetPassword() {
+    setError("");
+    setMessage("");
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setError("Enter your email first, then press Forgot password.");
+      return;
+    }
+
+    setResetLoading(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setResetLoading(false);
+
+    if (resetError) {
+      setError(resetError.message);
+      return;
+    }
+
+    setMessage("Password reset link sent to your email.");
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <label className="label" htmlFor="email">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          className="input h-12 bg-white/95"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="you@example.com"
-        />
-      </div>
+    <form onSubmit={handleLogin} className="space-y-3">
+      <input
+        type="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        placeholder="Email"
+        autoComplete="email"
+        className="w-full rounded-2xl border border-white/50 bg-white/80 px-4 py-3 text-[14px] font-bold text-[#18212b] outline-none placeholder:text-[#6b7280] focus:border-[#d35d58]"
+        required
+      />
 
-      <div>
-        <label className="label" htmlFor="password">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          className="input h-12 bg-white/95"
-          required
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="••••••••"
-        />
-      </div>
+      <input
+        type="password"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        placeholder="Password"
+        autoComplete="current-password"
+        className="w-full rounded-2xl border border-white/50 bg-white/80 px-4 py-3 text-[14px] font-bold text-[#18212b] outline-none placeholder:text-[#6b7280] focus:border-[#d35d58]"
+        required
+      />
 
-      {error ? (
-        <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700">
-          {error}
-        </div>
-      ) : null}
-
-      {statusText ? (
-        <div className="rounded-xl border border-[#ffd66b]/50 bg-[#ffd66b]/20 px-4 py-3 text-center text-sm font-extrabold text-[#365665]">
-          {statusText}
-        </div>
-      ) : null}
+      {error ? <p className="text-center text-[12px] font-bold text-[#b42318]">{error}</p> : null}
+      {message ? <p className="text-center text-[12px] font-bold text-[#235d2f]">{message}</p> : null}
 
       <button
         type="submit"
-        className="mt-2 inline-flex h-12 w-full items-center justify-center rounded-xl bg-brand-500 px-4 text-sm font-extrabold uppercase tracking-[0.08em] text-white shadow-brand transition hover:bg-brand-600 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-60"
         disabled={loading}
+        className="w-full rounded-[10px] bg-[#d45d58] px-4 py-3.5 text-[13px] font-black uppercase tracking-[0.08em] text-white shadow-lg shadow-black/10 transition hover:bg-[#c6524d] disabled:opacity-60"
       >
-        {loading ? "Please wait..." : "Sign in"}
+        {loading ? "Signing in..." : "Sign in"}
       </button>
 
-      <div className="pt-2 text-center text-sm font-medium text-black">
-        New here?{" "}
-        <Link href="/register" className="font-extrabold text-brand-600 underline-offset-4 hover:underline">
+      <div className="pt-2 text-center text-[13px] font-medium text-[#18212b]">
+        <span>New here? </span>
+        <a href="/signup" className="font-black text-[#c85b58] hover:underline">
           Create an account
-        </Link>
+        </a>
       </div>
+
+      {error ? (
+        <button
+          type="button"
+          onClick={handleResetPassword}
+          disabled={resetLoading}
+          className="mx-auto block text-center text-[13px] font-black text-[#2563eb] hover:underline disabled:opacity-60"
+        >
+          {resetLoading ? "Sending reset link..." : "Forgot Password?"}
+        </button>
+      ) : null}
     </form>
   );
 }
-
-export default LoginForm;

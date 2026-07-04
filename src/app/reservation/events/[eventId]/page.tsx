@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   ArrowLeft,
   ChevronRight,
@@ -17,6 +18,66 @@ import {
   Users,
   X,
 } from "lucide-react";
+
+const RESERVATION_ALLOWED_ROLES = new Set(["admin", "staff", "master_admin", "master-admin", "master admin"]);
+
+function normalizeReservationRole(value?: string | null) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+}
+
+function isReservationAllowedRole(value?: string | null) {
+  const role = normalizeReservationRole(value);
+  return (
+    RESERVATION_ALLOWED_ROLES.has(role) ||
+    role.includes("admin") ||
+    role.includes("staff")
+  );
+}
+
+async function getReservationAccessRole(supabase: ReturnType<typeof createClient>) {
+  const { data: userResult } = await supabase.auth.getUser();
+  const user = userResult.user;
+
+  if (!user) return { allowed: false, reason: "no-user" as const };
+
+  let role = normalizeReservationRole(user.app_metadata?.role ?? user.user_metadata?.role);
+
+  try {
+    const { data: profileById } = await supabase
+      .from("profiles")
+      .select("role,user_role,type")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    role = normalizeReservationRole(profileById?.role ?? profileById?.user_role ?? profileById?.type ?? role);
+  } catch {
+    // Keep metadata role fallback when the profiles table is unavailable.
+  }
+
+  if (!role) {
+    try {
+      const { data: profileByUserId } = await supabase
+        .from("profiles")
+        .select("role,user_role,type")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      role = normalizeReservationRole(profileByUserId?.role ?? profileByUserId?.user_role ?? profileByUserId?.type ?? role);
+    } catch {
+      // Some projects use id instead of user_id. Keep the current fallback.
+    }
+  }
+
+  // If the user is authenticated but the client cannot read a role because of RLS
+  // or a different profile schema, allow the page to load instead of creating a
+  // login <-> reservation redirect loop. Explicit non-staff roles are still blocked.
+  if (!role) return { allowed: true, reason: "role" as const };
+
+  return { allowed: isReservationAllowedRole(role), reason: "role" as const };
+}
 
 type EventItem = {
   id: string;
@@ -317,6 +378,8 @@ function safeFileName(value: string) {
 
 export default function EventReservationDetailsPage() {
   const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [accessStatus, setAccessStatus] = useState<"checking" | "allowed">("checking");
   const params = useParams<{ eventId: string }>();
   const eventId = Array.isArray(params.eventId) ? params.eventId[0] : params.eventId;
   const event = events.find((item) => item.id === eventId) ?? events[0];
@@ -356,6 +419,33 @@ export default function EventReservationDetailsPage() {
   const [shareFileName, setShareFileName] = useState("");
   const reservationTableRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkAccess() {
+      const currentPath = `${window.location.pathname}${window.location.search}`;
+      const access = await getReservationAccessRole(supabase);
+
+      if (!access.allowed) {
+        if (access.reason === "no-user") {
+          router.replace(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
+          return;
+        }
+
+        router.replace("/login?unauthorized=1");
+        return;
+      }
+
+      if (mounted) setAccessStatus("allowed");
+    }
+
+    checkAccess();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router, supabase]);
 
   const displayEvent = useMemo(
     () => ({
@@ -699,6 +789,12 @@ export default function EventReservationDetailsPage() {
   }, [visibleRows]);
 
   const firstLetterTracker = new Set<string>();
+
+  if (accessStatus !== "allowed") {
+    return (
+      <main className="min-h-screen bg-[#fbf5ef]" />
+    );
+  }
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#fbf5ef] text-[#22110f]">

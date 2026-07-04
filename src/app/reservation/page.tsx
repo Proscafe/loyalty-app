@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import AdminMobileHeader from "@/components/AdminMobileHeader";
 import {
   CalendarDays,
@@ -15,6 +16,66 @@ import {
   Users,
   X,
 } from "lucide-react";
+
+const RESERVATION_ALLOWED_ROLES = new Set(["admin", "staff", "master_admin", "master-admin", "master admin"]);
+
+function normalizeReservationRole(value?: string | null) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+}
+
+function isReservationAllowedRole(value?: string | null) {
+  const role = normalizeReservationRole(value);
+  return (
+    RESERVATION_ALLOWED_ROLES.has(role) ||
+    role.includes("admin") ||
+    role.includes("staff")
+  );
+}
+
+async function getReservationAccessRole(supabase: ReturnType<typeof createClient>) {
+  const { data: userResult } = await supabase.auth.getUser();
+  const user = userResult.user;
+
+  if (!user) return { allowed: false, reason: "no-user" as const };
+
+  let role = normalizeReservationRole(user.app_metadata?.role ?? user.user_metadata?.role);
+
+  try {
+    const { data: profileById } = await supabase
+      .from("profiles")
+      .select("role,user_role,type")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    role = normalizeReservationRole(profileById?.role ?? profileById?.user_role ?? profileById?.type ?? role);
+  } catch {
+    // Keep metadata role fallback when the profiles table is unavailable.
+  }
+
+  if (!role) {
+    try {
+      const { data: profileByUserId } = await supabase
+        .from("profiles")
+        .select("role,user_role,type")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      role = normalizeReservationRole(profileByUserId?.role ?? profileByUserId?.user_role ?? profileByUserId?.type ?? role);
+    } catch {
+      // Some projects use id instead of user_id. Keep the current fallback.
+    }
+  }
+
+  // If the user is authenticated but the client cannot read a role because of RLS
+  // or a different profile schema, allow the page to load instead of creating a
+  // login <-> reservation redirect loop. Explicit non-staff roles are still blocked.
+  if (!role) return { allowed: true, reason: "role" as const };
+
+  return { allowed: isReservationAllowedRole(role), reason: "role" as const };
+}
 
 type EventItem = {
   id: string;
@@ -424,6 +485,8 @@ function buildReservationsExcelBlob(title: string, subtitle: string, rows: Reser
 
 export default function ReservationPage() {
   const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [accessStatus, setAccessStatus] = useState<"checking" | "allowed">("checking");
   const dates = useMemo(() => buildDateRange(), []);
   const times = useMemo(() => buildTimes(), []);
   const todayValue = getTodayDateValue();
@@ -447,6 +510,33 @@ export default function ReservationPage() {
   const dateRef = useRef<HTMLDivElement | null>(null);
   const timeRef = useRef<HTMLDivElement | null>(null);
   const dateInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkAccess() {
+      const currentPath = `${window.location.pathname}${window.location.search}`;
+      const access = await getReservationAccessRole(supabase);
+
+      if (!access.allowed) {
+        if (access.reason === "no-user") {
+          router.replace(`/login?redirectTo=${encodeURIComponent(currentPath || "/reservation")}`);
+          return;
+        }
+
+        router.replace("/dashboard?unauthorized=1");
+        return;
+      }
+
+      if (mounted) setAccessStatus("allowed");
+    }
+
+    checkAccess();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router, supabase]);
 
   useEffect(() => {
     const selectedDateButton =
@@ -655,6 +745,10 @@ export default function ReservationPage() {
 
   function openEventDetails(event: EventItem) {
     router.push(`/reservation/events/${event.id}`);
+  }
+
+  if (accessStatus !== "allowed") {
+    return <main className="min-h-screen bg-[#fbf5ef]" />;
   }
 
   return (
