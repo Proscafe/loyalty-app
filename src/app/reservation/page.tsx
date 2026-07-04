@@ -667,6 +667,17 @@ export default function ReservationPage() {
         .hide-scrollbar::-webkit-scrollbar {
           display: none;
         }
+        input[type="date"],
+        input[type="time"] {
+          text-align: left;
+          -webkit-appearance: none;
+          appearance: none;
+        }
+        input[type="date"]::-webkit-date-and-time-value,
+        input[type="time"]::-webkit-date-and-time-value {
+          text-align: left;
+          min-width: 100%;
+        }
       `}</style>
 
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(255,217,82,0.18),transparent_28%),radial-gradient(circle_at_85%_18%,rgba(166,93,82,0.15),transparent_26%),linear-gradient(135deg,#fff8f1_0%,#fbf2eb_46%,#f5e4dc_100%)]" />
@@ -678,14 +689,14 @@ export default function ReservationPage() {
 
         <section className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between lg:mb-5">
           <div>
-            <h1 className="text-[30px] font-black leading-[0.95] tracking-[-0.055em] text-[#351614] sm:text-[36px] lg:text-[42px]">
+            <h1 className="hidden text-[30px] font-black leading-[0.95] tracking-[-0.055em] text-[#351614] sm:block sm:text-[36px] lg:text-[42px]">
               Reservation
             </h1>
-            <p className="mt-2 max-w-[560px] text-[14px] font-medium leading-relaxed text-[#6b5651] sm:text-[15px]">
+            <p className="mt-2 hidden max-w-[560px] text-[14px] font-medium leading-relaxed text-[#6b5651] sm:block sm:text-[15px]">
               Manage reservations, events, and table bookings.
             </p>
 
-            <div className="mt-4 inline-flex rounded-[18px] border border-[#ead6ce] bg-white/70 p-1 shadow-sm">
+            <div className="mt-0 inline-flex rounded-[18px] border border-[#ead6ce] bg-white/70 p-1 shadow-sm sm:mt-4">
               <button
                 type="button"
                 onClick={() => setActiveSection("bookings")}
@@ -833,32 +844,24 @@ export default function ReservationPage() {
               <span className="rounded-2xl border border-[#e6cec5] bg-[#fff7f1] px-4 py-2.5 text-[12px] font-black uppercase tracking-[0.08em] text-[#5a302b]">
                 {selectedDateLabel}
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (dateInputRef.current?.showPicker) {
-                    dateInputRef.current.showPicker();
-                    return;
-                  }
-                  dateInputRef.current?.click();
-                }}
-                className="grid h-11 w-11 place-items-center rounded-[15px] border border-[#e6cec5] bg-white/85 text-[#5a302b] shadow-sm transition hover:bg-[#ffdb57]"
+              <label
+                className="relative grid h-11 w-11 cursor-pointer place-items-center overflow-hidden rounded-[15px] border border-[#e6cec5] bg-white/85 text-[#5a302b] shadow-sm transition hover:bg-[#ffdb57]"
                 aria-label="Choose date from calendar"
               >
-                <CalendarDays size={18} />
-              </button>
-              <input
-                ref={dateInputRef}
-                type="date"
-                value={selectedDate}
-                min={todayValue}
-                onChange={(event) => {
-                  if (!event.target.value || event.target.value < todayValue) return;
-                  setSelectedDate(event.target.value);
-                }}
-                className="sr-only"
-                aria-label="Reservation date"
-              />
+                <CalendarDays size={18} className="pointer-events-none" />
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  value={selectedDate}
+                  min={todayValue}
+                  onChange={(event) => {
+                    if (!event.target.value || event.target.value < todayValue) return;
+                    setSelectedDate(event.target.value);
+                  }}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  aria-label="Reservation date"
+                />
+              </label>
             </div>
           </div>
 
@@ -1441,7 +1444,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="Short event description"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1453,7 +1456,7 @@ export default function ReservationPage() {
                     type="date"
                     min={todayValue}
                     defaultValue={selectedDate}
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1464,7 +1467,7 @@ export default function ReservationPage() {
                   <input
                     type="time"
                     defaultValue={selectedTime}
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1476,7 +1479,7 @@ export default function ReservationPage() {
                     type="number"
                     min="1"
                     placeholder="40"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1487,7 +1490,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="8/20"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1563,7 +1566,7 @@ export default function ReservationPage() {
                   <input
                     type="tel"
                     placeholder="Phone number"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1574,7 +1577,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="Customer name"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1586,7 +1589,7 @@ export default function ReservationPage() {
                     type="number"
                     min="1"
                     placeholder="2"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1597,7 +1600,7 @@ export default function ReservationPage() {
                   <input
                     type="text"
                     placeholder="Indoor 12"
-                    className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                    className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                   />
                 </label>
 
@@ -1613,7 +1616,7 @@ export default function ReservationPage() {
                         onChange={(event) => {
                           if (event.target.value) setSelectedDate(event.target.value);
                         }}
-                        className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                        className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                       />
                     </label>
 
@@ -1627,7 +1630,7 @@ export default function ReservationPage() {
                         onChange={(event) => {
                           if (event.target.value) setSelectedTime(event.target.value);
                         }}
-                        className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
+                        className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]"
                       />
                     </label>
                   </>
@@ -1735,7 +1738,7 @@ export default function ReservationPage() {
               <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
                   <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Client name</span>
-                  <input value={selectedBooking.fullName} onChange={(event) => { updateBookingRow(selectedBooking.id, { fullName: event.target.value }); setSelectedBooking({ ...selectedBooking, fullName: event.target.value }); }} className="mt-2 w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]" />
+                  <input value={selectedBooking.fullName} onChange={(event) => { updateBookingRow(selectedBooking.id, { fullName: event.target.value }); setSelectedBooking({ ...selectedBooking, fullName: event.target.value }); }} className="mt-2 min-h-[46px] w-full rounded-[16px] border border-[#ead6ce] bg-white px-4 py-3 text-left text-[14px] font-bold outline-none transition focus:border-[#ffdb57]" />
                 </label>
                 <label className="block rounded-[18px] border border-[#ead6ce] bg-white/60 p-4">
                   <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">Phone</span>

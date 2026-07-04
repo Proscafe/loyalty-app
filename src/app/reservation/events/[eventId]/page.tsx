@@ -936,7 +936,7 @@ export default function EventReservationDetailsPage() {
                   key={letter}
                   type="button"
                   onClick={() => scrollToLetter(letter)}
-                  className="grid h-[34px] w-[34px] place-items-center rounded-full border border-[#ead6ce] bg-white text-[13px] font-black text-[#5a302b] transition hover:bg-[#ffdb57]"
+                  className="grid h-[41px] w-[41px] place-items-center rounded-full border border-[#ead6ce] bg-white text-[15px] font-black text-[#5a302b] transition hover:bg-[#ffdb57] sm:h-[34px] sm:w-[34px] sm:text-[13px]"
                 >
                   {letter}
                 </button>
@@ -1185,6 +1185,18 @@ export default function EventReservationDetailsPage() {
               <div className="rounded-[18px] border border-[#ead6ce] bg-white/75 p-4 sm:col-span-2">
                 <p className="text-[8px] font-black uppercase tracking-[0.08em] text-[#8f3f38] sm:text-[9px]">Notes</p>
                 <p className="mt-2 text-[15px] font-bold text-[#5a302b]">{selectedReservation.notes}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 pt-1 sm:col-span-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#8f3f38]">
+                  History
+                </span>
+                <span className="text-[13px] font-black text-[#2b211f]">
+                  15 bookings
+                </span>
+                <span className="rounded-full bg-[#ffe1df] px-3 py-1.5 text-[12px] font-black text-[#9a4038]">
+                  3 No Show
+                </span>
               </div>
             </div>
           </section>
