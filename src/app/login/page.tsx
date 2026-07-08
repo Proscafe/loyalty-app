@@ -6,38 +6,12 @@ import { getCurrentProfile } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-type LoginSearchParams = Promise<{
-  redirectTo?: string;
-  unauthorized?: string;
-}>;
-
-function getSafeRedirectPath(path?: string) {
-  if (!path) return null;
-  if (!path.startsWith("/")) return null;
-  if (path.startsWith("//")) return null;
-  if (path.startsWith("/login")) return null;
-  return path;
-}
-
-function isReservationRole(role?: string | null) {
-  const value = String(role ?? "").trim().toLowerCase().replace(/[_\s]+/g, "-");
-  return value === "master-admin" || value === "admin" || value === "staff" || value.includes("admin") || value.includes("staff");
-}
-
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams?: LoginSearchParams;
-}) {
+export default async function LoginPage() {
   const profile = await getCurrentProfile();
-  const params = searchParams ? await searchParams : undefined;
-  const redirectTo = getSafeRedirectPath(params?.redirectTo);
 
   if (profile) {
-    if (redirectTo) {
-      redirect(redirectTo);
-    }
-
+    if (profile.role === "master_admin") redirect("/admin");
+    if (profile.role === "staff") redirect("/staff");
     redirect("/dashboard");
   }
 

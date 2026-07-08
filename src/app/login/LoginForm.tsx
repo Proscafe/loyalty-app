@@ -5,9 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 function getSafeRedirectPath(path: string | null) {
-  if (!path) return "/dashboard";
-  if (!path.startsWith("/") || path.startsWith("//")) return "/dashboard";
-  if (path.startsWith("/login")) return "/dashboard";
+  if (!path) return "/reservation";
+  if (!path.startsWith("/") || path.startsWith("//")) return "/reservation";
   return path;
 }
 
@@ -42,7 +41,8 @@ export function LoginForm() {
       return;
     }
 
-    window.location.assign(redirectTo);
+    router.replace(redirectTo);
+    router.refresh();
   }
 
   async function handleResetPassword() {
@@ -104,7 +104,7 @@ export function LoginForm() {
 
       <div className="pt-2 text-center text-[13px] font-medium text-[#18212b]">
         <span>New here? </span>
-        <a href="/signup" className="font-black text-[#c85b58] hover:underline">
+        <a href="https://www.proscafe.net/register" className="font-black text-[#c85b58] hover:underline">
           Create an account
         </a>
       </div>
