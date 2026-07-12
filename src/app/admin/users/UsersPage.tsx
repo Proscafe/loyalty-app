@@ -429,6 +429,15 @@ function DesktopClientProfilePanel({
 
   const age = getAgeFromBirthday(getBirthdayValue(user));
 
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem("proscafe_open_gift_popup") === "1") {
+        window.sessionStorage.removeItem("proscafe_open_gift_popup");
+        setGiftPopupOpen(true);
+      }
+    } catch {}
+  }, []);
+
   const stampByCategory = useMemo(() => {
     const map = new Map<string, number>();
 
@@ -512,9 +521,12 @@ function DesktopClientProfilePanel({
       typeof record.category_id === "string" ? record.category_id : "";
     const actionType = String(record.action_type ?? "");
 
-    if (actionType.includes("remove")) return 0;
+    const price = priceByCategoryId.get(categoryId) ?? 0;
 
-    return priceByCategoryId.get(categoryId) ?? 0;
+    if (actionType.includes("remove")) return -price;
+    if (!actionType.includes("add")) return 0;
+
+    return price;
   };
 
   const giftValueFor = (reward: Reward) => {
@@ -538,6 +550,7 @@ function DesktopClientProfilePanel({
     () =>
       new Set(
         filteredActivities
+          .filter((txn) => String((txn as any).action_type ?? "").includes("add_stamp"))
           .map((txn) => desktopVisitDayKey(txn.created_at))
           .filter(Boolean),
       ).size,
@@ -545,12 +558,12 @@ function DesktopClientProfilePanel({
   );
 
   const value = useMemo(
-    () => filteredActivities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
+    () => Math.max(0, filteredActivities.reduce((sum, txn) => sum + stampValueFor(txn), 0)),
     [filteredActivities, priceByCategoryId],
   );
 
   const lifetime = useMemo(
-    () => activities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
+    () => Math.max(0, activities.reduce((sum, txn) => sum + stampValueFor(txn), 0)),
     [activities, priceByCategoryId],
   );
 
@@ -564,6 +577,7 @@ function DesktopClientProfilePanel({
     const byDay = new Map<string, string>();
 
     activities.forEach((txn) => {
+      if (!String((txn as any).action_type ?? "").includes("add_stamp")) return;
       if (!isWithinDesktopTimeRange(txn.created_at, profileTimeRange)) return;
 
       const key = desktopVisitDayKey(txn.created_at);
@@ -621,10 +635,6 @@ function DesktopClientProfilePanel({
             </div>
             {user.client_code ? (
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white">
-                  {user.client_code}
-                </div>
-
                 {user.role === "client" ? (
                   <button
                     type="button"
@@ -1101,6 +1111,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [selectedStamps, setSelectedStamps] = useState<AdminClientStamp[]>([]);
   const [selectedRewards, setSelectedRewards] = useState<Reward[]>([]);
   const [selectedLoading, setSelectedLoading] = useState(false);
+  const [giftTargetUser, setGiftTargetUser] = useState<AdminUser | null>(null);
+  const [directGiftCategoryId, setDirectGiftCategoryId] = useState("");
+  const [directGiftNote, setDirectGiftNote] = useState("");
+  const [directGiftSending, setDirectGiftSending] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -1284,9 +1298,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
           }
           const existing = lastVisitByUser.get(txn.client_id);
           if (!existing || txn.created_at > existing) lastVisitByUser.set(txn.client_id, txn.created_at);
+          const price = priceByCategory.get(txn.category_id ?? "") ?? 0;
+          const currentLifetime = lifetimeByUser.get(txn.client_id) ?? 0;
           if (txn.action_type === "add_stamp") {
-            const price = priceByCategory.get(txn.category_id ?? "") ?? 0;
-            lifetimeByUser.set(txn.client_id, (lifetimeByUser.get(txn.client_id) ?? 0) + price);
+            lifetimeByUser.set(txn.client_id, currentLifetime + price);
+          } else if (String(txn.action_type ?? "").includes("remove_stamp")) {
+            lifetimeByUser.set(txn.client_id, Math.max(0, currentLifetime - price));
           }
         });
 
@@ -1429,7 +1446,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   // ── User profile ─────────────────────────────────────────────────────────────
 
-  async function openUserProfile(user: AdminUser) {
+  async function openUserProfile(user: AdminUser, openGift = false) {
+    if (openGift) {
+      try {
+        window.sessionStorage.setItem("proscafe_open_gift_popup", "1");
+      } catch {}
+    }
     router.push(`/admin/users/${user.id}`);
   }
 
@@ -1527,15 +1549,147 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   async function removeStampFromSelectedClient(categoryId: string) {
     if (!selectedUser) return;
-    const currentRow = selectedStamps.find(s => s.category_id === categoryId);
+
+    const currentRow = selectedStamps.find((stamp) => stamp.category_id === categoryId);
     const currentCount = Math.max(0, currentRow?.stamp_count ?? 0);
-    if (!currentRow || currentCount <= 0) { flash("No stamp to remove.", "error"); return; }
+    if (!currentRow || currentCount <= 0) {
+      flash("No stamp to remove.", "error");
+      return;
+    }
+
     setSelectedLoading(true);
     const nextCount = Math.max(0, currentCount - 1);
-    const { error } = await supabase.from("client_stamps").update({ stamp_count: nextCount, updated_at: new Date().toISOString() }).eq("client_id", selectedUser.id).eq("category_id", categoryId);
-    if (error) { flash(error.message, "error"); setSelectedLoading(false); return; }
+
+    // Remove the latest matching add-stamp transaction from the database.
+    // This makes Lifetime $ and visit calculations decrease after reload.
+    const { data: latestTransactions, error: lookupError } = await supabase
+      .from("stamp_transactions")
+      .select("id")
+      .eq("client_id", selectedUser.id)
+      .eq("category_id", categoryId)
+      .eq("action_type", "add_stamp")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (lookupError) {
+      flash(lookupError.message, "error");
+      setSelectedLoading(false);
+      return;
+    }
+
+    const transactionId = latestTransactions?.[0]?.id;
+    if (!transactionId) {
+      flash("No matching stamp transaction was found.", "error");
+      setSelectedLoading(false);
+      return;
+    }
+
+    const { error: stampError } = await supabase
+      .from("client_stamps")
+      .update({ stamp_count: nextCount, updated_at: new Date().toISOString() })
+      .eq("client_id", selectedUser.id)
+      .eq("category_id", categoryId);
+
+    if (stampError) {
+      flash(stampError.message, "error");
+      setSelectedLoading(false);
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("stamp_transactions")
+      .delete()
+      .eq("id", transactionId);
+
+    if (deleteError) {
+      await supabase
+        .from("client_stamps")
+        .update({ stamp_count: currentCount, updated_at: new Date().toISOString() })
+        .eq("client_id", selectedUser.id)
+        .eq("category_id", categoryId);
+      flash(deleteError.message, "error");
+      setSelectedLoading(false);
+      return;
+    }
+
+    const categoryPrice = parseMoneyValue(
+      selectedCategories.find((category) => category.id === categoryId)?.average_price,
+    );
+
+    setSelectedStamps((current) =>
+      current.map((stamp) =>
+        stamp.category_id === categoryId ? { ...stamp, stamp_count: nextCount } : stamp,
+      ),
+    );
+    setActivityTxns((current) => current.filter((txn) => txn.id !== transactionId));
+    setUsers((current) =>
+      current.map((user) =>
+        user.id === selectedUser.id
+          ? { ...user, lifetimeValue: Math.max(0, (user.lifetimeValue ?? 0) - categoryPrice) }
+          : user,
+      ),
+    );
+    setSelectedUser((current) =>
+      current
+        ? { ...current, lifetimeValue: Math.max(0, (current.lifetimeValue ?? 0) - categoryPrice) }
+        : current,
+    );
+
+    setSelectedLoading(false);
     flash("Stamp removed.");
-    await openUserProfile(selectedUser);
+  }
+
+  useEffect(() => {
+    if (!directGiftCategoryId && categories.length > 0) {
+      setDirectGiftCategoryId(categories[0].id);
+    }
+  }, [categories, directGiftCategoryId]);
+
+  async function sendGiftFromTable() {
+    if (!giftTargetUser) return;
+
+    const category = categories.find((item) => item.id === directGiftCategoryId) ?? categories[0];
+    if (!category?.id) {
+      flash("No loyalty category found for this gift.", "error");
+      return;
+    }
+
+    setDirectGiftSending(true);
+    const categoryName = category.name === "Desserts 2" ? "Hooka" : category.name;
+    const rewardType = directGiftNote.trim()
+      ? `Sent Gift - Free ${categoryName} - ${directGiftNote.trim()}`
+      : `Sent Gift - Free ${categoryName}`;
+
+    const { error } = await supabase.from("rewards").insert({
+      client_id: giftTargetUser.id,
+      category_id: category.id,
+      reward_type: rewardType,
+      status: "available",
+      earned_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    setDirectGiftSending(false);
+
+    if (error) {
+      flash(error.message, "error");
+      return;
+    }
+
+    setRewardRows((current) => [
+      ...current,
+      { client_id: giftTargetUser.id, category_id: category.id, reward_type: rewardType, status: "available", earned_at: new Date().toISOString() },
+    ]);
+    setUsers((current) =>
+      current.map((user) =>
+        user.id === giftTargetUser.id
+          ? { ...user, giftsCount: (user.giftsCount ?? 0) + 1 }
+          : user,
+      ),
+    );
+    setGiftTargetUser(null);
+    setDirectGiftNote("");
+    flash("Gift sent.");
   }
 
   async function sendGiftToSelectedClient(gift: string, description: string) {
@@ -2055,7 +2209,6 @@ export function UsersPage({ adminId }: { adminId: string }) {
                     >
                       <div className="min-w-0">
                         <div className="truncate font-black text-white">{row.user.full_name || "Client"}</div>
-                        <div className="truncate text-[9px] font-black uppercase tracking-[0.12em] text-[#ffd66b]">{row.user.client_code || row.user.phone || "No ID"}</div>
                       </div>
                       <div className="text-[10px] leading-tight text-white/72">{desktopFormatDateOnly(row.lastVisit)}</div>
                       <div className="font-black text-white">{row.totalVisits}</div>
@@ -2105,7 +2258,6 @@ export function UsersPage({ adminId }: { adminId: string }) {
                     <div key={row.user.id} className="grid gap-4 px-4 py-3 text-[12px] font-bold text-white/78 transition hover:bg-white/10" style={{ gridTemplateColumns: CUSTOMER_TABLE_GRID, width: "100%" }}>
                       <button type="button" onClick={() => void openUserProfile(row.user)} className="min-w-0 text-left">
                         <div className="truncate font-black text-white">{row.user.full_name || "Client"}</div>
-                        <div className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-[#ffd66b]">{row.user.client_code || "No ID"}</div>
                       </button>
                       <div className="min-w-0"><div className="truncate">{row.user.phone || "—"}</div></div>
                       <div>{desktopFormatDateOnly(row.lastVisit)}</div>
@@ -2116,7 +2268,19 @@ export function UsersPage({ adminId }: { adminId: string }) {
                       <div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoClass(row.daysSinceLastVisit)}`}>{daysAgoStatusLabel(row.daysSinceLastVisit)}</span></div>
                       <div className="flex flex-wrap items-center gap-1.5">
                         {row.user.role === "client" && !row.user.isGameOnly ? (
-                          <button type="button" onClick={() => void openUserProfile(row.user)} className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]">Gift</button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setDirectGiftCategoryId(categories[0]?.id ?? "");
+                              setDirectGiftNote("");
+                              setGiftTargetUser(row.user);
+                            }}
+                            className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
+                          >
+                            Gift
+                          </button>
                         ) : <span className="text-white/36">—</span>}
                         {whatsappUrl ? (
                           <a href={whatsappUrl} target="_blank" rel="noreferrer" className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white">WA</a>
@@ -2159,6 +2323,71 @@ export function UsersPage({ adminId }: { adminId: string }) {
         )}
         </section>
       </div>
+      {giftTargetUser ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 px-4 py-6 backdrop-blur-md"
+          onMouseDown={() => setGiftTargetUser(null)}
+          onTouchStart={() => setGiftTargetUser(null)}
+        >
+          <div
+            className="w-full max-w-[480px] rounded-[30px] bg-[#111b1d] p-5 text-white shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:p-6"
+            onMouseDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+          >
+            <div className="mb-6">
+              <h3 className="text-[24px] font-black tracking-[-0.04em]">Send Gift</h3>
+              <p className="mt-1 text-[13px] font-bold text-white/65">
+                Send a gift to {giftTargetUser.full_name || "this client"}.
+              </p>
+            </div>
+
+            <label className="mb-5 block">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/75">Gift</span>
+              <select
+                value={directGiftCategoryId}
+                onChange={(event) => setDirectGiftCategoryId(event.target.value)}
+                className="h-12 w-full rounded-[16px] border-0 bg-white px-4 text-[13px] font-black text-[#365665] outline-none"
+              >
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    Free {category.name === "Desserts 2" ? "Hooka" : category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mb-6 block">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/75">Note</span>
+              <textarea
+                value={directGiftNote}
+                onChange={(event) => setDirectGiftNote(event.target.value)}
+                rows={4}
+                placeholder="Optional note..."
+                className="w-full resize-none rounded-[16px] border-0 bg-white px-4 py-3 text-[13px] font-semibold text-[#365665] outline-none placeholder:text-[#365665]/45"
+              />
+            </label>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setGiftTargetUser(null)}
+                className="rounded-full bg-white/10 px-5 py-3 text-[12px] font-black text-white transition hover:bg-white/16"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void sendGiftFromTable()}
+                disabled={directGiftSending || !directGiftCategoryId}
+                className="rounded-full bg-[#ffd66b] px-6 py-3 text-[12px] font-black text-[#365665] transition hover:bg-[#f0cf61] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {directGiftSending ? "Sending..." : "Send Gift"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <AdminMobileFloatingMenu active="users" />
     </main>
   );

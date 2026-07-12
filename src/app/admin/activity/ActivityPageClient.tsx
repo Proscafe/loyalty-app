@@ -15,8 +15,7 @@ type ProfileRow = {
 type CategoryRow = { id: string; name?: string | null };
 type Filter = "today" | "week" | "month";
 
-const PAGE_BG =
-  "radial-gradient(circle at top left, rgba(255,214,107,0.24), transparent 28%), linear-gradient(135deg, #365665 0%, #263f49 48%, #798673 100%)";
+const PAGE_BG = "#0F2A2D";
 const GLASS_PANEL = "rgba(255,255,255,0.10)";
 
 const FILTERS: { key: Filter; label: string }[] = [
