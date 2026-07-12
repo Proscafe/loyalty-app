@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 function getSafeRedirectPath(path: string | null) {
-  if (!path) return "/reservation";
-  if (!path.startsWith("/") || path.startsWith("//")) return "/reservation";
+  if (!path) return null;
+  if (!path.startsWith("/") || path.startsWith("//")) return null;
+  if (path.startsWith("/login")) return null;
   return path;
 }
 
@@ -41,7 +42,41 @@ export function LoginForm() {
       return;
     }
 
-    router.replace(redirectTo);
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      setError("Unable to load your account.");
+      return;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError) {
+      setError("Unable to load your account role.");
+      return;
+    }
+
+    if (redirectTo) {
+      router.replace(redirectTo);
+    } else {
+      const role = String(profile?.role ?? "").trim().toLowerCase();
+
+      if (role === "master_admin" || role === "admin") {
+        router.replace("/admin");
+      } else if (role === "staff") {
+        router.replace("/staff");
+      } else {
+        router.replace("/dashboard");
+      }
+    }
+
     router.refresh();
   }
 
