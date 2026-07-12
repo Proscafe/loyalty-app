@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Toast } from "@/components/Toast";
 import { AdminMobileHeader } from "@/components/AdminMobileHeader";
+import { AdminSidebar } from "@/components/AdminSidebar";
 import { createClient } from "@/lib/supabase/client";
 import * as AdminMobileFloatingMenuModule from "@/components/AdminMobileFloatingMenu";
 import type { Profile } from "@/types";
@@ -309,7 +310,6 @@ export function GamesPage({
   initialMatches?: InitialMatchRow[];
   profile?: Profile;
 }) {
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tone, setTone] = useState<"success" | "error">("success");
   const [isMobileDateFilterOpen, setIsMobileDateFilterOpen] = useState(false);
@@ -1273,161 +1273,7 @@ export function GamesPage({
 
       <div className="flex min-h-screen w-full justify-center gap-0 overflow-visible bg-transparent p-0 sm:p-4 lg:justify-start lg:gap-6 lg:p-6 lg:min-h-screen">
         {/* Sidebar */}
-        <aside
-          className={`hidden min-h-[calc(100vh-48px)] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.24)] backdrop-blur-2xl transition-all duration-300 lg:flex ${isDesktopSidebarOpen ? "w-[238px]" : "w-[76px]"}`}
-        >
-          <div
-            className={`flex h-20 items-center bg-white/5 ${isDesktopSidebarOpen ? "justify-between gap-3 px-5" : "justify-center px-3"}`}
-          >
-            {isDesktopSidebarOpen ? (
-              <div className="min-w-0">
-                <div className="text-[19px] font-black leading-none text-white">
-                  Dashboard
-                </div>
-                <div className="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-[#ffd66b]">
-                  PRO&apos;s Admin
-                </div>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setIsDesktopSidebarOpen((c) => !c)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[20px] font-black text-[#365665] shadow-[0_12px_28px_rgba(255,214,107,0.2)] transition hover:scale-105"
-              title={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
-              aria-label={isDesktopSidebarOpen ? "Collapse menu" : "Open menu"}
-            >
-              {isDesktopSidebarOpen ? "←" : "☰"}
-            </button>
-          </div>
-          <nav className="flex-1 px-3 py-4">
-            <Link
-              href="/admin"
-              title="Dashboard"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                ⌂
-              </span>
-              {isDesktopSidebarOpen ? "Dashboard" : null}
-            </Link>
-            <Link
-              href="/admin/activity"
-              title="Activity"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                ↯
-              </span>
-              {isDesktopSidebarOpen ? "Activity" : null}
-            </Link>
-            <Link
-              href="/admin/news"
-              title="News"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                📣
-              </span>
-              {isDesktopSidebarOpen ? "News" : null}
-            </Link>
-            <Link
-              href="/admin/users"
-              title="Customer behavior"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                👤
-              </span>
-              {isDesktopSidebarOpen ? "Customer behavior" : null}
-            </Link>
-            <Link
-              href="/admin/comment-cards"
-              title="Comment Cards"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                ✎
-              </span>
-              {isDesktopSidebarOpen ? "Comment Cards" : null}
-            </Link>
-            <Link
-              href="/admin/birthdays"
-              title="Birthdays"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                🎂
-              </span>
-              {isDesktopSidebarOpen ? "Birthdays" : null}
-            </Link>
-            <Link
-              href="/admin/gifts"
-              title="Gifts"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                🎁
-              </span>
-              {isDesktopSidebarOpen ? "Gifts" : null}
-            </Link>
-            <Link
-              href="/admin/loyalty"
-              title="Loyalty Program"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black text-white/70 transition hover:bg-white/12 hover:text-white ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 text-[15px] text-white/72`}
-              >
-                ★
-              </span>
-              {isDesktopSidebarOpen ? "Loyalty Program" : null}
-            </Link>
-            <Link
-              href="/admin/games"
-              title="Games"
-              className={`mb-2 flex h-12 w-full items-center rounded-[18px] text-left text-[13px] font-black transition bg-white/18 text-white shadow-[0_16px_34px_rgba(35,54,47,0.18)] ${isDesktopSidebarOpen ? "justify-start px-4" : "justify-center px-0"}`}
-            >
-              <span
-                className={`${isDesktopSidebarOpen ? "mr-3" : "mr-0"} flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#ffd66b] text-[15px] text-[#365665]`}
-              >
-                🎮
-              </span>
-              {isDesktopSidebarOpen ? "Games" : null}
-            </Link>
-          </nav>
-          <div className="border-t border-white/8 px-3 py-5">
-            {isDesktopSidebarOpen ? (
-              <div className="space-y-3 text-left">
-                <a
-                  href="https://wissamdesigns.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block text-[11px] font-black uppercase leading-5 text-[#ffd66b] transition hover:text-white"
-                >
-                  © WISSAMDESIGNS.COM
-                </a>
-              </div>
-            ) : (
-              <div className="text-center text-[14px] font-black text-[#ffd66b]">
-                ©
-              </div>
-            )}
-          </div>
-        </aside>
+        <AdminSidebar active="games" />
 
         {/* Content */}
         <section className="min-h-screen w-full max-w-[376px] min-w-0 overflow-hidden bg-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl sm:max-w-none sm:rounded-[30px] lg:min-h-[calc(100vh-48px)]">

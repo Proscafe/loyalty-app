@@ -81,9 +81,20 @@ export async function POST(request: Request) {
     }
 
     const current = currentRows?.[0] ?? null;
-    const currentCount = Math.max(0, Math.min(5, Number(current?.stamp_count ?? 0)));
+    const currentCount = Math.max(
+      0,
+      Math.min(5, Number(current?.stamp_count ?? 0)),
+    );
+
+    if (direction < 0 && currentCount <= 0) {
+      return NextResponse.json(
+        { ok: false, error: "This customer has no stamp to remove." },
+        { status: 409 },
+      );
+    }
+
     const nextCount = Math.max(0, Math.min(5, currentCount + direction));
-    const completed = direction > 0 && (nextCount >= 5 || currentCount >= 5);
+    const completed = direction > 0 && nextCount >= 5;
     const stampCountToSave = completed ? 0 : nextCount;
 
     if (!completed) {
@@ -109,25 +120,59 @@ export async function POST(request: Request) {
         }
       }
 
-      await supabase.from("stamp_transactions").insert({
-        client_id: clientId,
-        profile_id: clientId,
-        category_id: categoryId,
-        category: categoryName,
-        action: direction > 0 ? "add_stamp" : "remove_stamp",
-        action_type: direction > 0 ? "add_stamp" : "remove_stamp",
-        amount: 1,
-        stamp_count: 1,
-        stamp_count_before: currentCount,
-        stamp_count_after: nextCount,
-        staff_id: staffId,
-        created_at: now,
-      });
+      const actionType = direction > 0 ? "add_stamp" : "remove_stamp";
+
+      const { data: transaction, error: transactionError } = await supabase
+        .from("stamp_transactions")
+        .insert({
+          client_id: clientId,
+          profile_id: clientId,
+          category_id: categoryId,
+          category: categoryName,
+          action: actionType,
+          action_type: actionType,
+          amount: direction,
+          stamp_count: direction,
+          stamp_count_before: currentCount,
+          stamp_count_after: nextCount,
+          staff_id: staffId,
+          created_at: now,
+        })
+        .select("*")
+        .single();
+
+      if (transactionError) {
+        // Restore the old stamp count if the audit transaction fails.
+        if (current?.id) {
+          await supabase
+            .from("client_stamps")
+            .update({
+              stamp_count: currentCount,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", current.id);
+        } else {
+          await supabase
+            .from("client_stamps")
+            .delete()
+            .eq("client_id", clientId)
+            .eq("category_id", categoryId);
+        }
+
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Stamp update was rolled back: ${transactionError.message}`,
+          },
+          { status: 500 },
+        );
+      }
 
       return NextResponse.json({
         ok: true,
         completed: false,
         stamp_count: stampCountToSave,
+        transaction,
       });
     }
 

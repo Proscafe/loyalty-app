@@ -1399,23 +1399,35 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
         txns.forEach((txn: any) => {
           if (!txn.client_id) return;
-          // Visit day key (Beirut +3)
-          const d = new Date(txn.created_at);
-          if (!Number.isNaN(d.getTime())) {
-            const beirut = new Date(d.getTime() + 3 * 60 * 60 * 1000);
-            const key = `${beirut.getUTCFullYear()}-${String(beirut.getUTCMonth() + 1).padStart(2, "0")}-${String(beirut.getUTCDate()).padStart(2, "0")}`;
-            if (!visitDaysByUser.has(txn.client_id))
-              visitDaysByUser.set(txn.client_id, new Set());
-            visitDaysByUser.get(txn.client_id)!.add(key);
+
+          const actionType = String(txn.action_type ?? "").toLowerCase();
+          const isAddedStamp = actionType === "add_stamp";
+
+          // Only a real added stamp counts as a visit and updates Last Visit.
+          // Manual removals stay in the audit history without creating activity.
+          if (isAddedStamp) {
+            const d = new Date(txn.created_at);
+            if (!Number.isNaN(d.getTime())) {
+              const beirut = new Date(d.getTime() + 3 * 60 * 60 * 1000);
+              const key = `${beirut.getUTCFullYear()}-${String(beirut.getUTCMonth() + 1).padStart(2, "0")}-${String(beirut.getUTCDate()).padStart(2, "0")}`;
+              if (!visitDaysByUser.has(txn.client_id)) {
+                visitDaysByUser.set(txn.client_id, new Set());
+              }
+              visitDaysByUser.get(txn.client_id)!.add(key);
+            }
+
+            const existing = lastVisitByUser.get(txn.client_id);
+            if (!existing || txn.created_at > existing) {
+              lastVisitByUser.set(txn.client_id, txn.created_at);
+            }
           }
-          const existing = lastVisitByUser.get(txn.client_id);
-          if (!existing || txn.created_at > existing)
-            lastVisitByUser.set(txn.client_id, txn.created_at);
+
           const price = priceByCategory.get(txn.category_id ?? "") ?? 0;
           const currentLifetime = lifetimeByUser.get(txn.client_id) ?? 0;
-          if (txn.action_type === "add_stamp") {
+
+          if (actionType === "add_stamp") {
             lifetimeByUser.set(txn.client_id, currentLifetime + price);
-          } else if (String(txn.action_type ?? "").includes("remove_stamp")) {
+          } else if (actionType === "remove_stamp") {
             lifetimeByUser.set(
               txn.client_id,
               Math.max(0, currentLifetime - price),
@@ -1822,111 +1834,92 @@ export function UsersPage({ adminId }: { adminId: string }) {
       (stamp) => stamp.category_id === categoryId,
     );
     const currentCount = Math.max(0, currentRow?.stamp_count ?? 0);
+
     if (!currentRow || currentCount <= 0) {
       flash("No stamp to remove.", "error");
       return;
     }
 
     setSelectedLoading(true);
-    const nextCount = Math.max(0, currentCount - 1);
 
-    // Remove the latest matching add-stamp transaction from the database.
-    // This makes Lifetime $ and visit calculations decrease after reload.
-    const { data: latestTransactions, error: lookupError } = await supabase
-      .from("stamp_transactions")
-      .select("id")
-      .eq("client_id", selectedUser.id)
-      .eq("category_id", categoryId)
-      .eq("action_type", "add_stamp")
-      .order("created_at", { ascending: false })
-      .limit(1);
+    try {
+      const response = await fetch("/api/admin/stamps/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: selectedUser.id,
+          category_id: categoryId,
+        }),
+      });
 
-    if (lookupError) {
-      flash(lookupError.message, "error");
-      setSelectedLoading(false);
-      return;
-    }
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        stamp_count?: number;
+        transaction?: StampTransaction;
+      };
 
-    const transactionId = latestTransactions?.[0]?.id;
-    if (!transactionId) {
-      flash("No matching stamp transaction was found.", "error");
-      setSelectedLoading(false);
-      return;
-    }
+      if (!response.ok) {
+        flash(result.error ?? "Could not remove stamp.", "error");
+        return;
+      }
 
-    const { error: stampError } = await supabase
-      .from("client_stamps")
-      .update({ stamp_count: nextCount, updated_at: new Date().toISOString() })
-      .eq("client_id", selectedUser.id)
-      .eq("category_id", categoryId);
+      const nextCount = Math.max(0, Number(result.stamp_count ?? currentCount - 1));
+      const categoryPrice = parseMoneyValue(
+        selectedCategories.find((category) => category.id === categoryId)
+          ?.average_price,
+      );
 
-    if (stampError) {
-      flash(stampError.message, "error");
-      setSelectedLoading(false);
-      return;
-    }
+      setSelectedStamps((current) =>
+        current.map((stamp) =>
+          stamp.category_id === categoryId
+            ? {
+                ...stamp,
+                stamp_count: nextCount,
+                updated_at: new Date().toISOString(),
+              }
+            : stamp,
+        ),
+      );
 
-    const { error: deleteError } = await supabase
-      .from("stamp_transactions")
-      .delete()
-      .eq("id", transactionId);
+      if (result.transaction) {
+        setActivityTxns((current) => [result.transaction!, ...current]);
+      }
 
-    if (deleteError) {
-      await supabase
-        .from("client_stamps")
-        .update({
-          stamp_count: currentCount,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("client_id", selectedUser.id)
-        .eq("category_id", categoryId);
-      flash(deleteError.message, "error");
-      setSelectedLoading(false);
-      return;
-    }
+      setUsers((current) =>
+        current.map((user) =>
+          user.id === selectedUser.id
+            ? {
+                ...user,
+                lifetimeValue: Math.max(
+                  0,
+                  (user.lifetimeValue ?? 0) - categoryPrice,
+                ),
+              }
+            : user,
+        ),
+      );
 
-    const categoryPrice = parseMoneyValue(
-      selectedCategories.find((category) => category.id === categoryId)
-        ?.average_price,
-    );
-
-    setSelectedStamps((current) =>
-      current.map((stamp) =>
-        stamp.category_id === categoryId
-          ? { ...stamp, stamp_count: nextCount }
-          : stamp,
-      ),
-    );
-    setActivityTxns((current) =>
-      current.filter((txn) => txn.id !== transactionId),
-    );
-    setUsers((current) =>
-      current.map((user) =>
-        user.id === selectedUser.id
+      setSelectedUser((current) =>
+        current
           ? {
-              ...user,
+              ...current,
               lifetimeValue: Math.max(
                 0,
-                (user.lifetimeValue ?? 0) - categoryPrice,
+                (current.lifetimeValue ?? 0) - categoryPrice,
               ),
             }
-          : user,
-      ),
-    );
-    setSelectedUser((current) =>
-      current
-        ? {
-            ...current,
-            lifetimeValue: Math.max(
-              0,
-              (current.lifetimeValue ?? 0) - categoryPrice,
-            ),
-          }
-        : current,
-    );
+          : current,
+      );
 
-    setSelectedLoading(false);
-    flash("Stamp removed.");
+      flash("Stamp removed and recorded.");
+    } catch (error) {
+      flash(
+        error instanceof Error ? error.message : "Could not remove stamp.",
+        "error",
+      );
+    } finally {
+      setSelectedLoading(false);
+    }
   }
 
   useEffect(() => {

@@ -328,9 +328,17 @@ export default function ClientProfilePage({
 
   const visitRows = useMemo(() => {
     const byDay = new Map<string, string>();
+
     visibleTransactions.forEach((txn) => {
+      const action = String(txn.action_type ?? "").toLowerCase();
+
+      // Only a real earned stamp counts as a visit.
+      // Manual removals stay in the audit trail but do not create visits.
+      if (action !== "add_stamp") return;
+
       const key = dayKey(txn.created_at);
       if (!key || !txn.created_at) return;
+
       const existing = byDay.get(key);
       if (
         !existing ||
@@ -339,20 +347,27 @@ export default function ClientProfilePage({
         byDay.set(key, txn.created_at);
       }
     });
+
     return Array.from(byDay.entries())
       .map(([day, date]) => ({ day, date }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [visibleTransactions]);
 
   const lifetimeSpend = useMemo(() => {
-    return visibleTransactions.reduce((sum, txn) => {
+    const netValue = visibleTransactions.reduce((sum, txn) => {
       const action = String(txn.action_type ?? "").toLowerCase();
-      if (action.includes("remove")) return sum;
       const category = txn.category_id
         ? categoryById.get(txn.category_id)
         : null;
-      return sum + parseMoneyValue(category?.average_price);
+      const categoryValue = parseMoneyValue(category?.average_price);
+
+      if (action === "add_stamp") return sum + categoryValue;
+      if (action === "remove_stamp") return sum - categoryValue;
+
+      return sum;
     }, 0);
+
+    return Math.max(0, netValue);
   }, [categoryById, visibleTransactions]);
 
   const giftCounts = useMemo(() => {
@@ -386,12 +401,19 @@ export default function ClientProfilePage({
         ? categoryById.get(txn.category_id)
         : null;
       const categoryName = displayCategoryName(category?.name);
-      const action = String(txn.action_type ?? "activity").replace(/_/g, " ");
+      const actionType = String(txn.action_type ?? "activity").toLowerCase();
+      const actionLabel =
+        actionType === "add_stamp"
+          ? "added a"
+          : actionType === "remove_stamp"
+            ? "removed a"
+            : actionType.replace(/_/g, " ");
+
       return {
         id: `txn-${txn.id}`,
         date: txn.created_at,
-        label: `${profile?.full_name || "Client"} ${action} ${categoryName}`,
-        badge: "Stamp",
+        label: `${profile?.full_name || "Client"} ${actionLabel} ${categoryName} stamp`,
+        badge: actionType === "remove_stamp" ? "Removed" : "Stamp",
       };
     });
     const rewardItems = visibleRewards.map((reward) => ({
