@@ -40,7 +40,8 @@ type AdminClientStamp = {
   updated_at?: string | null;
 };
 
-const PAGE_BG = "bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]";
+const PAGE_BG =
+  "bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]";
 const CUSTOMER_TABLE_GRID =
   "minmax(130px,1fr) minmax(90px,0.6fr) minmax(78px,0.5fr) minmax(62px,0.38fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(178px,0.95fr) minmax(118px,0.7fr)";
 
@@ -124,7 +125,7 @@ function desktopUniqueCount(values: Array<string | null | undefined>) {
   return new Set(values.filter(Boolean)).size;
 }
 
-type DesktopTimeRange = "today" | "week" | "month" | "all";
+type DesktopTimeRange = "today" | "week" | "month" | "date_range" | "all";
 type DesktopProfileTab = "all" | UserRole | "deactivated";
 type DesktopSmartSegment =
   | "all"
@@ -138,7 +139,7 @@ type DesktopSmartSegment =
   | "lost"
   | "from_games";
 function getDesktopTimeRangeStart(range: DesktopTimeRange) {
-  if (range === "all") return null;
+  if (range === "all" || range === "date_range") return null;
 
   const now = new Date();
 
@@ -161,23 +162,38 @@ function getDesktopTimeRangeStart(range: DesktopTimeRange) {
 function isWithinDesktopTimeRange(
   value: string | null | undefined,
   range: DesktopTimeRange,
+  rangeStart?: string,
+  rangeEnd?: string,
 ) {
   if (range === "all") return true;
 
   if (!value) return false;
 
   const date = new Date(value);
-  const start = getDesktopTimeRangeStart(range);
+  if (Number.isNaN(date.getTime())) return false;
 
+  if (range === "date_range") {
+    if (!rangeStart && !rangeEnd) return true;
+    const start = rangeStart
+      ? new Date(`${rangeStart}T00:00:00`).getTime()
+      : Number.NEGATIVE_INFINITY;
+    const end = rangeEnd
+      ? new Date(`${rangeEnd}T23:59:59.999`).getTime()
+      : Number.POSITIVE_INFINITY;
+    return date.getTime() >= start && date.getTime() <= end;
+  }
+
+  const start = getDesktopTimeRangeStart(range);
   if (!start) return true;
 
-  return !Number.isNaN(date.getTime()) && date >= start;
+  return date >= start;
 }
 
 function desktopTimeRangeLabel(range: DesktopTimeRange) {
   if (range === "today") return "Today";
   if (range === "week") return "This week";
   if (range === "month") return "This month";
+  if (range === "date_range") return "Date range";
   return "Show all";
 }
 
@@ -187,7 +203,6 @@ type BirthdayProfileFields = {
   date_of_birth?: string | null;
   dob?: string | null;
 };
-
 
 function getBirthdayValue(user: AdminUser) {
   const birthdayFields = user as AdminUser & BirthdayProfileFields;
@@ -244,7 +259,6 @@ function getAgeFromBirthday(value?: string | null) {
   return age >= 0 && age <= 120 ? age : null;
 }
 
-
 function normalizePhoneForMatch(value?: string | null) {
   let digits = String(value ?? "").replace(/\D/g, "");
   if (digits.startsWith("00")) digits = digits.slice(2);
@@ -258,11 +272,15 @@ function normalizePhoneForMatch(value?: string | null) {
 }
 
 function getGameRowClientId(row: any) {
-  return String(row?.client_id ?? row?.profile_id ?? row?.user_id ?? row?.customer_id ?? "").trim();
+  return String(
+    row?.client_id ?? row?.profile_id ?? row?.user_id ?? row?.customer_id ?? "",
+  ).trim();
 }
 
 function getGameRowPlayerId(row: any) {
-  return String(row?.player_id ?? row?.id ?? row?.entry_id ?? row?.prediction_id ?? "").trim();
+  return String(
+    row?.player_id ?? row?.id ?? row?.entry_id ?? row?.prediction_id ?? "",
+  ).trim();
 }
 
 function getGameRowName(row: any) {
@@ -337,7 +355,6 @@ function DesktopReportMetric({
   );
 }
 
-
 function Panel({
   children,
   className = "",
@@ -353,7 +370,6 @@ function Panel({
     </div>
   );
 }
-
 
 function DesktopProfileMetric({
   label,
@@ -374,7 +390,6 @@ function DesktopProfileMetric({
   );
 }
 
-
 function DesktopEmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-[18px] border border-white/22 bg-white/12 p-5 text-center text-[14px] font-bold text-white/70 shadow-[0_18px_46px_rgba(54,86,101,0.08)]">
@@ -382,7 +397,6 @@ function DesktopEmptyState({ text }: { text: string }) {
     </div>
   );
 }
-
 
 function DesktopClientProfilePanel({
   user,
@@ -550,7 +564,9 @@ function DesktopClientProfilePanel({
     () =>
       new Set(
         filteredActivities
-          .filter((txn) => String((txn as any).action_type ?? "").includes("add_stamp"))
+          .filter((txn) =>
+            String((txn as any).action_type ?? "").includes("add_stamp"),
+          )
           .map((txn) => desktopVisitDayKey(txn.created_at))
           .filter(Boolean),
       ).size,
@@ -558,12 +574,20 @@ function DesktopClientProfilePanel({
   );
 
   const value = useMemo(
-    () => Math.max(0, filteredActivities.reduce((sum, txn) => sum + stampValueFor(txn), 0)),
+    () =>
+      Math.max(
+        0,
+        filteredActivities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
+      ),
     [filteredActivities, priceByCategoryId],
   );
 
   const lifetime = useMemo(
-    () => Math.max(0, activities.reduce((sum, txn) => sum + stampValueFor(txn), 0)),
+    () =>
+      Math.max(
+        0,
+        activities.reduce((sum, txn) => sum + stampValueFor(txn), 0),
+      ),
     [activities, priceByCategoryId],
   );
 
@@ -1075,8 +1099,6 @@ function DesktopClientProfilePanel({
   );
 }
 
-
-
 // ─── Main UsersPage Component ─────────────────────────────────────────────────
 
 export function UsersPage({ adminId }: { adminId: string }) {
@@ -1091,23 +1113,27 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [activityTxns, setActivityTxns] = useState<StampTransaction[]>([]);
   const [rewardRows, setRewardRows] = useState<any[]>([]);
   const [gamePredictionRows, setGamePredictionRows] = useState<any[]>([]);
-  const [gamePlayersRefreshError, setGamePlayersRefreshError] = useState<string | null>(null);
+  const [gamePlayersRefreshError, setGamePlayersRefreshError] = useState<
+    string | null
+  >(null);
   const [gamePlayerRows, setGamePlayerRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const adminProfile = useMemo(
     () =>
-      ((users.find((user) => user.id === adminId) ?? {
+      (users.find((user) => user.id === adminId) ?? {
         id: adminId,
         full_name: "Admin",
         email: null,
         role: "master_admin",
-      }) as Profile),
+      }) as Profile,
     [adminId, users],
   );
 
   // Selected user profile
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-  const [selectedCategories, setSelectedCategories] = useState<AdminCategory[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<AdminCategory[]>(
+    [],
+  );
   const [selectedStamps, setSelectedStamps] = useState<AdminClientStamp[]>([]);
   const [selectedRewards, setSelectedRewards] = useState<Reward[]>([]);
   const [selectedLoading, setSelectedLoading] = useState(false);
@@ -1121,17 +1147,34 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [visibleUserCount, setVisibleUserCount] = useState(50);
   const [filter, setFilter] = useState<DesktopProfileTab>("client");
   const [timeRange, setTimeRange] = useState<DesktopTimeRange>("month");
-  const [lastVisitFilter, setLastVisitFilter] = useState<"all" | "active" | "inactive">("all");
-  const [customerStatusFilter, setCustomerStatusFilter] = useState<"all" | "active" | "inactive" | "at_risk" | "vip">("all");
-  const [customerGenderFilter, setCustomerGenderFilter] = useState<"all" | "male" | "female">("all");
-  const [customerAgeRangeFilter, setCustomerAgeRangeFilter] = useState<"all" | "18-24" | "25-34" | "35-44" | "45+">("all");
-  const [customerVisitRangeFilter, setCustomerVisitRangeFilter] = useState<"all" | "0" | "1-3" | "4-10" | "10+">("all");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+  const [lastVisitFilter, setLastVisitFilter] = useState<
+    "all" | "active" | "inactive"
+  >("all");
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<
+    "all" | "active" | "inactive" | "at_risk" | "vip"
+  >("all");
+  const [customerGenderFilter, setCustomerGenderFilter] = useState<
+    "all" | "male" | "female"
+  >("all");
+  const [customerAgeRangeFilter, setCustomerAgeRangeFilter] = useState<
+    "all" | "18-24" | "25-34" | "35-44" | "45+"
+  >("all");
+  const [customerVisitRangeFilter, setCustomerVisitRangeFilter] = useState<
+    "all" | "0" | "1-3" | "4-10" | "10+"
+  >("all");
   const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const reportFilterRef = useRef<HTMLDivElement | null>(null);
-  const [customerSort, setCustomerSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "lifetime", direction: "desc" });
+  const [customerSort, setCustomerSort] = useState<{
+    key: string;
+    direction: "asc" | "desc";
+  }>({ key: "lifetime", direction: "desc" });
   const [smartSegment, setSmartSegment] = useState<DesktopSmartSegment>("all");
 
-  const [contactHistory, setContactHistory] = useState<Record<string, string[]>>({});
+  const [contactHistory, setContactHistory] = useState<
+    Record<string, string[]>
+  >({});
 
   function flash(message: string, t: "success" | "error" = "success") {
     setTone(t);
@@ -1139,55 +1182,93 @@ export function UsersPage({ adminId }: { adminId: string }) {
     setTimeout(() => setToast(null), 2400);
   }
 
-  function sharedContactKeys(phone?: string | null, email?: string | null, fallback?: string | null) {
+  function sharedContactKeys(
+    phone?: string | null,
+    email?: string | null,
+    fallback?: string | null,
+  ) {
     const keys: string[] = [];
     const phoneKey = normalizePhoneForMatch(phone);
     if (phoneKey) keys.push(`contact-phone-${phoneKey}`);
     const emailKey = (email ?? "").trim().toLowerCase();
     if (emailKey) keys.push(`contact-email-${emailKey}`);
-    const fallbackKey = (fallback ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const fallbackKey = (fallback ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
     if (fallbackKey) keys.push(`contact-name-${fallbackKey}`);
     return Array.from(new Set(keys.length ? keys : ["contact-unknown"]));
   }
 
   function contactHistoryForKeys(keys: string[]) {
-    const all = keys.flatMap(k => contactHistory[k] ?? []);
-    return Array.from(new Set(all.filter(Boolean))).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).slice(0, 20);
+    const all = keys.flatMap((k) => contactHistory[k] ?? []);
+    return Array.from(new Set(all.filter(Boolean)))
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+      .slice(0, 20);
   }
 
   function markCustomerContacted(user: AdminUser) {
-    const keys = sharedContactKeys(user.phone, user.email, user.full_name || user.id);
+    const keys = sharedContactKeys(
+      user.phone,
+      user.email,
+      user.full_name || user.id,
+    );
     const date = new Date().toISOString();
     const previous = contactHistoryForKeys(keys);
     const saved = [date, ...previous].slice(0, 20);
     const next = { ...contactHistory };
-    keys.forEach(k => { next[k] = saved; });
+    keys.forEach((k) => {
+      next[k] = saved;
+    });
     setContactHistory(next);
-    try { window.localStorage.setItem("proscafe_users_contact_history", JSON.stringify(next)); } catch {}
+    try {
+      window.localStorage.setItem(
+        "proscafe_users_contact_history",
+        JSON.stringify(next),
+      );
+    } catch {}
     void fetch("/api/admin/contact-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keys, contacted_at: date, source: "Customer behavior", source_id: user.id }),
+      body: JSON.stringify({
+        keys,
+        contacted_at: date,
+        source: "Customer behavior",
+        source_id: user.id,
+      }),
     }).catch(() => {});
     flash("Contact saved.");
   }
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem("proscafe_users_contact_history");
-      if (stored) setContactHistory(JSON.parse(stored) as Record<string, string[]>);
+      const stored = window.localStorage.getItem(
+        "proscafe_users_contact_history",
+      );
+      if (stored)
+        setContactHistory(JSON.parse(stored) as Record<string, string[]>);
     } catch {}
     fetch("/api/admin/contact-history", { cache: "no-store" })
-      .then(r => r.json())
+      .then((r) => r.json())
       .then((data: any) => {
         if (data?.history) {
-          setContactHistory(prev => {
+          setContactHistory((prev) => {
             const merged: Record<string, string[]> = { ...prev };
-            Object.entries(data.history as Record<string, string[]>).forEach(([k, dates]) => {
-              const existing = merged[k] ?? [];
-              merged[k] = Array.from(new Set([...existing, ...dates])).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).slice(0, 20);
-            });
-            try { window.localStorage.setItem("proscafe_users_contact_history", JSON.stringify(merged)); } catch {}
+            Object.entries(data.history as Record<string, string[]>).forEach(
+              ([k, dates]) => {
+                const existing = merged[k] ?? [];
+                merged[k] = Array.from(new Set([...existing, ...dates]))
+                  .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+                  .slice(0, 20);
+              },
+            );
+            try {
+              window.localStorage.setItem(
+                "proscafe_users_contact_history",
+                JSON.stringify(merged),
+              );
+            } catch {}
             return merged;
           });
         }
@@ -1203,10 +1284,19 @@ export function UsersPage({ adminId }: { adminId: string }) {
     async function loadData() {
       setLoading(true);
       try {
-        const [profilesRes, txnsRes, rewardsRes, categoriesRes, gamePredictionsRes, gamePlayersRes] = await Promise.all([
+        const [
+          profilesRes,
+          txnsRes,
+          rewardsRes,
+          categoriesRes,
+          gamePredictionsRes,
+          gamePlayersRes,
+        ] = await Promise.all([
           supabase
             .from("profiles")
-            .select("id, full_name, email, phone, client_code, role, is_active, gender, birthday, created_at")
+            .select(
+              "id, full_name, email, phone, client_code, role, is_active, gender, birthday, created_at",
+            )
             .order("created_at", { ascending: false }),
 
           supabase
@@ -1229,7 +1319,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
           supabase
             .from("prediction_entries")
-            .select("*, prediction_matches(match_label, home_team, away_team, kickoff_at)")
+            .select(
+              "*, prediction_matches(match_label, home_team, away_team, kickoff_at)",
+            )
             .order("created_at", { ascending: false })
             .limit(5000),
 
@@ -1240,7 +1332,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
               if (!response.ok) {
                 return {
                   data: [],
-                  error: { message: json?.error || "Could not load game players." },
+                  error: {
+                    message: json?.error || "Could not load game players.",
+                  },
                 };
               }
 
@@ -1251,18 +1345,34 @@ export function UsersPage({ adminId }: { adminId: string }) {
             })
             .catch((error) => ({
               data: [],
-              error: { message: error instanceof Error ? error.message : "Could not load game players." },
+              error: {
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "Could not load game players.",
+              },
             })),
         ]);
 
         if (!isMounted) return;
 
         // Log any errors to help debug
-        if (profilesRes.error) console.error("[UsersPage] profiles error:", profilesRes.error);
-        if (txnsRes.error) console.error("[UsersPage] txns error:", txnsRes.error);
-        if (rewardsRes.error) console.error("[UsersPage] rewards error:", rewardsRes.error);
-        if (gamePredictionsRes.error) console.warn("[UsersPage] prediction entries unavailable:", gamePredictionsRes.error.message);
-        if (gamePlayersRes.error) console.warn("[UsersPage] game players database unavailable:", gamePlayersRes.error.message);
+        if (profilesRes.error)
+          console.error("[UsersPage] profiles error:", profilesRes.error);
+        if (txnsRes.error)
+          console.error("[UsersPage] txns error:", txnsRes.error);
+        if (rewardsRes.error)
+          console.error("[UsersPage] rewards error:", rewardsRes.error);
+        if (gamePredictionsRes.error)
+          console.warn(
+            "[UsersPage] prediction entries unavailable:",
+            gamePredictionsRes.error.message,
+          );
+        if (gamePlayersRes.error)
+          console.warn(
+            "[UsersPage] game players database unavailable:",
+            gamePlayersRes.error.message,
+          );
         console.log("[UsersPage] loaded:", {
           profiles: profilesRes.data?.length,
           txns: txnsRes.data?.length,
@@ -1278,13 +1388,14 @@ export function UsersPage({ adminId }: { adminId: string }) {
         // Build price map
         const priceByCategory = new Map<string, number>();
         cats.forEach((c: AdminCategory) => {
-          if (c.average_price) priceByCategory.set(c.id, parseMoneyValue(c.average_price));
+          if (c.average_price)
+            priceByCategory.set(c.id, parseMoneyValue(c.average_price));
         });
 
         // Per-user enrichment
         const visitDaysByUser = new Map<string, Set<string>>();
         const lastVisitByUser = new Map<string, string>();
-        const lifetimeByUser  = new Map<string, number>();
+        const lifetimeByUser = new Map<string, number>();
 
         txns.forEach((txn: any) => {
           if (!txn.client_id) return;
@@ -1293,24 +1404,32 @@ export function UsersPage({ adminId }: { adminId: string }) {
           if (!Number.isNaN(d.getTime())) {
             const beirut = new Date(d.getTime() + 3 * 60 * 60 * 1000);
             const key = `${beirut.getUTCFullYear()}-${String(beirut.getUTCMonth() + 1).padStart(2, "0")}-${String(beirut.getUTCDate()).padStart(2, "0")}`;
-            if (!visitDaysByUser.has(txn.client_id)) visitDaysByUser.set(txn.client_id, new Set());
+            if (!visitDaysByUser.has(txn.client_id))
+              visitDaysByUser.set(txn.client_id, new Set());
             visitDaysByUser.get(txn.client_id)!.add(key);
           }
           const existing = lastVisitByUser.get(txn.client_id);
-          if (!existing || txn.created_at > existing) lastVisitByUser.set(txn.client_id, txn.created_at);
+          if (!existing || txn.created_at > existing)
+            lastVisitByUser.set(txn.client_id, txn.created_at);
           const price = priceByCategory.get(txn.category_id ?? "") ?? 0;
           const currentLifetime = lifetimeByUser.get(txn.client_id) ?? 0;
           if (txn.action_type === "add_stamp") {
             lifetimeByUser.set(txn.client_id, currentLifetime + price);
           } else if (String(txn.action_type ?? "").includes("remove_stamp")) {
-            lifetimeByUser.set(txn.client_id, Math.max(0, currentLifetime - price));
+            lifetimeByUser.set(
+              txn.client_id,
+              Math.max(0, currentLifetime - price),
+            );
           }
         });
 
         const rewardsByUser = new Map<string, number>();
         (rewards as any[]).forEach((r: any) => {
           if (!r.client_id) return;
-          rewardsByUser.set(r.client_id, (rewardsByUser.get(r.client_id) ?? 0) + 1);
+          rewardsByUser.set(
+            r.client_id,
+            (rewardsByUser.get(r.client_id) ?? 0) + 1,
+          );
         });
 
         const gameRows = [
@@ -1320,7 +1439,14 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
         const gameStatsByKey = new Map<
           string,
-          { rows: number; lastPlayed: string | null; name: string; phone: string; clientId: string; playerId: string }
+          {
+            rows: number;
+            lastPlayed: string | null;
+            name: string;
+            phone: string;
+            clientId: string;
+            playerId: string;
+          }
         >();
 
         gameRows.forEach((row: any) => {
@@ -1352,7 +1478,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
           if (!existing.phone && phone) existing.phone = phone;
           if (!existing.clientId && clientId) existing.clientId = clientId;
           if (!existing.playerId && playerId) existing.playerId = playerId;
-          if (playedAt && (!existing.lastPlayed || new Date(playedAt).getTime() > new Date(existing.lastPlayed).getTime())) {
+          if (
+            playedAt &&
+            (!existing.lastPlayed ||
+              new Date(playedAt).getTime() >
+                new Date(existing.lastPlayed).getTime())
+          ) {
             existing.lastPlayed = playedAt;
           }
 
@@ -1363,25 +1494,37 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
         const enriched = ((profilesRes.data ?? []) as any[]).map((p: any) => {
           const profilePhone = normalizePhoneForMatch(p.phone);
-          const profileName = String(p.full_name ?? "").trim().toLowerCase();
+          const profileName = String(p.full_name ?? "")
+            .trim()
+            .toLowerCase();
           const matchingGameKey =
             (gameStatsByKey.has(p.id) ? p.id : "") ||
-            (profilePhone && gameStatsByKey.has(`phone:${profilePhone}`) ? `phone:${profilePhone}` : "") ||
-            (profileName && gameStatsByKey.has(`name:${profileName}`) ? `name:${profileName}` : "");
+            (profilePhone && gameStatsByKey.has(`phone:${profilePhone}`)
+              ? `phone:${profilePhone}`
+              : "") ||
+            (profileName && gameStatsByKey.has(`name:${profileName}`)
+              ? `name:${profileName}`
+              : "");
 
-          const gameStats = matchingGameKey ? gameStatsByKey.get(matchingGameKey) : null;
+          const gameStats = matchingGameKey
+            ? gameStatsByKey.get(matchingGameKey)
+            : null;
           if (matchingGameKey) usedGameKeys.add(matchingGameKey);
 
           return {
             ...p,
             playedFromGames: Boolean(gameStats),
             gamePlayerId: gameStats?.playerId ?? null,
-            totalVisits:        visitDaysByUser.get(p.id)?.size ?? 0,
-            lastVisit:          lastVisitByUser.get(p.id) ?? null,
+            totalVisits: visitDaysByUser.get(p.id)?.size ?? 0,
+            lastVisit: lastVisitByUser.get(p.id) ?? null,
             daysSinceLastVisit: lastVisitByUser.get(p.id)
-              ? Math.floor((Date.now() - new Date(lastVisitByUser.get(p.id)!).getTime()) / 86400000)
+              ? Math.floor(
+                  (Date.now() -
+                    new Date(lastVisitByUser.get(p.id)!).getTime()) /
+                    86400000,
+                )
               : null,
-            giftsCount:   rewardsByUser.get(p.id) ?? 0,
+            giftsCount: rewardsByUser.get(p.id) ?? 0,
             lifetimeValue: lifetimeByUser.get(p.id) ?? 0,
           };
         });
@@ -1397,7 +1540,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
               full_name: gameStats.name || "Game Player",
               email: null,
               phone: gameStats.phone || null,
-              client_code: gameStats.playerId ? `GAME-${gameStats.playerId.slice(-6).toUpperCase()}` : "GAME PLAYER",
+              client_code: gameStats.playerId
+                ? `GAME-${gameStats.playerId.slice(-6).toUpperCase()}`
+                : "GAME PLAYER",
               role: "client" as UserRole,
               is_active: true,
               gender: null,
@@ -1409,7 +1554,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
               totalVisits: gameStats.rows,
               lastVisit: lastPlayed,
               daysSinceLastVisit: lastPlayed
-                ? Math.floor((Date.now() - new Date(lastPlayed).getTime()) / 86400000)
+                ? Math.floor(
+                    (Date.now() - new Date(lastPlayed).getTime()) / 86400000,
+                  )
                 : null,
               giftsCount: 0,
               lifetimeValue: 0,
@@ -1423,25 +1570,43 @@ export function UsersPage({ adminId }: { adminId: string }) {
         setGamePredictionRows((gamePredictionsRes.data ?? []) as any[]);
         setGamePlayerRows((gamePlayersRes.data ?? []) as any[]);
       } catch (err) {
-        flash(err instanceof Error ? err.message : "Could not load data.", "error");
+        flash(
+          err instanceof Error ? err.message : "Could not load data.",
+          "error",
+        );
       } finally {
         if (isMounted) setLoading(false);
       }
     }
 
     void loadData();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Close filter dropdown on outside click
   useEffect(() => {
     if (!reportFiltersOpen) return;
     function close(e: MouseEvent | TouchEvent) {
-      if (!reportFilterRef.current?.contains(e.target as Node)) setReportFiltersOpen(false);
+      if (!reportFilterRef.current?.contains(e.target as Node))
+        setReportFiltersOpen(false);
     }
     document.addEventListener("mousedown", close);
     document.addEventListener("touchstart", close);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("touchstart", close); };
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("touchstart", close);
+    };
+  }, [reportFiltersOpen]);
+
+  useEffect(() => {
+    if (!reportFiltersOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setReportFiltersOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [reportFiltersOpen]);
 
   // ── User profile ─────────────────────────────────────────────────────────────
@@ -1474,7 +1639,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
     const user = users.find(
       (item) =>
         item.id === requestedClient ||
-        String(item.client_code ?? "").toLowerCase() === requestedClient.toLowerCase(),
+        String(item.client_code ?? "").toLowerCase() ===
+          requestedClient.toLowerCase(),
     );
 
     if (!user) return;
@@ -1484,7 +1650,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
       const url = new URL(window.location.href);
       url.searchParams.delete("client");
       url.searchParams.delete("client_id");
-      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      window.history.replaceState(
+        {},
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
     } catch {}
 
     setFilter("client");
@@ -1492,53 +1662,151 @@ export function UsersPage({ adminId }: { adminId: string }) {
   }, [loading, users]);
 
   async function setRole(userId: string, role: UserRole) {
-    const res = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, action: "set_role", role }) });
-    const json = await res.json().catch(() => ({})) as { error?: string };
-    if (!res.ok) { flash(json.error ?? "Could not update role.", "error"); return; }
-    setUsers(cur => cur.map(u => u.id === userId ? { ...u, role } : u));
-    setSelectedUser(prev => prev?.id === userId ? { ...prev, role } : prev);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, action: "set_role", role }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      flash(json.error ?? "Could not update role.", "error");
+      return;
+    }
+    setUsers((cur) => cur.map((u) => (u.id === userId ? { ...u, role } : u)));
+    setSelectedUser((prev) => (prev?.id === userId ? { ...prev, role } : prev));
     flash("Role updated.");
   }
 
   async function deactivateUser(userId: string) {
-    const res = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, action: "deactivate" }) });
-    const json = await res.json().catch(() => ({})) as { error?: string };
-    if (!res.ok) { flash(json.error ?? "Could not deactivate.", "error"); return; }
-    setUsers(cur => cur.map(u => u.id === userId ? { ...u, is_active: false } : u));
-    setSelectedUser(prev => prev?.id === userId ? { ...prev, is_active: false } : prev);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, action: "deactivate" }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      flash(json.error ?? "Could not deactivate.", "error");
+      return;
+    }
+    setUsers((cur) =>
+      cur.map((u) => (u.id === userId ? { ...u, is_active: false } : u)),
+    );
+    setSelectedUser((prev) =>
+      prev?.id === userId ? { ...prev, is_active: false } : prev,
+    );
     flash("User deactivated.");
   }
 
   async function reactivateUser(userId: string, role: UserRole) {
-    const res = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, action: "reactivate", role }) });
-    const json = await res.json().catch(() => ({})) as { error?: string };
-    if (!res.ok) { flash(json.error ?? "Could not reactivate.", "error"); return; }
-    setUsers(cur => cur.map(u => u.id === userId ? { ...u, is_active: true, role } : u));
-    setSelectedUser(prev => prev?.id === userId ? { ...prev, is_active: true, role } : prev);
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, action: "reactivate", role }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      flash(json.error ?? "Could not reactivate.", "error");
+      return;
+    }
+    setUsers((cur) =>
+      cur.map((u) => (u.id === userId ? { ...u, is_active: true, role } : u)),
+    );
+    setSelectedUser((prev) =>
+      prev?.id === userId ? { ...prev, is_active: true, role } : prev,
+    );
     flash("User reactivated.");
   }
 
   async function addStampToSelectedClient(categoryId: string) {
     if (!selectedUser) return;
-    const currentRow = selectedStamps.find(s => s.category_id === categoryId);
+    const currentRow = selectedStamps.find((s) => s.category_id === categoryId);
     const currentCount = Math.max(0, currentRow?.stamp_count ?? 0);
     const nextCount = Math.min(currentCount + 1, 5);
     setSelectedLoading(true);
 
     const stampError = currentRow
-      ? (await supabase.from("client_stamps").update({ stamp_count: nextCount, updated_at: new Date().toISOString() }).eq("client_id", selectedUser.id).eq("category_id", categoryId)).error
-      : (await supabase.from("client_stamps").insert({ client_id: selectedUser.id, category_id: categoryId, stamp_count: nextCount, updated_at: new Date().toISOString() })).error;
+      ? (
+          await supabase
+            .from("client_stamps")
+            .update({
+              stamp_count: nextCount,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("client_id", selectedUser.id)
+            .eq("category_id", categoryId)
+        ).error
+      : (
+          await supabase
+            .from("client_stamps")
+            .insert({
+              client_id: selectedUser.id,
+              category_id: categoryId,
+              stamp_count: nextCount,
+              updated_at: new Date().toISOString(),
+            })
+        ).error;
 
-    if (stampError) { flash(stampError.message, "error"); setSelectedLoading(false); return; }
+    if (stampError) {
+      flash(stampError.message, "error");
+      setSelectedLoading(false);
+      return;
+    }
 
-    await supabase.from("stamp_transactions").insert({ client_id: selectedUser.id, category_id: categoryId, action_type: "add_stamp", stamp_count: 1, staff_id: adminId, created_at: new Date().toISOString() });
+    await supabase
+      .from("stamp_transactions")
+      .insert({
+        client_id: selectedUser.id,
+        category_id: categoryId,
+        action_type: "add_stamp",
+        stamp_count: 1,
+        staff_id: adminId,
+        created_at: new Date().toISOString(),
+      });
 
     if (nextCount >= 5) {
-      const categoryName = selectedCategories.find(c => c.id === categoryId)?.name?.toLowerCase() ?? "";
-      const rewardType = categoryName.includes("sandwich") ? "Free Sandwich" : categoryName.includes("main") ? "Free Main Course" : categoryName.includes("dessert") ? "Free Dessert" : categoryName.includes("coffee") ? "Free Coffee" : categoryName.includes("hooka") || categoryName.includes("hookah") ? "Free Hooka" : "Free Reward";
-      await supabase.from("rewards").insert({ client_id: selectedUser.id, category_id: categoryId, reward_type: rewardType, status: "available", earned_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30*24*60*60*1000).toISOString() });
-      await supabase.from("client_stamps").update({ stamp_count: 0, updated_at: new Date().toISOString() }).eq("client_id", selectedUser.id).eq("category_id", categoryId);
-      await supabase.from("stamp_transactions").insert({ client_id: selectedUser.id, category_id: categoryId, action_type: "reward_earned", stamp_count: 5, staff_id: adminId, created_at: new Date().toISOString() });
+      const categoryName =
+        selectedCategories
+          .find((c) => c.id === categoryId)
+          ?.name?.toLowerCase() ?? "";
+      const rewardType = categoryName.includes("sandwich")
+        ? "Free Sandwich"
+        : categoryName.includes("main")
+          ? "Free Main Course"
+          : categoryName.includes("dessert")
+            ? "Free Dessert"
+            : categoryName.includes("coffee")
+              ? "Free Coffee"
+              : categoryName.includes("hooka") ||
+                  categoryName.includes("hookah")
+                ? "Free Hooka"
+                : "Free Reward";
+      await supabase
+        .from("rewards")
+        .insert({
+          client_id: selectedUser.id,
+          category_id: categoryId,
+          reward_type: rewardType,
+          status: "available",
+          earned_at: new Date().toISOString(),
+          expires_at: new Date(
+            Date.now() + 30 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+        });
+      await supabase
+        .from("client_stamps")
+        .update({ stamp_count: 0, updated_at: new Date().toISOString() })
+        .eq("client_id", selectedUser.id)
+        .eq("category_id", categoryId);
+      await supabase
+        .from("stamp_transactions")
+        .insert({
+          client_id: selectedUser.id,
+          category_id: categoryId,
+          action_type: "reward_earned",
+          stamp_count: 5,
+          staff_id: adminId,
+          created_at: new Date().toISOString(),
+        });
       flash("Gift earned.");
       await openUserProfile(selectedUser);
       return;
@@ -1550,7 +1818,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
   async function removeStampFromSelectedClient(categoryId: string) {
     if (!selectedUser) return;
 
-    const currentRow = selectedStamps.find((stamp) => stamp.category_id === categoryId);
+    const currentRow = selectedStamps.find(
+      (stamp) => stamp.category_id === categoryId,
+    );
     const currentCount = Math.max(0, currentRow?.stamp_count ?? 0);
     if (!currentRow || currentCount <= 0) {
       flash("No stamp to remove.", "error");
@@ -1604,7 +1874,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
     if (deleteError) {
       await supabase
         .from("client_stamps")
-        .update({ stamp_count: currentCount, updated_at: new Date().toISOString() })
+        .update({
+          stamp_count: currentCount,
+          updated_at: new Date().toISOString(),
+        })
         .eq("client_id", selectedUser.id)
         .eq("category_id", categoryId);
       flash(deleteError.message, "error");
@@ -1613,25 +1886,42 @@ export function UsersPage({ adminId }: { adminId: string }) {
     }
 
     const categoryPrice = parseMoneyValue(
-      selectedCategories.find((category) => category.id === categoryId)?.average_price,
+      selectedCategories.find((category) => category.id === categoryId)
+        ?.average_price,
     );
 
     setSelectedStamps((current) =>
       current.map((stamp) =>
-        stamp.category_id === categoryId ? { ...stamp, stamp_count: nextCount } : stamp,
+        stamp.category_id === categoryId
+          ? { ...stamp, stamp_count: nextCount }
+          : stamp,
       ),
     );
-    setActivityTxns((current) => current.filter((txn) => txn.id !== transactionId));
+    setActivityTxns((current) =>
+      current.filter((txn) => txn.id !== transactionId),
+    );
     setUsers((current) =>
       current.map((user) =>
         user.id === selectedUser.id
-          ? { ...user, lifetimeValue: Math.max(0, (user.lifetimeValue ?? 0) - categoryPrice) }
+          ? {
+              ...user,
+              lifetimeValue: Math.max(
+                0,
+                (user.lifetimeValue ?? 0) - categoryPrice,
+              ),
+            }
           : user,
       ),
     );
     setSelectedUser((current) =>
       current
-        ? { ...current, lifetimeValue: Math.max(0, (current.lifetimeValue ?? 0) - categoryPrice) }
+        ? {
+            ...current,
+            lifetimeValue: Math.max(
+              0,
+              (current.lifetimeValue ?? 0) - categoryPrice,
+            ),
+          }
         : current,
     );
 
@@ -1648,14 +1938,17 @@ export function UsersPage({ adminId }: { adminId: string }) {
   async function sendGiftFromTable() {
     if (!giftTargetUser) return;
 
-    const category = categories.find((item) => item.id === directGiftCategoryId) ?? categories[0];
+    const category =
+      categories.find((item) => item.id === directGiftCategoryId) ??
+      categories[0];
     if (!category?.id) {
       flash("No loyalty category found for this gift.", "error");
       return;
     }
 
     setDirectGiftSending(true);
-    const categoryName = category.name === "Desserts 2" ? "Hooka" : category.name;
+    const categoryName =
+      category.name === "Desserts 2" ? "Hooka" : category.name;
     const rewardType = directGiftNote.trim()
       ? `Sent Gift - Free ${categoryName} - ${directGiftNote.trim()}`
       : `Sent Gift - Free ${categoryName}`;
@@ -1678,7 +1971,13 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
     setRewardRows((current) => [
       ...current,
-      { client_id: giftTargetUser.id, category_id: category.id, reward_type: rewardType, status: "available", earned_at: new Date().toISOString() },
+      {
+        client_id: giftTargetUser.id,
+        category_id: category.id,
+        reward_type: rewardType,
+        status: "available",
+        earned_at: new Date().toISOString(),
+      },
     ]);
     setUsers((current) =>
       current.map((user) =>
@@ -1695,16 +1994,49 @@ export function UsersPage({ adminId }: { adminId: string }) {
   async function sendGiftToSelectedClient(gift: string, description: string) {
     if (!selectedUser) return;
     const giftName = gift.trim();
-    if (!giftName) { flash("Gift is required.", "error"); return; }
-    const matchedCategory = selectedCategories.find(c => {
-      const cn = c.name.toLowerCase(); const rn = giftName.toLowerCase();
-      return rn.includes(cn) || cn.includes(rn) || (rn.includes("hooka") && cn.includes("hooka")) || (rn.includes("dessert") && cn.includes("dessert")) || (rn.includes("sandwich") && cn.includes("sandwich")) || (rn.includes("coffee") && cn.includes("coffee")) || (rn.includes("main") && cn.includes("main"));
-    }) ?? selectedCategories[0];
-    if (!matchedCategory?.id) { flash("No loyalty category found for this gift.", "error"); return; }
+    if (!giftName) {
+      flash("Gift is required.", "error");
+      return;
+    }
+    const matchedCategory =
+      selectedCategories.find((c) => {
+        const cn = c.name.toLowerCase();
+        const rn = giftName.toLowerCase();
+        return (
+          rn.includes(cn) ||
+          cn.includes(rn) ||
+          (rn.includes("hooka") && cn.includes("hooka")) ||
+          (rn.includes("dessert") && cn.includes("dessert")) ||
+          (rn.includes("sandwich") && cn.includes("sandwich")) ||
+          (rn.includes("coffee") && cn.includes("coffee")) ||
+          (rn.includes("main") && cn.includes("main"))
+        );
+      }) ?? selectedCategories[0];
+    if (!matchedCategory?.id) {
+      flash("No loyalty category found for this gift.", "error");
+      return;
+    }
     setSelectedLoading(true);
-    const rewardType = description ? `Sent Gift - ${giftName} - ${description}` : `Sent Gift - ${giftName}`;
-    const { error } = await supabase.from("rewards").insert({ client_id: selectedUser.id, category_id: matchedCategory.id, reward_type: rewardType, status: "available", earned_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30*24*60*60*1000).toISOString() });
-    if (error) { flash(error.message, "error"); setSelectedLoading(false); return; }
+    const rewardType = description
+      ? `Sent Gift - ${giftName} - ${description}`
+      : `Sent Gift - ${giftName}`;
+    const { error } = await supabase
+      .from("rewards")
+      .insert({
+        client_id: selectedUser.id,
+        category_id: matchedCategory.id,
+        reward_type: rewardType,
+        status: "available",
+        earned_at: new Date().toISOString(),
+        expires_at: new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      });
+    if (error) {
+      flash(error.message, "error");
+      setSelectedLoading(false);
+      return;
+    }
     flash("Gift sent.");
     await openUserProfile(selectedUser);
   }
@@ -1712,56 +2044,74 @@ export function UsersPage({ adminId }: { adminId: string }) {
   // ── Filtering & sorting ──────────────────────────────────────────────────────
 
   const customerReportRows = useMemo(() => {
-    return users.filter(u => u.role === "client").map(user => {
-      // Use server-enriched fields from /api/admin/users
-      const totalVisits      = user.totalVisits ?? 0;
-      const lastVisit        = user.lastVisit ?? null;
-      const giftsCount       = user.giftsCount ?? 0;
-      const lifetimeValue    = user.lifetimeValue ?? 0;
-      const age              = getAgeFromBirthday(getBirthdayValue(user));
+    return users
+      .filter((u) => u.role === "client")
+      .map((user) => {
+        // Use server-enriched fields from /api/admin/users
+        const totalVisits = user.totalVisits ?? 0;
+        const lastVisit = user.lastVisit ?? null;
+        const giftsCount = user.giftsCount ?? 0;
+        const lifetimeValue = user.lifetimeValue ?? 0;
+        const age = getAgeFromBirthday(getBirthdayValue(user));
 
-      const lastVisitMs = lastVisit ? new Date(lastVisit).getTime() : NaN;
-      const daysSinceLastVisit = user.daysSinceLastVisit ??
-        (Number.isFinite(lastVisitMs)
-          ? Math.floor((Date.now() - lastVisitMs) / (24 * 60 * 60 * 1000))
-          : null);
+        const lastVisitMs = lastVisit ? new Date(lastVisit).getTime() : NaN;
+        const daysSinceLastVisit =
+          user.daysSinceLastVisit ??
+          (Number.isFinite(lastVisitMs)
+            ? Math.floor((Date.now() - lastVisitMs) / (24 * 60 * 60 * 1000))
+            : null);
 
-      // Match AdminDashboard logic exactly
-      const inactive =
-        user.is_active === false ||
-        !Number.isFinite(lastVisitMs) ||
-        Date.now() - lastVisitMs > 30 * 24 * 60 * 60 * 1000;
+        // Match AdminDashboard logic exactly
+        const inactive =
+          user.is_active === false ||
+          !Number.isFinite(lastVisitMs) ||
+          Date.now() - lastVisitMs > 30 * 24 * 60 * 60 * 1000;
 
-      const isAtRisk =
-        daysSinceLastVisit !== null &&
-        daysSinceLastVisit >= 30 &&
-        daysSinceLastVisit <= 60;
+        const isAtRisk =
+          daysSinceLastVisit !== null &&
+          daysSinceLastVisit >= 30 &&
+          daysSinceLastVisit <= 60;
 
-      const isVip = lifetimeValue >= 200 || totalVisits >= 10;
+        const isVip = lifetimeValue >= 200 || totalVisits >= 10;
 
-      const tier =
-        totalVisits >= 15 ? "Gold" :
-        totalVisits >= 7  ? "Silver" :
-        totalVisits >= 2  ? "Bronze" : "New";
+        const tier =
+          totalVisits >= 15
+            ? "Gold"
+            : totalVisits >= 7
+              ? "Silver"
+              : totalVisits >= 2
+                ? "Bronze"
+                : "New";
 
-      return {
-        user, tier, lastVisit, daysSinceLastVisit, totalVisits,
-        giftsCount, lifetimeValue, value: lifetimeValue,
-        age, inactive, isAtRisk, isVip, isInactive: inactive,
-      };
-    });
+        return {
+          user,
+          tier,
+          lastVisit,
+          daysSinceLastVisit,
+          totalVisits,
+          giftsCount,
+          lifetimeValue,
+          value: lifetimeValue,
+          age,
+          inactive,
+          isAtRisk,
+          isVip,
+          isInactive: inactive,
+        };
+      });
   }, [users]);
 
   const allProfileReportRows = useMemo(() => {
-    return users.map(user => {
-      const totalVisits      = user.totalVisits ?? 0;
-      const lastVisit        = user.lastVisit ?? null;
-      const giftsCount       = user.giftsCount ?? 0;
-      const lifetimeValue    = user.lifetimeValue ?? 0;
-      const age              = getAgeFromBirthday(getBirthdayValue(user));
+    return users.map((user) => {
+      const totalVisits = user.totalVisits ?? 0;
+      const lastVisit = user.lastVisit ?? null;
+      const giftsCount = user.giftsCount ?? 0;
+      const lifetimeValue = user.lifetimeValue ?? 0;
+      const age = getAgeFromBirthday(getBirthdayValue(user));
 
       const lastVisitMs = lastVisit ? new Date(lastVisit).getTime() : NaN;
-      const daysSinceLastVisit = user.daysSinceLastVisit ??
+      const daysSinceLastVisit =
+        user.daysSinceLastVisit ??
         (Number.isFinite(lastVisitMs)
           ? Math.floor((Date.now() - lastVisitMs) / (24 * 60 * 60 * 1000))
           : null);
@@ -1779,14 +2129,28 @@ export function UsersPage({ adminId }: { adminId: string }) {
       const isVip = lifetimeValue >= 200 || totalVisits >= 10;
 
       const tier =
-        totalVisits >= 15 ? "Gold" :
-        totalVisits >= 7  ? "Silver" :
-        totalVisits >= 2  ? "Bronze" : "New";
+        totalVisits >= 15
+          ? "Gold"
+          : totalVisits >= 7
+            ? "Silver"
+            : totalVisits >= 2
+              ? "Bronze"
+              : "New";
 
       return {
-        user, tier, lastVisit, daysSinceLastVisit, totalVisits,
-        giftsCount, lifetimeValue, value: lifetimeValue,
-        age, inactive, isAtRisk, isVip, isInactive: inactive,
+        user,
+        tier,
+        lastVisit,
+        daysSinceLastVisit,
+        totalVisits,
+        giftsCount,
+        lifetimeValue,
+        value: lifetimeValue,
+        age,
+        inactive,
+        isAtRisk,
+        isVip,
+        isInactive: inactive,
       };
     });
   }, [users]);
@@ -1803,7 +2167,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
         row?.updated_at ??
         null;
 
-      if (created && !isWithinDesktopTimeRange(created, timeRange)) return;
+      if (
+        created &&
+        !isWithinDesktopTimeRange(created, timeRange, rangeStart, rangeEnd)
+      )
+        return;
       if (!created && timeRange !== "all") return;
 
       const directId = getGameRowClientId(row);
@@ -1814,11 +2182,14 @@ export function UsersPage({ adminId }: { adminId: string }) {
       const rowPlayerId = getGameRowPlayerId(row);
       const syntheticKey =
         directId ||
-        (normalizePhoneForMatch(rowPhoneRaw) ? `phone:${normalizePhoneForMatch(rowPhoneRaw)}` : "") ||
+        (normalizePhoneForMatch(rowPhoneRaw)
+          ? `phone:${normalizePhoneForMatch(rowPhoneRaw)}`
+          : "") ||
         (rowNameRaw ? `name:${rowNameRaw.toLowerCase()}` : "") ||
         (rowPlayerId ? `player:${rowPlayerId}` : "");
 
-      if (syntheticKey) ids.add(`game-${syntheticKey.replace(/[^a-zA-Z0-9_-]+/g, "-")}`);
+      if (syntheticKey)
+        ids.add(`game-${syntheticKey.replace(/[^a-zA-Z0-9_-]+/g, "-")}`);
 
       const phone = normalizePhoneForMatch(
         row?.phone ??
@@ -1847,14 +2218,24 @@ export function UsersPage({ adminId }: { adminId: string }) {
         .toLowerCase();
       if (name) {
         users.forEach((user) => {
-          if (String(user.full_name ?? "").trim().toLowerCase() === name) ids.add(user.id);
+          if (
+            String(user.full_name ?? "")
+              .trim()
+              .toLowerCase() === name
+          )
+            ids.add(user.id);
         });
       }
     }
 
     // Preferred source: the dedicated table created from Games players.
     gamePlayerRows.forEach((row) => {
-      addMatchedGameUser(row, ["last_played_at", "first_played_at", "created_at", "updated_at"]);
+      addMatchedGameUser(row, [
+        "last_played_at",
+        "first_played_at",
+        "created_at",
+        "updated_at",
+      ]);
     });
 
     // Fallback source: raw prediction entries, when available.
@@ -1876,13 +2257,21 @@ export function UsersPage({ adminId }: { adminId: string }) {
     });
 
     return ids;
-  }, [gamePlayerRows, gamePredictionRows, rewardRows, timeRange, users]);
+  }, [
+    gamePlayerRows,
+    gamePredictionRows,
+    rewardRows,
+    timeRange,
+    rangeStart,
+    rangeEnd,
+    users,
+  ]);
 
   const filteredCustomerReportRows = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     const normalizedSearch = normalizePhoneForMatch(searchTerm.trim());
 
-    return allProfileReportRows.filter(row => {
+    return allProfileReportRows.filter((row) => {
       const user = row.user;
       const isClient = user.role === "client";
 
@@ -1894,57 +2283,141 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
       if (smartSegment !== "all") {
         if (!isClient) return false;
-        if (smartSegment === "active" && (!row.lastVisit || row.inactive)) return false;
-        if (smartSegment === "from_games" && !fromGamesUserIds.has(user.id)) return false;
+        if (smartSegment === "active" && (!row.lastVisit || row.inactive))
+          return false;
+        if (smartSegment === "from_games" && !fromGamesUserIds.has(user.id))
+          return false;
         if (smartSegment === "new" && row.totalVisits > 1) return false;
         if (smartSegment === "returning" && row.totalVisits <= 1) return false;
         if (smartSegment === "one_time" && row.totalVisits !== 1) return false;
-        if (smartSegment === "high_spenders" && row.lifetimeValue < 100) return false;
-        if (smartSegment === "inactive_30" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 30)) return false;
+        if (smartSegment === "high_spenders" && row.lifetimeValue < 100)
+          return false;
+        if (
+          smartSegment === "inactive_30" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 30)
+        )
+          return false;
         if (smartSegment === "at_risk" && !row.isAtRisk) return false;
-        if (smartSegment === "lost" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 60)) return false;
+        if (
+          smartSegment === "lost" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 60)
+        )
+          return false;
       }
 
       // Client activity filters should not hide Staff/Admin rows.
       // This keeps the desktop Profile Tab filter working for Staff and Admin.
       if (isClient) {
         const created = (user as any).created_at;
-        if (smartSegment !== "from_games" && !isWithinDesktopTimeRange(created, timeRange)) return false;
-        if (lastVisitFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 14)) return false;
-        if (lastVisitFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 14)) return false;
-        if (customerStatusFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 7)) return false;
-        if (customerStatusFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 30)) return false;
+        if (
+          smartSegment !== "from_games" &&
+          !isWithinDesktopTimeRange(created, timeRange, rangeStart, rangeEnd)
+        )
+          return false;
+        if (
+          lastVisitFilter === "active" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 14)
+        )
+          return false;
+        if (
+          lastVisitFilter === "inactive" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 14)
+        )
+          return false;
+        if (
+          customerStatusFilter === "active" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 7)
+        )
+          return false;
+        if (
+          customerStatusFilter === "inactive" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 30)
+        )
+          return false;
         if (customerStatusFilter === "at_risk" && !row.isAtRisk) return false;
         if (customerStatusFilter === "vip" && !row.isVip) return false;
-        if (customerGenderFilter !== "all" && (user.gender ?? "").toLowerCase() !== customerGenderFilter) return false;
+        if (
+          customerGenderFilter !== "all" &&
+          (user.gender ?? "").toLowerCase() !== customerGenderFilter
+        )
+          return false;
         if (customerAgeRangeFilter !== "all") {
           const age = row.age;
           if (age === null) return false;
-          if (customerAgeRangeFilter === "18-24" && (age < 18 || age > 24)) return false;
-          if (customerAgeRangeFilter === "25-34" && (age < 25 || age > 34)) return false;
-          if (customerAgeRangeFilter === "35-44" && (age < 35 || age > 44)) return false;
+          if (customerAgeRangeFilter === "18-24" && (age < 18 || age > 24))
+            return false;
+          if (customerAgeRangeFilter === "25-34" && (age < 25 || age > 34))
+            return false;
+          if (customerAgeRangeFilter === "35-44" && (age < 35 || age > 44))
+            return false;
           if (customerAgeRangeFilter === "45+" && age < 45) return false;
         }
       }
 
       if (!search) return true;
       const phone = normalizePhoneForMatch(user.phone);
-      if (phone && normalizedSearch && phone.includes(normalizedSearch)) return true;
-      return [user.full_name, user.email, user.phone, user.client_code, desktopRoleLabel(user.role), user.is_active === false ? "deactivated" : "active"].filter(Boolean).join(" ").toLowerCase().includes(search);
+      if (phone && normalizedSearch && phone.includes(normalizedSearch))
+        return true;
+      return [
+        user.full_name,
+        user.email,
+        user.phone,
+        user.client_code,
+        desktopRoleLabel(user.role),
+        user.is_active === false ? "deactivated" : "active",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
     });
-  }, [allProfileReportRows, filter, smartSegment, timeRange, searchTerm, lastVisitFilter, customerStatusFilter, customerGenderFilter, customerAgeRangeFilter, fromGamesUserIds]);
+  }, [
+    allProfileReportRows,
+    filter,
+    smartSegment,
+    timeRange,
+    rangeStart,
+    rangeEnd,
+    searchTerm,
+    lastVisitFilter,
+    customerStatusFilter,
+    customerGenderFilter,
+    customerAgeRangeFilter,
+    fromGamesUserIds,
+  ]);
 
   const sortedCustomerReportRows = useMemo(() => {
     const dir = customerSort.direction === "asc" ? 1 : -1;
     return filteredCustomerReportRows.slice().sort((a, b) => {
-      if (customerSort.key === "name") return (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir;
-      if (customerSort.key === "contact") return ((a.user.phone || a.user.email || "").localeCompare(b.user.phone || b.user.email || "")) * dir;
-      if (customerSort.key === "lastVisit") return ((new Date(a.lastVisit || 0).getTime() || 0) - (new Date(b.lastVisit || 0).getTime() || 0)) * dir;
-      if (customerSort.key === "daysAgo") return ((a.daysSinceLastVisit ?? 99999) - (b.daysSinceLastVisit ?? 99999)) * dir;
-      if (customerSort.key === "visits") return (a.totalVisits - b.totalVisits) * dir;
-      if (customerSort.key === "lifetime") return (a.lifetimeValue - b.lifetimeValue) * dir;
-      if (customerSort.key === "gifts") return (a.giftsCount - b.giftsCount) * dir;
-      if (customerSort.key === "status") return (Number(a.isInactive) - Number(b.isInactive)) * dir;
+      if (customerSort.key === "name")
+        return (
+          (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir
+        );
+      if (customerSort.key === "contact")
+        return (
+          (a.user.phone || a.user.email || "").localeCompare(
+            b.user.phone || b.user.email || "",
+          ) * dir
+        );
+      if (customerSort.key === "lastVisit")
+        return (
+          ((new Date(a.lastVisit || 0).getTime() || 0) -
+            (new Date(b.lastVisit || 0).getTime() || 0)) *
+          dir
+        );
+      if (customerSort.key === "daysAgo")
+        return (
+          ((a.daysSinceLastVisit ?? 99999) - (b.daysSinceLastVisit ?? 99999)) *
+          dir
+        );
+      if (customerSort.key === "visits")
+        return (a.totalVisits - b.totalVisits) * dir;
+      if (customerSort.key === "lifetime")
+        return (a.lifetimeValue - b.lifetimeValue) * dir;
+      if (customerSort.key === "gifts")
+        return (a.giftsCount - b.giftsCount) * dir;
+      if (customerSort.key === "status")
+        return (Number(a.isInactive) - Number(b.isInactive)) * dir;
       return 0;
     });
   }, [customerSort, filteredCustomerReportRows]);
@@ -1953,7 +2426,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
     const search = searchTerm.trim().toLowerCase();
     const normalizedSearch = normalizePhoneForMatch(searchTerm.trim());
 
-    return allProfileReportRows.filter(row => {
+    return allProfileReportRows.filter((row) => {
       const user = row.user;
       const isClient = user.role === "client";
 
@@ -1962,34 +2435,83 @@ export function UsersPage({ adminId }: { adminId: string }) {
       // Date and last-visit filters are customer activity filters, so they should not hide Staff/Admin.
       if (isClient) {
         const created = (user as any).created_at;
-        if (!isWithinDesktopTimeRange(created, timeRange)) return false;
-        if (lastVisitFilter === "active" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 14)) return false;
-        if (lastVisitFilter === "inactive" && (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 14)) return false;
+        if (!isWithinDesktopTimeRange(created, timeRange, rangeStart, rangeEnd))
+          return false;
+        if (
+          lastVisitFilter === "active" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit > 14)
+        )
+          return false;
+        if (
+          lastVisitFilter === "inactive" &&
+          (row.daysSinceLastVisit === null || row.daysSinceLastVisit <= 14)
+        )
+          return false;
       }
 
       if (!search) return true;
       const phone = normalizePhoneForMatch(user.phone);
-      if (phone && normalizedSearch && phone.includes(normalizedSearch)) return true;
-      return [user.full_name, user.email, user.phone, user.client_code, desktopRoleLabel(user.role), user.is_active === false ? "deactivated" : "active"].filter(Boolean).join(" ").toLowerCase().includes(search);
+      if (phone && normalizedSearch && phone.includes(normalizedSearch))
+        return true;
+      return [
+        user.full_name,
+        user.email,
+        user.phone,
+        user.client_code,
+        desktopRoleLabel(user.role),
+        user.is_active === false ? "deactivated" : "active",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
     });
-  }, [allProfileReportRows, filter, timeRange, searchTerm, lastVisitFilter]);
+  }, [
+    allProfileReportRows,
+    filter,
+    timeRange,
+    rangeStart,
+    rangeEnd,
+    searchTerm,
+    lastVisitFilter,
+  ]);
 
   const mobileSortedCustomerRows = useMemo(() => {
     const dir = customerSort.direction === "asc" ? 1 : -1;
     return mobileFilteredCustomerRows.slice().sort((a, b) => {
-      if (customerSort.key === "name") return (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir;
-      if (customerSort.key === "contact") return ((a.user.phone || a.user.email || "").localeCompare(b.user.phone || b.user.email || "")) * dir;
-      if (customerSort.key === "lastVisit") return ((new Date(a.lastVisit || 0).getTime() || 0) - (new Date(b.lastVisit || 0).getTime() || 0)) * dir;
-      if (customerSort.key === "visits") return (a.totalVisits - b.totalVisits) * dir;
-      if (customerSort.key === "lifetime") return (a.lifetimeValue - b.lifetimeValue) * dir;
-      if (customerSort.key === "gifts") return (a.giftsCount - b.giftsCount) * dir;
-      if (customerSort.key === "status") return (Number(a.isInactive) - Number(b.isInactive)) * dir;
+      if (customerSort.key === "name")
+        return (
+          (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir
+        );
+      if (customerSort.key === "contact")
+        return (
+          (a.user.phone || a.user.email || "").localeCompare(
+            b.user.phone || b.user.email || "",
+          ) * dir
+        );
+      if (customerSort.key === "lastVisit")
+        return (
+          ((new Date(a.lastVisit || 0).getTime() || 0) -
+            (new Date(b.lastVisit || 0).getTime() || 0)) *
+          dir
+        );
+      if (customerSort.key === "visits")
+        return (a.totalVisits - b.totalVisits) * dir;
+      if (customerSort.key === "lifetime")
+        return (a.lifetimeValue - b.lifetimeValue) * dir;
+      if (customerSort.key === "gifts")
+        return (a.giftsCount - b.giftsCount) * dir;
+      if (customerSort.key === "status")
+        return (Number(a.isInactive) - Number(b.isInactive)) * dir;
       return 0;
     });
   }, [customerSort, mobileFilteredCustomerRows]);
 
   function sortBy(key: string) {
-    setCustomerSort(cur => ({ key, direction: cur.key === key && cur.direction === "asc" ? "desc" : "asc" }));
+    setCustomerSort((cur) => ({
+      key,
+      direction: cur.key === key && cur.direction === "asc" ? "desc" : "asc",
+    }));
   }
 
   function headerClass(key: string) {
@@ -1998,94 +2520,198 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   // Stats — desktop cards and segment counts follow the selected date range and selected segment.
   const dateScopedCustomerRows = useMemo(() => {
-    return customerReportRows.filter(row =>
-      isWithinDesktopTimeRange((row.user as any).created_at ?? row.lastVisit, timeRange),
+    return customerReportRows.filter((row) =>
+      isWithinDesktopTimeRange(
+        (row.user as any).created_at ?? row.lastVisit,
+        timeRange,
+        rangeStart,
+        rangeEnd,
+      ),
     );
-  }, [customerReportRows, timeRange]);
+  }, [customerReportRows, timeRange, rangeStart, rangeEnd]);
 
   const activityScopedCustomerRows = useMemo(() => {
     if (timeRange === "all") return customerReportRows;
-    return customerReportRows.filter(row => isWithinDesktopTimeRange(row.lastVisit, timeRange));
-  }, [customerReportRows, timeRange]);
+    return customerReportRows.filter((row) =>
+      isWithinDesktopTimeRange(row.lastVisit, timeRange, rangeStart, rangeEnd),
+    );
+  }, [customerReportRows, timeRange, rangeStart, rangeEnd]);
 
   const fromGamesCount = fromGamesUserIds.size;
 
   const baseSegmentRows = useMemo(() => {
     if (smartSegment === "active") {
-      return activityScopedCustomerRows.filter(row => row.lastVisit && !row.inactive);
+      return activityScopedCustomerRows.filter(
+        (row) => row.lastVisit && !row.inactive,
+      );
     }
 
     if (smartSegment === "from_games") {
-      return customerReportRows.filter(row => fromGamesUserIds.has(row.user.id));
+      return customerReportRows.filter((row) =>
+        fromGamesUserIds.has(row.user.id),
+      );
     }
 
     return dateScopedCustomerRows;
-  }, [activityScopedCustomerRows, customerReportRows, dateScopedCustomerRows, fromGamesUserIds, smartSegment]);
+  }, [
+    activityScopedCustomerRows,
+    customerReportRows,
+    dateScopedCustomerRows,
+    fromGamesUserIds,
+    smartSegment,
+  ]);
 
   const statsScopedCustomerRows = useMemo(() => {
-    return baseSegmentRows.filter(row => {
-      if (smartSegment === "all" || smartSegment === "active" || smartSegment === "from_games") return true;
+    return baseSegmentRows.filter((row) => {
+      if (
+        smartSegment === "all" ||
+        smartSegment === "active" ||
+        smartSegment === "from_games"
+      )
+        return true;
       if (smartSegment === "new") return row.totalVisits <= 1;
       if (smartSegment === "returning") return row.totalVisits > 1;
       if (smartSegment === "one_time") return row.totalVisits === 1;
       if (smartSegment === "high_spenders") return row.lifetimeValue >= 100;
-      if (smartSegment === "inactive_30") return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 30;
+      if (smartSegment === "inactive_30")
+        return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 30;
       if (smartSegment === "at_risk") return row.isAtRisk;
-      if (smartSegment === "lost") return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 60;
+      if (smartSegment === "lost")
+        return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 60;
       return true;
     });
   }, [baseSegmentRows, smartSegment]);
 
   const totalCustomerCount = statsScopedCustomerRows.length;
-  const returningCustomerCount = statsScopedCustomerRows.filter(r => r.totalVisits > 1).length;
-  const activeReportCustomers = statsScopedCustomerRows.filter(r => r.lastVisit && !r.inactive).length;
-  const inactiveCustomerCount = statsScopedCustomerRows.filter(r => r.inactive).length;
-  const atRiskCustomerCount = statsScopedCustomerRows.filter(r => r.isAtRisk).length;
-  const vipCustomerCount = statsScopedCustomerRows.filter(r => r.isVip).length;
-  const averageVisitsPerCustomer = statsScopedCustomerRows.length > 0
-    ? (statsScopedCustomerRows.reduce((sum, r) => sum + r.totalVisits, 0) / statsScopedCustomerRows.length).toFixed(1)
-    : "0";
+  const returningCustomerCount = statsScopedCustomerRows.filter(
+    (r) => r.totalVisits > 1,
+  ).length;
+  const activeReportCustomers = statsScopedCustomerRows.filter(
+    (r) => r.lastVisit && !r.inactive,
+  ).length;
+  const inactiveCustomerCount = statsScopedCustomerRows.filter(
+    (r) => r.inactive,
+  ).length;
+  const atRiskCustomerCount = statsScopedCustomerRows.filter(
+    (r) => r.isAtRisk,
+  ).length;
+  const vipCustomerCount = statsScopedCustomerRows.filter(
+    (r) => r.isVip,
+  ).length;
+  const averageVisitsPerCustomer =
+    statsScopedCustomerRows.length > 0
+      ? (
+          statsScopedCustomerRows.reduce((sum, r) => sum + r.totalVisits, 0) /
+          statsScopedCustomerRows.length
+        ).toFixed(1)
+      : "0";
 
   const segmentBaseRows = dateScopedCustomerRows;
-  const activeSegmentCount = activityScopedCustomerRows.filter(r => r.lastVisit && !r.inactive).length;
+  const activeSegmentCount = activityScopedCustomerRows.filter(
+    (r) => r.lastVisit && !r.inactive,
+  ).length;
 
   const smartSegments = [
-    { key: "active" as const, label: "Active users", count: activeSegmentCount },
-    { key: "new" as const, label: "New customers", count: segmentBaseRows.filter(r => r.totalVisits <= 1).length },
-    { key: "returning" as const, label: "Returning customers", count: segmentBaseRows.filter(r => r.totalVisits > 1).length },
-    { key: "one_time" as const, label: "One-time visitors", count: segmentBaseRows.filter(r => r.totalVisits === 1).length },
-    { key: "high_spenders" as const, label: "High spenders", count: segmentBaseRows.filter(r => r.lifetimeValue >= 100).length },
-    { key: "inactive_30" as const, label: "Inactive 30+ days", count: segmentBaseRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 30).length },
-    { key: "at_risk" as const, label: "At risk", count: segmentBaseRows.filter(r => r.isAtRisk).length },
-    { key: "lost" as const, label: "Lost customers", count: segmentBaseRows.filter(r => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 60).length },
+    {
+      key: "active" as const,
+      label: "Active users",
+      count: activeSegmentCount,
+    },
+    {
+      key: "new" as const,
+      label: "New customers",
+      count: segmentBaseRows.filter((r) => r.totalVisits <= 1).length,
+    },
+    {
+      key: "returning" as const,
+      label: "Returning customers",
+      count: segmentBaseRows.filter((r) => r.totalVisits > 1).length,
+    },
+    {
+      key: "one_time" as const,
+      label: "One-time visitors",
+      count: segmentBaseRows.filter((r) => r.totalVisits === 1).length,
+    },
+    {
+      key: "high_spenders" as const,
+      label: "High spenders",
+      count: segmentBaseRows.filter((r) => r.lifetimeValue >= 100).length,
+    },
+    {
+      key: "inactive_30" as const,
+      label: "Inactive 30+ days",
+      count: segmentBaseRows.filter(
+        (r) => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 30,
+      ).length,
+    },
+    {
+      key: "at_risk" as const,
+      label: "At risk",
+      count: segmentBaseRows.filter((r) => r.isAtRisk).length,
+    },
+    {
+      key: "lost" as const,
+      label: "Lost customers",
+      count: segmentBaseRows.filter(
+        (r) => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 60,
+      ).length,
+    },
     { key: "from_games" as const, label: "From games", count: fromGamesCount },
   ];
 
   function downloadVisibleCustomerTable() {
     const rows = sortedCustomerReportRows.slice(0, 80);
-    const header = ["Name", "Client Code", "Phone", "Email", "Role", "Last Visit", "Days Ago", "Total Visits", "Lifetime $", "Gifts", "Status"].join(",");
-    const body = rows.map(r => [
-      `"${r.user.full_name || ""}"`, r.user.client_code || "", r.user.phone || "", r.user.email || "",
-      desktopRoleLabel(r.user.role), r.lastVisit ? new Date(r.lastVisit).toLocaleDateString() : "",
-      r.daysSinceLastVisit ?? "", r.totalVisits, desktopFormatMoney(r.lifetimeValue), r.giftsCount,
-      daysAgoStatusLabel(r.daysSinceLastVisit),
-    ].join(",")).join("\n");
+    const header = [
+      "Name",
+      "Client Code",
+      "Phone",
+      "Email",
+      "Role",
+      "Last Visit",
+      "Days Ago",
+      "Total Visits",
+      "Lifetime $",
+      "Gifts",
+      "Status",
+    ].join(",");
+    const body = rows
+      .map((r) =>
+        [
+          `"${r.user.full_name || ""}"`,
+          r.user.client_code || "",
+          r.user.phone || "",
+          r.user.email || "",
+          desktopRoleLabel(r.user.role),
+          r.lastVisit ? new Date(r.lastVisit).toLocaleDateString() : "",
+          r.daysSinceLastVisit ?? "",
+          r.totalVisits,
+          desktopFormatMoney(r.lifetimeValue),
+          r.giftsCount,
+          daysAgoStatusLabel(r.daysSinceLastVisit),
+        ].join(","),
+      )
+      .join("\n");
     const blob = new Blob([header + "\n" + body], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "customers.csv";
-    document.body.appendChild(a); a.click(); a.remove();
+    a.href = url;
+    a.download = "customers.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     URL.revokeObjectURL(url);
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-[#7b8977] text-white lg:bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]" style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}>
+    <main
+      className="min-h-screen bg-[#7b8977] text-white lg:bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]"
+      style={{ fontFamily: "Inter, Arial, Helvetica, sans-serif" }}
+    >
       <Toast message={toast} tone={tone} />
 
       <div className="flex min-h-screen w-full gap-3 overflow-visible bg-transparent p-3 pb-24 lg:gap-6 lg:p-6 lg:pb-6 lg:min-h-screen">
-
         {/* Sidebar */}
         <AdminSidebar active="users" />
 
@@ -2094,233 +2720,548 @@ export function UsersPage({ adminId }: { adminId: string }) {
           <div className="mb-5 space-y-5 lg:hidden">
             <AdminMobileHeader profile={adminProfile} />
             <div className="rounded-[20px] border border-white/10 bg-white/10 px-5 py-5 shadow-[0_18px_48px_rgba(35,54,47,0.16)] backdrop-blur-2xl">
-              <h1 className="text-[24px] font-black tracking-[-0.05em] text-white">Users</h1>
+              <h1 className="text-[24px] font-black tracking-[-0.05em] text-white">
+                Users
+              </h1>
             </div>
           </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-24 text-[14px] font-bold text-white/60">Loading users...</div>
-        ) : selectedUser ? (
-          <DesktopClientProfilePanel
-            user={selectedUser}
-            currentUserId={adminId}
-            categories={selectedCategories}
-            stamps={selectedStamps}
-            rewards={selectedRewards}
-            activities={activityTxns.filter(t => t.client_id === selectedUser.id && t.action_type !== "manual_adjustment")}
-            loading={selectedLoading}
-            onBack={() => setSelectedUser(null)}
-            onRoleChange={role => void setRole(selectedUser.id, role)}
-            onDeactivate={() => void deactivateUser(selectedUser.id)}
-            onReactivate={role => void reactivateUser(selectedUser.id, role)}
-            onAddStamp={categoryId => void addStampToSelectedClient(categoryId)}
-            onRemoveStamp={categoryId => void removeStampFromSelectedClient(categoryId)}
-            onSendGift={(gift, desc) => void sendGiftToSelectedClient(gift, desc)}
-          />
-        ) : (
-          <div className="min-h-[calc(100vh-88px)] w-full rounded-[28px] bg-white/10 p-4 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl lg:min-h-[calc(100vh-120px)] lg:rounded-[30px] lg:p-5">
+          {loading ? (
+            <div className="flex items-center justify-center py-24 text-[14px] font-bold text-white/60">
+              Loading users...
+            </div>
+          ) : selectedUser ? (
+            <DesktopClientProfilePanel
+              user={selectedUser}
+              currentUserId={adminId}
+              categories={selectedCategories}
+              stamps={selectedStamps}
+              rewards={selectedRewards}
+              activities={activityTxns.filter(
+                (t) =>
+                  t.client_id === selectedUser.id &&
+                  t.action_type !== "manual_adjustment",
+              )}
+              loading={selectedLoading}
+              onBack={() => setSelectedUser(null)}
+              onRoleChange={(role) => void setRole(selectedUser.id, role)}
+              onDeactivate={() => void deactivateUser(selectedUser.id)}
+              onReactivate={(role) =>
+                void reactivateUser(selectedUser.id, role)
+              }
+              onAddStamp={(categoryId) =>
+                void addStampToSelectedClient(categoryId)
+              }
+              onRemoveStamp={(categoryId) =>
+                void removeStampFromSelectedClient(categoryId)
+              }
+              onSendGift={(gift, desc) =>
+                void sendGiftToSelectedClient(gift, desc)
+              }
+            />
+          ) : (
+            <div className="min-h-[calc(100vh-88px)] w-full rounded-[28px] bg-white/10 p-4 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl lg:min-h-[calc(100vh-120px)] lg:rounded-[30px] lg:p-5">
+              {/* Search + filters */}
+              <div className="mb-4 flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <h2 className="mt-1 hidden shrink-0 text-[24px] font-black tracking-[-0.04em] text-white lg:block">
+                  Customer behavior
+                </h2>
+                <div className="ml-auto flex w-full min-w-0 flex-col gap-2 lg:w-auto lg:flex-row lg:items-center lg:justify-end">
+                  <input
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setVisibleUserCount(50);
+                      setSelectedUser(null);
+                    }}
+                    placeholder="Search by name, phone, member ID..."
+                    onFocus={() => setReportFiltersOpen(false)}
+                    className="h-11 w-full min-w-0 rounded-[14px] border border-white/25 bg-white px-4 text-[12px] font-bold text-black outline-none focus:border-[#ffd66b] lg:h-9 lg:w-[380px] lg:rounded-[11px] lg:px-3 lg:text-[11px]"
+                  />
+                  <div
+                    ref={reportFilterRef}
+                    className="relative w-full lg:w-auto"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReportFiltersOpen((current) => !current)
+                      }
+                      className="flex h-12 w-full items-center justify-between gap-4 rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.08em] text-[#365665] shadow-[0_10px_26px_rgba(255,214,107,0.22)] lg:h-10 lg:min-w-[138px] lg:w-auto"
+                      aria-expanded={reportFiltersOpen}
+                    >
+                      <span>{desktopTimeRangeLabel(timeRange)}</span>
+                      <span
+                        className={`text-[10px] transition ${reportFiltersOpen ? "rotate-180" : ""}`}
+                      >
+                        ▾
+                      </span>
+                    </button>
 
-            {/* Search + filters */}
-            <div className="mb-4 flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <h2 className="mt-1 hidden shrink-0 text-[24px] font-black tracking-[-0.04em] text-white lg:block">Customer behavior</h2>
-              <div className="ml-auto flex w-full min-w-0 flex-col gap-2 lg:w-auto lg:flex-row lg:items-center lg:justify-end">
-                <input
-                  value={searchTerm}
-                  onChange={e => { setSearchTerm(e.target.value); setVisibleUserCount(50); setSelectedUser(null); }}
-                  placeholder="Search by name, phone, member ID..."
-                  onFocus={() => setReportFiltersOpen(false)}
-                  className="h-11 w-full min-w-0 rounded-[14px] border border-white/25 bg-white px-4 text-[12px] font-bold text-black outline-none focus:border-[#ffd66b] lg:h-9 lg:w-[380px] lg:rounded-[11px] lg:px-3 lg:text-[11px]"
-                />
-                <div ref={reportFilterRef} className="relative w-full lg:w-auto">
-                  <button type="button" onClick={() => setReportFiltersOpen(c => !c)} className="h-12 w-full rounded-[16px] border border-white/25 bg-white/12 px-5 text-[11px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/18 lg:h-10 lg:w-auto lg:rounded-[12px]">Filter</button>
-                  {reportFiltersOpen && (
-                    <div className="absolute left-0 right-0 top-14 z-30 w-full rounded-[22px] bg-[#365665] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)] lg:left-auto lg:top-12 lg:w-[300px]">
-                      <div className="space-y-4">
-                        {[
-                          { label: "Date Range", value: timeRange, onChange: (v: string) => { setTimeRange(v as DesktopTimeRange); setReportFiltersOpen(false); }, options: [["today","Today"],["week","This week"],["month","This month"],["all","Show all"]] },
-                          { label: "Profile Tab", value: filter, onChange: (v: string) => { setFilter(v as DesktopProfileTab); setReportFiltersOpen(false); }, options: [["all","All profiles"],["client","Clients"],["staff","Staff"],["master_admin","Admin"],["deactivated","Deactivated profiles"]] },
-                        ].map(({ label, value, onChange, options }) => (
-                          <label key={label} className="block">
-                            <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/58">{label}</span>
-                            <select value={value} onChange={e => onChange(e.target.value)} className="h-10 w-full rounded-[12px] border border-white/20 bg-white px-3 text-[12px] font-black text-[#365665] outline-none">
-                              {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    {reportFiltersOpen ? (
+                      <div className="absolute left-0 right-0 top-14 z-40 w-full rounded-[22px] bg-[#ffd66b] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.30)] lg:left-auto lg:right-0 lg:top-12 lg:w-[250px]">
+                        <div className="space-y-1">
+                          {[
+                            ["today", "Today"],
+                            ["week", "This Week"],
+                            ["month", "This Month"],
+                            ["date_range", "Date Range"],
+                            ["all", "Show All"],
+                          ].map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => {
+                                setTimeRange(value as DesktopTimeRange);
+                                setVisibleUserCount(50);
+                                if (value !== "date_range")
+                                  setReportFiltersOpen(false);
+                              }}
+                              className={`flex h-10 w-full items-center rounded-[12px] px-4 text-left text-[11px] font-black uppercase tracking-[0.08em] transition ${
+                                timeRange === value
+                                  ? "bg-[#2563eb] text-white"
+                                  : "text-[#365665] hover:bg-white/35"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {timeRange === "date_range" ? (
+                          <div className="mt-2 rounded-[16px] bg-[#ffe59a] p-3">
+                            <label className="block">
+                              <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                                From
+                              </span>
+                              <input
+                                type="date"
+                                value={rangeStart}
+                                onChange={(event) =>
+                                  setRangeStart(event.target.value)
+                                }
+                                className="h-10 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                              />
+                            </label>
+                            <label className="mt-2 block">
+                              <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                                To
+                              </span>
+                              <input
+                                type="date"
+                                value={rangeEnd}
+                                min={rangeStart || undefined}
+                                onChange={(event) =>
+                                  setRangeEnd(event.target.value)
+                                }
+                                className="h-10 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setReportFiltersOpen(false)}
+                              className="mt-3 h-10 w-full rounded-[10px] bg-[#365665] text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-2 border-t border-[#365665]/15 pt-2">
+                          <label className="block">
+                            <span className="mb-1.5 block px-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                              Profile Tab
+                            </span>
+                            <select
+                              value={filter}
+                              onChange={(event) => {
+                                setFilter(
+                                  event.target.value as DesktopProfileTab,
+                                );
+                                setVisibleUserCount(50);
+                                setReportFiltersOpen(false);
+                              }}
+                              className="h-10 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                            >
+                              <option value="all">All profiles</option>
+                              <option value="client">Clients</option>
+                              <option value="staff">Staff</option>
+                              <option value="master_admin">Admin</option>
+                              <option value="deactivated">
+                                Deactivated profiles
+                              </option>
                             </select>
                           </label>
-                        ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={downloadVisibleCustomerTable}
+                    className="hidden h-10 w-10 items-center justify-center rounded-[12px] border border-white/25 bg-white/12 text-white transition hover:bg-white/18 lg:flex"
+                    title="Download table"
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 3v11m0 0 4-4m-4 4-4-4"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M5 17v2.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V17"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
                 </div>
-                <button type="button" onClick={downloadVisibleCustomerTable} className="hidden h-10 w-10 items-center justify-center rounded-[12px] border border-white/25 bg-white/12 text-white transition hover:bg-white/18 lg:flex" title="Download table">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 3v11m0 0 4-4m-4 4-4-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 17v2.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V17" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/></svg>
-                </button>
               </div>
-            </div>
 
-            {/* Stats row */}
-            <div className="mb-4 hidden w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid lg:grid-cols-7">
-              <DesktopReportMetric label="Total Customers" value={totalCustomerCount} />
-              <DesktopReportMetric label="Returning" value={returningCustomerCount} />
-              <DesktopReportMetric label="Active Users" value={activeReportCustomers} />
-              <DesktopReportMetric label="Inactive" value={inactiveCustomerCount} />
-              <DesktopReportMetric label="At Risk" value={atRiskCustomerCount} />
-              <DesktopReportMetric label="VIP" value={vipCustomerCount} />
-              <DesktopReportMetric label="Avg. Visits" value={averageVisitsPerCustomer} />
-            </div>
+              {/* Stats row */}
+              <div className="mb-4 hidden w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid lg:grid-cols-7">
+                <DesktopReportMetric
+                  label="Total Customers"
+                  value={totalCustomerCount}
+                />
+                <DesktopReportMetric
+                  label="Returning"
+                  value={returningCustomerCount}
+                />
+                <DesktopReportMetric
+                  label="Active Users"
+                  value={activeReportCustomers}
+                />
+                <DesktopReportMetric
+                  label="Inactive"
+                  value={inactiveCustomerCount}
+                />
+                <DesktopReportMetric
+                  label="At Risk"
+                  value={atRiskCustomerCount}
+                />
+                <DesktopReportMetric label="VIP" value={vipCustomerCount} />
+                <DesktopReportMetric
+                  label="Avg. Visits"
+                  value={averageVisitsPerCustomer}
+                />
+              </div>
 
-            {/* Smart Segments — desktop only */}
-            <div className="mb-4 hidden flex-wrap items-center gap-2 lg:flex">
-              <button
-                type="button"
-                onClick={() => setSmartSegment("all")}
-                className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${smartSegment === "all" ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.24)]" : "bg-white/12 text-white/82 hover:bg-white/18"}`}
-              >
-                {desktopTimeRangeLabel(timeRange)}
-              </button>
-              {smartSegments.map(segment => (
+              {/* Smart Segments — desktop only */}
+              <div className="mb-4 hidden flex-wrap items-center gap-2 lg:flex">
                 <button
-                  key={segment.key}
                   type="button"
-                  onClick={() => { setSmartSegment(segment.key); setVisibleUserCount(50); }}
-                  className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${smartSegment === segment.key ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.24)]" : "bg-white/12 text-white/82 hover:bg-white/18"}`}
-                  title={`${segment.label}: ${segment.count}`}
+                  onClick={() => setSmartSegment("all")}
+                  className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${smartSegment === "all" ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.24)]" : "bg-white/12 text-white/82 hover:bg-white/18"}`}
                 >
-                  {segment.label}
+                  {desktopTimeRangeLabel(timeRange)}
                 </button>
-              ))}
-            </div>
+                {smartSegments.map((segment) => (
+                  <button
+                    key={segment.key}
+                    type="button"
+                    onClick={() => {
+                      setSmartSegment(segment.key);
+                      setVisibleUserCount(50);
+                    }}
+                    className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] transition ${smartSegment === segment.key ? "bg-[#ffd66b] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.24)]" : "bg-white/12 text-white/82 hover:bg-white/18"}`}
+                    title={`${segment.label}: ${segment.count}`}
+                  >
+                    {segment.label}
+                  </button>
+                ))}
+              </div>
 
-            {/* Mobile customer list */}
-            <div className="lg:hidden">
-              <div className="overflow-hidden rounded-[22px] bg-white/10">
-                <div className="grid grid-cols-[1.25fr_0.8fr_0.55fr_0.85fr] gap-3 border-b border-white/14 bg-white/6 px-3 py-3 text-[9px] font-black uppercase tracking-[0.13em] text-white/58">
-                  <button type="button" onClick={() => sortBy("name")} className={headerClass("name")}>Name</button>
-                  <button type="button" onClick={() => sortBy("lastVisit")} className={headerClass("lastVisit")}>Date</button>
-                  <button type="button" onClick={() => sortBy("visits")} className={headerClass("visits")}>Visits</button>
-                  <button type="button" onClick={() => sortBy("status")} className={headerClass("status")}>Status</button>
-                </div>
-                <div className="max-h-[560px] overflow-auto pb-20">
-                  {mobileSortedCustomerRows.slice(0, visibleUserCount).map((row) => (
+              {/* Mobile customer list */}
+              <div className="lg:hidden">
+                <div className="overflow-hidden rounded-[22px] bg-white/10">
+                  <div className="grid grid-cols-[1.25fr_0.8fr_0.55fr_0.85fr] gap-3 border-b border-white/14 bg-white/6 px-3 py-3 text-[9px] font-black uppercase tracking-[0.13em] text-white/58">
                     <button
-                      key={row.user.id}
                       type="button"
-                      onClick={() => void openUserProfile(row.user)}
-                      className="grid w-full grid-cols-[1.25fr_0.8fr_0.55fr_0.85fr] items-center gap-3 border-b border-white/10 px-3 py-3 text-left text-[11px] font-bold text-white/74 transition last:border-b-0 hover:bg-white/10"
+                      onClick={() => sortBy("name")}
+                      className={headerClass("name")}
                     >
-                      <div className="min-w-0">
-                        <div className="truncate font-black text-white">{row.user.full_name || "Client"}</div>
-                      </div>
-                      <div className="text-[10px] leading-tight text-white/72">{desktopFormatDateOnly(row.lastVisit)}</div>
-                      <div className="font-black text-white">{row.totalVisits}</div>
-                      <div>
-                        <span className={`inline-flex rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${daysAgoClass(row.daysSinceLastVisit)}`}>
-                          {daysAgoStatusLabel(row.daysSinceLastVisit)}
-                        </span>
-                      </div>
+                      Name
                     </button>
-                  ))}
-
-                  {mobileSortedCustomerRows.length > visibleUserCount && (
-                    <div className="px-4 py-4 text-center">
-                      <button type="button" onClick={() => setVisibleUserCount(c => c + 50)} className="rounded-full bg-white/12 px-6 py-3 text-[12px] font-black text-white transition hover:bg-white/20">
-                        Load more ({mobileSortedCustomerRows.length - visibleUserCount} remaining)
-                      </button>
-                    </div>
-                  )}
-
-                  {mobileSortedCustomerRows.length === 0 && (
-                    <div className="px-4 py-6 text-center text-[13px] font-bold text-white/64">No profiles found for this view.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="hidden w-full overflow-hidden rounded-[22px] bg-white/10 lg:block">
-              <div className="grid gap-4 border-b border-white/14 bg-white/6 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58" style={{ gridTemplateColumns: CUSTOMER_TABLE_GRID, width: "100%" }}>
-                {[["name","Names"],["contact","Contact"],["lastVisit","Last Visit"]].map(([k,l]) => (
-                  <button key={k} type="button" onClick={() => sortBy(k)} className={headerClass(k)}>{l}</button>
-                ))}
-                <button type="button" onClick={() => sortBy("daysAgo")} className={headerClass("daysAgo")}>Days Ago</button>
-                {[["visits","Visits"],["lifetime","Lifetime $"],["gifts","Gifts"],["status","Status"]].map(([k,l]) => (
-                  <button key={k} type="button" onClick={() => sortBy(k)} className={headerClass(k)}>{l}</button>
-                ))}
-                <div className="text-left">Actions</div>
-                <div className="text-left">Last Contacted</div>
-              </div>
-
-              <div className="max-h-[600px] overflow-auto">
-                {sortedCustomerReportRows.slice(0, visibleUserCount).map(row => {
-                  const digits = String(row.user.phone || "").replace(/\D/g, "");
-                  const whatsappUrl = digits ? `https://wa.me/${digits}` : "";
-
-                  return (
-                    <div key={row.user.id} className="grid gap-4 px-4 py-3 text-[12px] font-bold text-white/78 transition hover:bg-white/10" style={{ gridTemplateColumns: CUSTOMER_TABLE_GRID, width: "100%" }}>
-                      <button type="button" onClick={() => void openUserProfile(row.user)} className="min-w-0 text-left">
-                        <div className="truncate font-black text-white">{row.user.full_name || "Client"}</div>
-                      </button>
-                      <div className="min-w-0"><div className="truncate">{row.user.phone || "—"}</div></div>
-                      <div>{desktopFormatDateOnly(row.lastVisit)}</div>
-                      <div><span className={`inline-flex min-w-[34px] justify-center rounded-full px-2 py-1 text-[10px] font-black ${daysAgoClass(row.daysSinceLastVisit)}`}>{row.daysSinceLastVisit ?? "—"}</span></div>
-                      <div className="font-black text-white">{row.totalVisits}</div>
-                      <div className="font-black text-white">{desktopFormatMoney(row.lifetimeValue)}</div>
-                      <div className="font-black text-white">{row.giftsCount}</div>
-                      <div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoClass(row.daysSinceLastVisit)}`}>{daysAgoStatusLabel(row.daysSinceLastVisit)}</span></div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {row.user.role === "client" && !row.user.isGameOnly ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setDirectGiftCategoryId(categories[0]?.id ?? "");
-                              setDirectGiftNote("");
-                              setGiftTargetUser(row.user);
-                            }}
-                            className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
-                          >
-                            Gift
-                          </button>
-                        ) : <span className="text-white/36">—</span>}
-                        {whatsappUrl ? (
-                          <a href={whatsappUrl} target="_blank" rel="noreferrer" className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white">WA</a>
-                        ) : <span className="text-white/36">—</span>}
-                        <button
-                          type="button"
-                          onClick={e => { e.preventDefault(); e.stopPropagation(); markCustomerContacted(row.user); }}
-                          className="rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
-                        >
-                          Contacted
-                        </button>
-                      </div>
-                      <div className="space-y-0.5 text-[11px] font-black text-white/72">
-                        {(() => {
-                          const keys = sharedContactKeys(row.user.phone, row.user.email, row.user.full_name || row.user.id);
-                          const dates = contactHistoryForKeys(keys).slice(0, 2);
-                          return dates.length > 0
-                            ? dates.map(d => <div key={d}>{desktopFormatDateTime(d)}</div>)
-                            : <span className="text-white/42">—</span>;
-                        })()}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {sortedCustomerReportRows.length > visibleUserCount && (
-                  <div className="px-4 py-4 text-center">
-                    <button type="button" onClick={() => setVisibleUserCount(c => c + 50)} className="rounded-full bg-white/12 px-6 py-2.5 text-[12px] font-black text-white transition hover:bg-white/20">
-                      Load more ({sortedCustomerReportRows.length - visibleUserCount} remaining)
+                    <button
+                      type="button"
+                      onClick={() => sortBy("lastVisit")}
+                      className={headerClass("lastVisit")}
+                    >
+                      Date
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sortBy("visits")}
+                      className={headerClass("visits")}
+                    >
+                      Visits
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sortBy("status")}
+                      className={headerClass("status")}
+                    >
+                      Status
                     </button>
                   </div>
-                )}
+                  <div className="max-h-[560px] overflow-auto pb-20">
+                    {mobileSortedCustomerRows
+                      .slice(0, visibleUserCount)
+                      .map((row) => (
+                        <button
+                          key={row.user.id}
+                          type="button"
+                          onClick={() => void openUserProfile(row.user)}
+                          className="grid w-full grid-cols-[1.25fr_0.8fr_0.55fr_0.85fr] items-center gap-3 border-b border-white/10 px-3 py-3 text-left text-[11px] font-bold text-white/74 transition last:border-b-0 hover:bg-white/10"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-black text-white">
+                              {row.user.full_name || "Client"}
+                            </div>
+                          </div>
+                          <div className="text-[10px] leading-tight text-white/72">
+                            {desktopFormatDateOnly(row.lastVisit)}
+                          </div>
+                          <div className="font-black text-white">
+                            {row.totalVisits}
+                          </div>
+                          <div>
+                            <span
+                              className={`inline-flex rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${daysAgoClass(row.daysSinceLastVisit)}`}
+                            >
+                              {daysAgoStatusLabel(row.daysSinceLastVisit)}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
 
-                {sortedCustomerReportRows.length === 0 && (
-                  <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">No customers found for this view.</div>
-                )}
+                    {mobileSortedCustomerRows.length > visibleUserCount && (
+                      <div className="px-4 py-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleUserCount((c) => c + 50)}
+                          className="rounded-full bg-white/12 px-6 py-3 text-[12px] font-black text-white transition hover:bg-white/20"
+                        >
+                          Load more (
+                          {mobileSortedCustomerRows.length - visibleUserCount}{" "}
+                          remaining)
+                        </button>
+                      </div>
+                    )}
+
+                    {mobileSortedCustomerRows.length === 0 && (
+                      <div className="px-4 py-6 text-center text-[13px] font-bold text-white/64">
+                        No profiles found for this view.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="hidden w-full overflow-hidden rounded-[22px] bg-white/10 lg:block">
+                <div
+                  className="grid gap-4 border-b border-white/14 bg-white/6 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/58"
+                  style={{
+                    gridTemplateColumns: CUSTOMER_TABLE_GRID,
+                    width: "100%",
+                  }}
+                >
+                  {[
+                    ["name", "Names"],
+                    ["contact", "Contact"],
+                    ["lastVisit", "Last Visit"],
+                  ].map(([k, l]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => sortBy(k)}
+                      className={headerClass(k)}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => sortBy("daysAgo")}
+                    className={headerClass("daysAgo")}
+                  >
+                    Days Ago
+                  </button>
+                  {[
+                    ["visits", "Visits"],
+                    ["lifetime", "Lifetime $"],
+                    ["gifts", "Gifts"],
+                    ["status", "Status"],
+                  ].map(([k, l]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => sortBy(k)}
+                      className={headerClass(k)}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                  <div className="text-left">Actions</div>
+                  <div className="text-left">Last Contacted</div>
+                </div>
+
+                <div className="max-h-[600px] overflow-auto">
+                  {sortedCustomerReportRows
+                    .slice(0, visibleUserCount)
+                    .map((row) => {
+                      const digits = String(row.user.phone || "").replace(
+                        /\D/g,
+                        "",
+                      );
+                      const whatsappUrl = digits
+                        ? `https://wa.me/${digits}`
+                        : "";
+
+                      return (
+                        <div
+                          key={row.user.id}
+                          className="grid gap-4 px-4 py-3 text-[12px] font-bold text-white/78 transition hover:bg-white/10"
+                          style={{
+                            gridTemplateColumns: CUSTOMER_TABLE_GRID,
+                            width: "100%",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void openUserProfile(row.user)}
+                            className="min-w-0 text-left"
+                          >
+                            <div className="truncate font-black text-white">
+                              {row.user.full_name || "Client"}
+                            </div>
+                          </button>
+                          <div className="min-w-0">
+                            <div className="truncate">
+                              {row.user.phone || "—"}
+                            </div>
+                          </div>
+                          <div>{desktopFormatDateOnly(row.lastVisit)}</div>
+                          <div>
+                            <span
+                              className={`inline-flex min-w-[34px] justify-center rounded-full px-2 py-1 text-[10px] font-black ${daysAgoClass(row.daysSinceLastVisit)}`}
+                            >
+                              {row.daysSinceLastVisit ?? "—"}
+                            </span>
+                          </div>
+                          <div className="font-black text-white">
+                            {row.totalVisits}
+                          </div>
+                          <div className="font-black text-white">
+                            {desktopFormatMoney(row.lifetimeValue)}
+                          </div>
+                          <div className="font-black text-white">
+                            {row.giftsCount}
+                          </div>
+                          <div>
+                            <span
+                              className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoClass(row.daysSinceLastVisit)}`}
+                            >
+                              {daysAgoStatusLabel(row.daysSinceLastVisit)}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {row.user.role === "client" &&
+                            !row.user.isGameOnly ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setDirectGiftCategoryId(
+                                    categories[0]?.id ?? "",
+                                  );
+                                  setDirectGiftNote("");
+                                  setGiftTargetUser(row.user);
+                                }}
+                                className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
+                              >
+                                Gift
+                              </button>
+                            ) : (
+                              <span className="text-white/36">—</span>
+                            )}
+                            {whatsappUrl ? (
+                              <a
+                                href={whatsappUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                              >
+                                WA
+                              </a>
+                            ) : (
+                              <span className="text-white/36">—</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                markCustomerContacted(row.user);
+                              }}
+                              className="rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
+                            >
+                              Contacted
+                            </button>
+                          </div>
+                          <div className="space-y-0.5 text-[11px] font-black text-white/72">
+                            {(() => {
+                              const keys = sharedContactKeys(
+                                row.user.phone,
+                                row.user.email,
+                                row.user.full_name || row.user.id,
+                              );
+                              const dates = contactHistoryForKeys(keys).slice(
+                                0,
+                                2,
+                              );
+                              return dates.length > 0 ? (
+                                dates.map((d) => (
+                                  <div key={d}>{desktopFormatDateTime(d)}</div>
+                                ))
+                              ) : (
+                                <span className="text-white/42">—</span>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {sortedCustomerReportRows.length > visibleUserCount && (
+                    <div className="px-4 py-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleUserCount((c) => c + 50)}
+                        className="rounded-full bg-white/12 px-6 py-2.5 text-[12px] font-black text-white transition hover:bg-white/20"
+                      >
+                        Load more (
+                        {sortedCustomerReportRows.length - visibleUserCount}{" "}
+                        remaining)
+                      </button>
+                    </div>
+                  )}
+
+                  {sortedCustomerReportRows.length === 0 && (
+                    <div className="px-4 py-6 text-center text-[13px] font-bold text-white/60">
+                      No customers found for this view.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
         </section>
       </div>
       {giftTargetUser ? (
@@ -2335,29 +3276,38 @@ export function UsersPage({ adminId }: { adminId: string }) {
             onTouchStart={(event) => event.stopPropagation()}
           >
             <div className="mb-6">
-              <h3 className="text-[24px] font-black tracking-[-0.04em]">Send Gift</h3>
+              <h3 className="text-[24px] font-black tracking-[-0.04em]">
+                Send Gift
+              </h3>
               <p className="mt-1 text-[13px] font-bold text-white/65">
                 Send a gift to {giftTargetUser.full_name || "this client"}.
               </p>
             </div>
 
             <label className="mb-5 block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/75">Gift</span>
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/75">
+                Gift
+              </span>
               <select
                 value={directGiftCategoryId}
-                onChange={(event) => setDirectGiftCategoryId(event.target.value)}
+                onChange={(event) =>
+                  setDirectGiftCategoryId(event.target.value)
+                }
                 className="h-12 w-full rounded-[16px] border-0 bg-white px-4 text-[13px] font-black text-[#365665] outline-none"
               >
                 {categories.map((category) => (
                   <option key={category.id} value={category.id}>
-                    Free {category.name === "Desserts 2" ? "Hooka" : category.name}
+                    Free{" "}
+                    {category.name === "Desserts 2" ? "Hooka" : category.name}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="mb-6 block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/75">Note</span>
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/75">
+                Note
+              </span>
               <textarea
                 value={directGiftNote}
                 onChange={(event) => setDirectGiftNote(event.target.value)}

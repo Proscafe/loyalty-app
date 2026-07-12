@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 import { AdminSidebar } from "@/components/AdminSidebar";
@@ -32,7 +32,7 @@ interface Props {
   initialTab?: string;
 }
 
-type DashboardPeriod = "today" | "week" | "month" | "all";
+type DashboardPeriod = "today" | "week" | "month" | "date_range" | "all";
 
 type InsightRow = {
   label: string;
@@ -103,7 +103,12 @@ function startOfMonth() {
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 }
 
-function isInPeriod(value: string | null | undefined, period: DashboardPeriod) {
+function isInPeriod(
+  value: string | null | undefined,
+  period: DashboardPeriod,
+  rangeStart = "",
+  rangeEnd = "",
+) {
   if (period === "all") return true;
   const date = validDate(value);
   if (!date) return false;
@@ -117,6 +122,16 @@ function isInPeriod(value: string | null | undefined, period: DashboardPeriod) {
     return time >= startOfWeek() && time < todayStart + 86400000;
   if (period === "month")
     return time >= startOfMonth() && time < todayStart + 86400000;
+  if (period === "date_range") {
+    if (!rangeStart && !rangeEnd) return true;
+    const start = rangeStart
+      ? new Date(`${rangeStart}T00:00:00`).getTime()
+      : Number.NEGATIVE_INFINITY;
+    const end = rangeEnd
+      ? new Date(`${rangeEnd}T23:59:59.999`).getTime()
+      : Number.POSITIVE_INFINITY;
+    return time >= start && time <= end;
+  }
   return true;
 }
 
@@ -199,6 +214,7 @@ function comparisonLabel(period: DashboardPeriod) {
   if (period === "today") return "vs yesterday";
   if (period === "week") return "vs last week";
   if (period === "month") return "vs last month";
+  if (period === "date_range") return "selected range";
   return "all time";
 }
 
@@ -583,30 +599,137 @@ function StatCard({
 function HeaderControls({
   period,
   setPeriod,
+  rangeStart,
+  rangeEnd,
+  setRangeStart,
+  setRangeEnd,
   onExport,
 }: {
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
+  rangeStart: string;
+  rangeEnd: string;
+  setRangeStart: (value: string) => void;
+  setRangeEnd: (value: string) => void;
   onExport: () => void;
 }) {
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+
+    function closeOnOutside(event: MouseEvent | TouchEvent) {
+      if (!filterRef.current?.contains(event.target as Node)) {
+        setFilterOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setFilterOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeOnOutside);
+    document.addEventListener("touchstart", closeOnOutside);
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutside);
+      document.removeEventListener("touchstart", closeOnOutside);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [filterOpen]);
+
+  const label =
+    period === "date_range"
+      ? "Date Range"
+      : PERIODS.find((item) => item.key === period)?.label ?? "This week";
+
+  const options: { key: DashboardPeriod; label: string }[] = [
+    { key: "today", label: "Today" },
+    { key: "week", label: "This Week" },
+    { key: "month", label: "This Month" },
+    { key: "date_range", label: "Date Range" },
+    { key: "all", label: "Show All" },
+  ];
+
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex rounded-[12px] border border-white/8 bg-white/[0.06] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-        {PERIODS.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setPeriod(item.key)}
-            className={`h-9 rounded-[10px] px-6 text-[11px] font-black transition ${
-              period === item.key
-                ? "bg-[#ffd66b] text-[#112b31] shadow-[0_10px_24px_rgba(255,214,107,0.22)]"
-                : "text-white/90 hover:bg-white/10"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
+    <div className="flex items-start gap-3">
+      <div ref={filterRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setFilterOpen((current) => !current)}
+          className="flex h-[44px] min-w-[152px] items-center justify-between gap-4 rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.08em] text-[#365665] shadow-[0_10px_26px_rgba(255,214,107,0.22)]"
+          aria-expanded={filterOpen}
+        >
+          <span>{label}</span>
+          <span className={`text-[10px] transition ${filterOpen ? "rotate-180" : ""}`}>
+            ▾
+          </span>
+        </button>
+
+        {filterOpen ? (
+          <div className="absolute right-0 top-[50px] z-50 w-[250px] rounded-[22px] bg-[#ffd66b] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.30)]">
+            <div className="space-y-1">
+              {options.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    setPeriod(item.key);
+                    if (item.key !== "date_range") setFilterOpen(false);
+                  }}
+                  className={`flex h-10 w-full items-center rounded-[12px] px-4 text-left text-[11px] font-black uppercase tracking-[0.08em] transition ${
+                    period === item.key
+                      ? "bg-[#2563eb] text-white"
+                      : "text-[#365665] hover:bg-white/35"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {period === "date_range" ? (
+              <div className="mt-2 rounded-[16px] bg-[#ffe59a] p-3">
+                <label className="block">
+                  <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                    From
+                  </span>
+                  <input
+                    type="date"
+                    value={rangeStart}
+                    onChange={(event) => setRangeStart(event.target.value)}
+                    className="h-10 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                  />
+                </label>
+
+                <label className="mt-2 block">
+                  <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                    To
+                  </span>
+                  <input
+                    type="date"
+                    value={rangeEnd}
+                    min={rangeStart || undefined}
+                    onChange={(event) => setRangeEnd(event.target.value)}
+                    className="h-10 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterOpen(false)}
+                  className="mt-3 h-10 w-full rounded-[10px] bg-[#365665] text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                >
+                  Apply
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
+
       <button
         type="button"
         onClick={onExport}
@@ -1561,6 +1684,8 @@ function AdminDashboard({
   metrics,
 }: Props) {
   const [period, setPeriod] = useState<DashboardPeriod>("week");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
   const [categoryNamesById, setCategoryNamesById] = useState<
     Record<string, string>
   >({});
@@ -1589,17 +1714,17 @@ function AdminDashboard({
   }, []);
 
   const filteredTxns = useMemo(
-    () => recentTxns.filter((txn) => isInPeriod(txn.created_at, period)),
-    [recentTxns, period],
+    () => recentTxns.filter((txn) => isInPeriod(txn.created_at, period, rangeStart, rangeEnd)),
+    [recentTxns, period, rangeStart, rangeEnd],
   );
   const filteredRewards = useMemo(
     () =>
-      recentRewards.filter((reward) => isInPeriod(rewardDate(reward), period)),
-    [recentRewards, period],
+      recentRewards.filter((reward) => isInPeriod(rewardDate(reward), period, rangeStart, rangeEnd)),
+    [recentRewards, period, rangeStart, rangeEnd],
   );
   const filteredUsers = useMemo(
-    () => users.filter((user) => isInPeriod(user.created_at ?? null, period)),
-    [users, period],
+    () => users.filter((user) => isInPeriod(user.created_at ?? null, period, rangeStart, rangeEnd)),
+    [users, period, rangeStart, rangeEnd],
   );
 
   const compareRange = useMemo(() => periodRange(period), [period]);
@@ -1762,7 +1887,9 @@ function AdminDashboard({
     ) || cleanTextValue(metrics.mostActiveCategoryName, "General");
   const chart = dailyCounts(filteredTxns, filteredRewards);
   const periodLabel =
-    PERIODS.find((item) => item.key === period)?.label ?? "This week";
+    period === "date_range"
+      ? "Date Range"
+      : PERIODS.find((item) => item.key === period)?.label ?? "This week";
   const selectedComparisonLabel = comparisonLabel(period);
   const totalCustomerDelta = previousDelta(
     totalCustomers,
@@ -2029,6 +2156,10 @@ function AdminDashboard({
             <HeaderControls
               period={period}
               setPeriod={setPeriod}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              setRangeStart={setRangeStart}
+              setRangeEnd={setRangeEnd}
               onExport={exportDashboard}
             />
           </header>

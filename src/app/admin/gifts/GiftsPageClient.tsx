@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AdminPageShell } from "@/components/AdminPageShell";
 import { createClient } from "@/lib/supabase/client";
@@ -26,7 +26,7 @@ type Segment =
   | "expiring"
   | "pending";
 
-type DateRange = "week" | "month" | "year2026" | "all";
+type DateRange = "today" | "week" | "month" | "custom" | "all";
 
 type SortKey =
   | "clientName"
@@ -153,34 +153,60 @@ function monthLabel(key: string) {
 function isInsideDateRange(
   value: string | null | undefined,
   range: DateRange,
-  selectedMonth: string,
+  dateFrom: string,
+  dateTo: string,
 ) {
   if (range === "all") return true;
   const date = validDate(value);
   if (!date) return false;
+
   const now = new Date();
-  if (range === "week") {
-    const start = new Date(now);
-    const day = start.getDay();
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - day);
-    return date.getTime() >= start.getTime();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (range === "today") {
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    return date >= dayStart && date < dayEnd;
   }
+
+  if (range === "week") {
+    const start = new Date(dayStart);
+    const day = start.getDay();
+    const daysFromMonday = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - daysFromMonday);
+    return date >= start;
+  }
+
   if (range === "month") {
     return (
       date.getFullYear() === now.getFullYear() &&
       date.getMonth() === now.getMonth()
     );
   }
-  if (range === "year2026") {
-    if (selectedMonth) return monthKey(value) === selectedMonth;
-    return date.getFullYear() === 2026;
+
+  if (range === "custom") {
+    if (!dateFrom && !dateTo) return true;
+    const start = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const end = dateTo ? new Date(`${dateTo}T23:59:59.999`) : null;
+    if (start && date < start) return false;
+    if (end && date > end) return false;
+    return true;
   }
+
   return true;
 }
 
 function csvEscape(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function xmlEscape(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 function normalizedText(...values: unknown[]) {
@@ -240,6 +266,28 @@ function giftTypeFor(gift: GiftRow, source: string, label?: string) {
   return "Loyalty Card";
 }
 
+function giftNumericValue(row: DisplayGiftRow) {
+  const raw = row.raw ?? {};
+  const candidates = [
+    raw.gift_value,
+    raw.reward_value,
+    raw.value,
+    raw.amount,
+    raw.price,
+    raw.average_price,
+  ];
+  for (const candidate of candidates) {
+    const parsed = Number(String(candidate ?? "").replace(/[^0-9.-]/g, ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function desktopFormatGiftValue(rows: DisplayGiftRow[]) {
+  const total = rows.reduce((sum, row) => sum + giftNumericValue(row), 0);
+  return `$${total.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
 function sortValue(row: DisplayGiftRow, key: SortKey) {
   if (key === "expiresAt") return validDate(row.expiresAt)?.getTime() ?? 0;
   if (key === "memberSince") return validDate(row.memberSince)?.getTime() ?? 0;
@@ -263,15 +311,18 @@ export default function GiftsPageClient({
   const [giftRows, setGiftRows] = useState<GiftRow[]>(gifts);
   const [query, setQuery] = useState("");
   const [segment, setSegment] = useState<Segment>("all");
-  const [dateRange, setDateRange] = useState<DateRange>("month");
-  const [selectedMonth, setSelectedMonth] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange>("today");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("expiresAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [reversingId, setReversingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [confirmRedeemRow, setConfirmRedeemRow] = useState<DisplayGiftRow | null>(null);
+  const [confirmRedeemRow, setConfirmRedeemRow] =
+    useState<DisplayGiftRow | null>(null);
   const [currentStaffName, setCurrentStaffName] = useState("Staff user");
   const [currentStaffId, setCurrentStaffId] = useState<string | null>(null);
 
@@ -334,17 +385,40 @@ export default function GiftsPageClient({
             : statusRaw === "bounced"
               ? "Bounced"
               : "Available";
-        const source = cleanText(
-          gift.source ??
-            gift.reward_source ??
-            gift.activity_source ??
-            (String(gift.reward_type ?? "")
-              .toLowerCase()
-              .includes("birthday")
-              ? "Birthdays"
-              : "System"),
+        const sourceText = normalizedText(
+          gift.source,
+          gift.reward_source,
+          gift.activity_source,
+          gift.origin,
+          gift.origin_type,
+          gift.reward_origin,
+          gift.context,
+          gift.context_type,
+          gift.game_id,
+          gift.match_id,
+          gift.prediction_match_id,
+          gift.prediction_entry_id,
+          gift.reward_type,
+          gift.reward_label,
         );
-        const label = displayGiftLabel(
+        const isGamePrediction =
+          sourceText.includes("game_prediction") ||
+          sourceText.includes("prediction") ||
+          sourceText.includes("winner in") ||
+          Boolean(gift.prediction_match_id || gift.prediction_entry_id);
+        const source = isGamePrediction
+          ? "Games"
+          : cleanText(
+              gift.source ??
+                gift.reward_source ??
+                gift.activity_source ??
+                (String(gift.reward_type ?? "")
+                  .toLowerCase()
+                  .includes("birthday")
+                  ? "Birthdays"
+                  : "System"),
+            );
+        const rawLabel = displayGiftLabel(
           gift.reward_label ??
             gift.gift_type ??
             gift.reward_name ??
@@ -353,18 +427,21 @@ export default function GiftsPageClient({
             gift.reward_type ??
             gift.type,
         );
+        const label = isGamePrediction ? "Free Dessert" : rawLabel;
         const clientName = cleanText(
           gift.client_name ??
             profile?.full_name ??
             profile?.client_code ??
             "Client",
         );
-        const issuedBy = cleanText(
-          gift.issued_by_name ??
-            gift.staff_name ??
-            gift.issuer_name ??
-            (source === "System" ? "System" : "Pros"),
-        );
+        const issuedBy = isGamePrediction
+          ? "System"
+          : cleanText(
+              gift.issued_by_name ??
+                gift.staff_name ??
+                gift.issuer_name ??
+                (source === "System" ? "System" : "Pros"),
+            );
         return {
           id: String(gift.id ?? `${clientName}-${label}-${gift.created_at}`),
           clientId,
@@ -418,7 +495,8 @@ export default function GiftsPageClient({
       const matchesDate = isInsideDateRange(
         dateSource,
         dateRange,
-        selectedMonth,
+        dateFrom,
+        dateTo,
       );
       return matchesSearch && matchesSegment && matchesDate;
     });
@@ -432,8 +510,33 @@ export default function GiftsPageClient({
           : String(aValue).localeCompare(String(bValue));
       return sortDirection === "asc" ? result : -result;
     });
-  }, [dateRange, query, rows, segment, selectedMonth, sortDirection, sortKey]);
+  }, [
+    dateFrom,
+    dateRange,
+    dateTo,
+    query,
+    rows,
+    segment,
+    sortDirection,
+    sortKey,
+  ]);
 
+  useEffect(() => {
+    if (!filterOpen) return;
+
+    function closeFilter(event: MouseEvent | TouchEvent) {
+      if (!filterRef.current?.contains(event.target as Node)) {
+        setFilterOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", closeFilter);
+    document.addEventListener("touchstart", closeFilter);
+    return () => {
+      document.removeEventListener("mousedown", closeFilter);
+      document.removeEventListener("touchstart", closeFilter);
+    };
+  }, [filterOpen]);
 
   useEffect(() => {
     if (!confirmRedeemRow) return;
@@ -445,20 +548,6 @@ export default function GiftsPageClient({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmRedeemRow]);
-
-  const availableMonths = useMemo(() => {
-    const months = new Set<string>();
-    rows.forEach((row) => {
-      const key = monthKey(
-        row.raw.created_at ??
-          row.raw.issued_at ??
-          row.expiresAt ??
-          row.memberSince,
-      );
-      if (key.startsWith("2026-")) months.add(key);
-    });
-    return Array.from(months).sort().reverse();
-  }, [rows]);
 
   const redeemed = rows.filter((row) => row.status === "Redeemed").length;
   const expired = rows.filter((row) => row.status === "Expired").length;
@@ -483,42 +572,66 @@ export default function GiftsPageClient({
   }
 
   function downloadCsv() {
-    const header = [
-      "Client Name",
-      "Gift",
-      "Gift Type",
-      "Status",
-      "Expiry",
-      "Days Left",
-      "Issued By",
-      "Member Since",
-      "Source",
-      "Actions",
-      "Last Contacted",
+    const giftsSent = visibleRows.length;
+    const giftsRedeemed = visibleRows.filter((row) => row.status === "Redeemed").length;
+    const totalGiftValue = visibleRows.reduce((sum, row) => sum + giftNumericValue(row), 0);
+    const expiredGifts = visibleRows.filter((row) => row.status === "Expired").length;
+    const availableGifts = visibleRows.filter((row) => row.status === "Available").length;
+    const expiringSoon = visibleRows.filter(
+      (row) => row.status === "Available" && /^([1-7])d$|^Today$/.test(daysLeft(row.expiresAt)),
+    ).length;
+    const pendingGifts = visibleRows.filter((row) => row.clientName === "Client").length;
+
+    const cell = (value: unknown, type: "String" | "Number" = "String") =>
+      `<Cell><Data ss:Type="${type}">${xmlEscape(value)}</Data></Cell>`;
+    const rowXml = (values: Array<string | number>) =>
+      `<Row>${values.map((value) => cell(value, typeof value === "number" ? "Number" : "String")).join("")}</Row>`;
+
+    const summaryRows: Array<Array<string | number>> = [
+      ["GIFTS SUMMARY", ""],
+      ["Track issued gifts, redemptions, expiry dates, and gift value.", ""],
+      ["", ""],
+      ["Gifts Sent", giftsSent],
+      ["Gifts Redeemed", giftsRedeemed],
+      ["Total Gift Value", totalGiftValue],
+      ["Expired Gifts", expiredGifts],
+      ["Available Gifts", availableGifts],
+      ["Expiring Soon", expiringSoon],
+      ["Pending Gifts", pendingGifts],
     ];
-    const csv = [
-      header,
+
+    const allGiftRows: Array<Array<string | number>> = [
+      ["Client Name", "Gift", "Gift Type", "Status", "Expiry", "Days Left", "Issued By", "Member Since", "Last Contacted"],
       ...visibleRows.map((row) => [
         row.clientName,
         row.label,
         row.giftType,
         row.status,
-        dateOnly(row.expiresAt),
-        daysLeft(row.expiresAt),
+        dateOnly(row.expiresAt) === "—" ? "" : dateOnly(row.expiresAt),
+        daysLeft(row.expiresAt) === "—" ? "" : daysLeft(row.expiresAt),
         row.issuedBy,
-        dateOnly(row.memberSince),
-        row.source,
-        "",
-        row.lastContacted,
+        dateOnly(row.memberSince) === "—" ? "" : dateOnly(row.memberSince),
+        row.lastContacted === "—" ? "" : row.lastContacted,
       ]),
-    ]
-      .map((line) => line.map(csvEscape).join(","))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    ];
+
+    const workbook = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="Gifts Summary"><Table>${summaryRows.map(rowXml).join("")}</Table></Worksheet>
+ <Worksheet ss:Name="All Gifts"><Table>${allGiftRows.map(rowXml).join("")}</Table></Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([workbook], {
+      type: "application/vnd.ms-excel;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "gifts.csv";
+    link.download = "gifts-report.xls";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -583,7 +696,8 @@ export default function GiftsPageClient({
         }),
       });
       const json = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(json?.error || "Failed to reverse gift");
+      if (!response.ok)
+        throw new Error(json?.error || "Failed to reverse gift");
 
       setGiftRows((current) =>
         current.map((gift) =>
@@ -629,7 +743,9 @@ export default function GiftsPageClient({
       if (!response.ok) throw new Error(json?.error || "Failed to delete gift");
 
       setGiftRows((current) =>
-        current.filter((gift) => String(gift.id) !== String(row.raw.id ?? row.id)),
+        current.filter(
+          (gift) => String(gift.id) !== String(row.raw.id ?? row.id),
+        ),
       );
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to delete gift");
@@ -654,10 +770,10 @@ export default function GiftsPageClient({
           <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h1 className="text-[24px] font-black tracking-[-0.04em] text-white lg:text-[34px]">
-                Gifts
+                Gifts Summary
               </h1>
               <p className="mt-1 text-[12px] font-bold text-white/70">
-                Track rewards, sent gifts, expiry, and usage.
+                Track issued gifts, redemptions, expiry dates, and gift value.
               </p>
             </div>
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -668,74 +784,52 @@ export default function GiftsPageClient({
                 className="h-12 rounded-[16px] border-0 bg-white px-5 text-sm font-bold text-[#365665] outline-none lg:h-10 lg:w-[320px]"
               />
               <div
+                ref={filterRef}
                 className="relative hidden lg:block"
-                onMouseEnter={() => setFilterOpen(true)}
-                onMouseLeave={() => setFilterOpen(false)}
               >
                 <button
                   type="button"
                   onClick={() => setFilterOpen((current) => !current)}
-                  className="h-10 rounded-[12px] border border-white/25 bg-white/12 px-5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-white/18"
+                  className="flex h-10 min-w-[136px] items-center justify-between rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.08em] text-[#365665]"
                 >
-                  Filter
+                  <span>{dateRange === "today" ? "Today" : dateRange === "week" ? "This Week" : dateRange === "month" ? "This Month" : dateRange === "custom" ? "Date Range" : "Show All"}</span>
+                  <span>▾</span>
                 </button>
                 {filterOpen ? (
-                  <div className="absolute right-0 top-[39px] z-30 w-[260px] rounded-[22px] border border-white/20 bg-[#365665]/95 p-3 shadow-[0_22px_54px_rgba(20,35,35,0.28)] backdrop-blur-2xl">
-                    <FilterOption
-                      label="This Week"
-                      active={dateRange === "week"}
-                      onClick={() => {
-                        setDateRange("week");
-                        setSelectedMonth("");
-                      }}
-                    />
-                    <FilterOption
-                      label="This Month"
-                      active={dateRange === "month"}
-                      onClick={() => {
-                        setDateRange("month");
-                        setSelectedMonth("");
-                      }}
-                    />
-                    <FilterOption
-                      label="Year 2026"
-                      active={dateRange === "year2026" && !selectedMonth}
-                      onClick={() => {
-                        setDateRange("year2026");
-                        setSelectedMonth("");
-                      }}
-                    />
-                    {dateRange === "year2026" ? (
-                      <div className="mt-2 rounded-[16px] bg-white/10 p-2">
-                        {availableMonths.length ? (
-                          availableMonths.map((key) => (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={() => {
-                                setDateRange("year2026");
-                                setSelectedMonth(key);
-                              }}
-                              className={`mb-1 block h-8 w-full rounded-[12px] px-3 text-left text-[11px] font-black ${selectedMonth === key ? "bg-[#ffd66b] text-[#365665]" : "text-white hover:bg-white/10"}`}
-                            >
-                              {monthLabel(key)}
-                            </button>
-                          ))
-                        ) : (
-                          <div className="px-3 py-2 text-[11px] font-bold text-white/70">
-                            No 2026 months found.
-                          </div>
-                        )}
+                  <div className="absolute right-0 top-11 z-30 w-[250px] overflow-hidden rounded-[18px] border border-white/15 bg-[#ffd66b] p-2 shadow-[0_22px_54px_rgba(20,35,35,0.28)]">
+                    {[
+                      ["today", "Today"],
+                      ["week", "This Week"],
+                      ["month", "This Month"],
+                      ["custom", "Date Range"],
+                      ["all", "Show All"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => {
+                          setDateRange(value as DateRange);
+                          if (value !== "custom") setFilterOpen(false);
+                        }}
+                        className={`block h-10 w-full rounded-[12px] px-4 text-left text-[11px] font-black uppercase tracking-[0.06em] ${dateRange === value ? "bg-[#2563eb] text-white" : "text-[#365665] hover:bg-white/35"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+
+                    {dateRange === "custom" ? (
+                      <div className="mt-2 space-y-2 rounded-[14px] bg-white/30 p-3">
+                        <label className="block">
+                          <span className="mb-1 block text-[9px] font-black uppercase text-[#365665]">From</span>
+                          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-9 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-bold text-[#365665] outline-none" />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-[9px] font-black uppercase text-[#365665]">To</span>
+                          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-9 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-bold text-[#365665] outline-none" />
+                        </label>
+                        <button type="button" onClick={() => setFilterOpen(false)} className="h-9 w-full rounded-[10px] bg-[#365665] text-[10px] font-black uppercase text-white">Apply</button>
                       </div>
                     ) : null}
-                    <FilterOption
-                      label="Show All"
-                      active={dateRange === "all"}
-                      onClick={() => {
-                        setDateRange("all");
-                        setSelectedMonth("");
-                      }}
-                    />
                   </div>
                 ) : null}
               </div>
@@ -750,14 +844,14 @@ export default function GiftsPageClient({
           </header>
 
           <section className="mb-4 hidden gap-3 lg:grid lg:grid-cols-7">
-            <SummaryCard label="Gifts sent" value={rows.length} />
-            <SummaryCard label="Redeemed" value={redeemed} />
-            <SummaryCard label="Gift value" value="$150.5" />
-            <SummaryCard label="Expired" value={expired} />
-            <SummaryCard label="Available" value={available} />
-            <SummaryCard label="Expiring soon" value={expiring} />
+            <SummaryCard label="Gifts Sent" value={rows.length} />
+            <SummaryCard label="Gifts Redeemed" value={redeemed} />
+            <SummaryCard label="Total Gift Value" value={desktopFormatGiftValue(rows)} />
+            <SummaryCard label="Expired Gifts" value={expired} />
+            <SummaryCard label="Available Gifts" value={available} />
+            <SummaryCard label="Expiring Soon" value={expiring} />
             <SummaryCard
-              label="Pending"
+              label="Pending Gifts"
               value={rows.filter((row) => row.clientName === "Client").length}
             />
           </section>
@@ -784,7 +878,7 @@ export default function GiftsPageClient({
             style={{ background: GLASS_PANEL }}
           >
             <div className="hidden lg:block">
-              <div className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.7fr_0.75fr_0.6fr_0.7fr_0.8fr_0.65fr_1.7fr_0.8fr] border-b border-white/25 px-6 py-4">
+              <div className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.7fr_0.75fr_0.6fr_0.7fr_0.8fr_1.7fr_0.8fr] border-b border-white/25 px-6 py-4">
                 <button
                   type="button"
                   onClick={() => toggleSort("clientName")}
@@ -840,13 +934,6 @@ export default function GiftsPageClient({
                   className={headerClass}
                 >
                   {sortLabel("memberSince", "Member Since")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleSort("source")}
-                  className={headerClass}
-                >
-                  {sortLabel("source", "Source")}
                 </button>
                 <div className="text-left text-[11px] font-black uppercase tracking-[0.14em] text-white">
                   Actions
@@ -958,7 +1045,9 @@ export default function GiftsPageClient({
                 disabled={redeemingId === confirmRedeemRow.id}
                 className="h-11 rounded-full bg-[#ffd66b] px-6 text-[12px] font-black uppercase tracking-[0.08em] text-[#365665] transition hover:brightness-105 disabled:opacity-60"
               >
-                {redeemingId === confirmRedeemRow.id ? "Redeeming..." : "Confirm Redeem"}
+                {redeemingId === confirmRedeemRow.id
+                  ? "Redeeming..."
+                  : "Confirm Redeem"}
               </button>
             </div>
           </div>
@@ -1111,7 +1200,11 @@ function ActionButtons({
         type="button"
         onClick={() => (alreadyRedeemed ? onReverse(row) : onRedeem(row))}
         disabled={redeeming || reversing}
-        title={alreadyRedeemed ? "Reverse gift back to client" : "Redeem gift manually"}
+        title={
+          alreadyRedeemed
+            ? "Reverse gift back to client"
+            : "Redeem gift manually"
+        }
         className={`h-8 w-8 rounded-full text-[12px] font-black transition ${
           alreadyRedeemed
             ? "bg-[#ffd66b] text-[#365665] hover:scale-105 disabled:opacity-60"
@@ -1151,7 +1244,7 @@ function DesktopRow({
   deleting: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.7fr_0.75fr_0.6fr_0.7fr_0.8fr_0.65fr_1.7fr_0.8fr] items-center border-b border-white/10 px-6 py-4 text-[12px] font-black text-white last:border-b-0">
+    <div className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.7fr_0.75fr_0.6fr_0.7fr_0.8fr_1.7fr_0.8fr] items-center border-b border-white/10 px-6 py-4 text-[12px] font-black text-white last:border-b-0">
       <div>
         {row.clientId ? (
           <Link
@@ -1173,7 +1266,6 @@ function DesktopRow({
       </div>
       <div>{row.issuedBy}</div>
       <div>{dateOnly(row.memberSince)}</div>
-      <div>{row.source}</div>
       <ActionButtons
         phone={row.phone}
         row={row}
@@ -1234,7 +1326,6 @@ function MobileRow({
           Left: {row.status === "Available" ? daysLeft(row.expiresAt) : "—"}
         </div>
         <div>Gift Type: {row.giftType}</div>
-        <div>Source: {row.source}</div>
         <div>Last contacted: {row.lastContacted}</div>
       </div>
       <div className="mt-3">

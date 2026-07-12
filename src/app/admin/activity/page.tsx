@@ -11,6 +11,7 @@ type ProfileRow = {
   phone?: string | null;
   client_code?: string | null;
   role?: string | null;
+  created_at?: string | null;
 };
 type CategoryRow = { id: string; name?: string | null };
 
@@ -29,11 +30,21 @@ function profileLabel(row?: AnyRow | null) {
   return row.full_name || row.email || row.client_code || null;
 }
 
+function cleanLabel(value?: string | null) {
+  return String(value ?? "").trim();
+}
+
+function activityText(name: string, action: string, item?: string | null) {
+  const cleanName = cleanLabel(name) || "Client";
+  const cleanItem = cleanLabel(item);
+  return cleanItem ? `${cleanName} ${action} ${cleanItem}` : `${cleanName} ${action}`;
+}
+
 export default async function AdminActivityPage() {
   const supabase = await createClient();
 
   const [{ data: profiles }, { data: categories }, { data: stamps }, { data: rewards }, { data: contacts }] = await Promise.all([
-    supabase.from("profiles").select("id, full_name, email, phone, client_code, role").limit(2000),
+    supabase.from("profiles").select("id, full_name, email, phone, client_code, role, created_at").limit(2000),
     supabase.from("loyalty_categories").select("id, name").limit(500),
     supabase
       .from("stamp_transactions")
@@ -91,7 +102,32 @@ export default async function AdminActivityPage() {
     if (rewardId && !stampByRewardId.has(rewardId)) stampByRewardId.set(rewardId, row);
   }
 
+  const rewardById = new Map<string, AnyRow>();
+  for (const reward of rewards ?? []) {
+    const row = reward as AnyRow;
+    rewardById.set(String(row.id), row);
+  }
+
   const activities: AnyRow[] = [];
+
+  // New customers appear in the same activity feed.
+  for (const profile of profileRows as AnyRow[]) {
+    const role = String(profile.role ?? "").toLowerCase();
+    if (role.includes("admin") || role.includes("staff")) continue;
+    if (!profile.created_at) continue;
+
+    const clientName = profileLabel(profile) ?? "New member";
+    activities.push({
+      id: `${profile.id}-joined`,
+      activity_source: "profile",
+      action_type: "joined",
+      client_id: profile.id,
+      client_name: clientName,
+      issued_by_name: "System",
+      activity_text: activityText(clientName, "joined Pro’s Club"),
+      created_at: profile.created_at,
+    });
+  }
 
   for (const stamp of stamps ?? []) {
     const row = stamp as AnyRow;
@@ -103,14 +139,29 @@ export default async function AdminActivityPage() {
     const staff = staffById.get(String(row.staff_id ?? ""));
     const category = categoryById.get(String(row.category_id ?? ""));
 
+    const linkedReward = rewardById.get(String(row.reward_id ?? ""));
+
+    // A reward-producing fifth stamp is represented by one clean “unlocked”
+    // activity below, instead of three separate stamp/reward rows.
+    if (linkedReward && rawDelta >= 0) continue;
+
+    const clientName = profileLabel(client) ?? "Client";
+    const categoryName = category?.name ?? "loyalty";
+    const stampWord = delta === 1 ? "stamp" : "stamps";
+    const direction = rawDelta < 0 ? "redeemed" : "earned";
+
     activities.push({
       ...row,
       activity_source: "stamp",
       stamp_delta: delta,
-      stamp_direction: rawDelta < 0 ? "redeemed" : "earned",
+      stamp_direction: direction,
       category_name: category?.name ?? null,
-      client_name: profileLabel(client) ?? "Client",
+      client_name: clientName,
       issued_by_name: profileLabel(staff) ?? "Staff user",
+      activity_text: activityText(
+        clientName,
+        `${direction} ${delta} ${categoryName} ${stampWord}`,
+      ),
       created_at: row.created_at,
     });
   }
@@ -125,19 +176,28 @@ export default async function AdminActivityPage() {
     const rewardName = rewardLabel(row);
     const staffName = profileLabel(redeemedStaff) ?? profileLabel(creatorStaff) ?? "System";
 
+    const clientName = profileLabel(client) ?? "Client";
+    const earnedAt = row.earned_at ?? row.created_at;
+    const redeemedAt = row.redeemed_at ?? row.claimed_at ?? null;
+    const earnedTime = earnedAt ? new Date(earnedAt).getTime() : 0;
+    const redeemedTime = redeemedAt ? new Date(redeemedAt).getTime() : 0;
+    const immediateRedemption =
+      earnedTime > 0 && redeemedTime > 0 && Math.abs(redeemedTime - earnedTime) <= 120000;
+
     activities.push({
       ...row,
       id: `${row.id}-earned`,
       activity_source: "reward",
       reward_label: rewardName,
       category_name: category?.name ?? null,
-      action_type: "gift_received",
-      client_name: profileLabel(client) ?? "Client",
+      action_type: "unlocked",
+      client_name: clientName,
       issued_by_name: profileLabel(creatorStaff) ?? "System",
-      created_at: row.earned_at ?? row.created_at,
+      activity_text: activityText(clientName, "unlocked a", rewardName),
+      created_at: earnedAt,
     });
 
-    if (row.redeemed_at || row.claimed_at || String(row.status ?? "").toLowerCase() === "redeemed") {
+    if (!immediateRedemption && (row.redeemed_at || row.claimed_at || String(row.status ?? "").toLowerCase() === "redeemed")) {
       activities.push({
         ...row,
         id: `${row.id}-redeemed`,
@@ -145,8 +205,9 @@ export default async function AdminActivityPage() {
         reward_label: rewardName,
         category_name: category?.name ?? null,
         action_type: "redeemed",
-        client_name: profileLabel(client) ?? "Client",
+        client_name: clientName,
         issued_by_name: staffName,
+        activity_text: activityText(clientName, "redeemed a", rewardName),
         created_at: row.redeemed_at ?? row.claimed_at ?? row.updated_at ?? row.created_at,
       });
     }
@@ -179,6 +240,7 @@ export default async function AdminActivityPage() {
       client_id: client?.id ?? null,
       client_name: profileLabel(client) ?? row.contact_key ?? "Client",
       issued_by_name: "Staff user",
+      activity_text: activityText(profileLabel(client) ?? row.contact_key ?? "Client", "was contacted"),
       created_at: row.contacted_at ?? row.created_at,
     });
   }
