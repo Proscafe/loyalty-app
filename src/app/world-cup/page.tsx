@@ -113,6 +113,29 @@ export default async function WorldCupPage() {
     statsMap.set(entry.client_id, current);
   });
 
+  winnerRows.forEach((prediction) => {
+    const bonusPoints = Number(prediction.points ?? 0);
+    if (bonusPoints <= 0) return;
+
+    const current = statsMap.get(prediction.client_id) ?? {
+      client_id: prediction.client_id,
+      totalPoints: 0,
+      totalPredictions: 0,
+    };
+
+    current.totalPoints += bonusPoints;
+    statsMap.set(prediction.client_id, current);
+  });
+
+  const tournamentWinner =
+    winnerRows.find(
+      (prediction) =>
+        Number(prediction.points ?? 0) === 5 &&
+        ["argentina", "spain"].includes(
+          String(prediction.team_name ?? "").trim().toLowerCase(),
+        ),
+    )?.team_name ?? null;
+
   const leaderboard = Array.from(statsMap.values())
     .filter((row) => row.totalPoints > 0)
     .sort((a, b) => {
@@ -160,6 +183,7 @@ export default async function WorldCupPage() {
             }
           : null
       }
+      tournamentWinner={tournamentWinner}
       leaderboard={leaderboard.slice(0, 10).map((item, index) => {
         const rowProfile = profileMap.get(item.client_id);
         return {

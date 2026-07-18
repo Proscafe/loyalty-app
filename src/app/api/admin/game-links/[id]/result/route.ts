@@ -5,6 +5,13 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const WORLD_CUP_2026_TOURNAMENT_ID =
+  "54ef3cd5-7a08-41ed-8c60-9a090a5039ab";
+const WORLD_CUP_2026_FINAL_MATCH_ID =
+  "d95fbf31-d72a-4e5f-ae08-8e7a0148bf74";
+const WORLD_CUP_FINALISTS = new Set(["argentina", "spain"]);
+const WORLD_CUP_WINNER_BONUS_POINTS = 5;
+
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
@@ -31,6 +38,24 @@ function winnerForScores(home: number, away: number) {
   if (home > away) return "home";
   if (away > home) return "away";
   return "draw";
+}
+
+function normalizeTeamName(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isWorldCupFinal(match: any) {
+  const homeTeam = normalizeTeamName(match.home_team);
+  const awayTeam = normalizeTeamName(match.away_team);
+  const hasFinalists =
+    WORLD_CUP_FINALISTS.has(homeTeam) &&
+    WORLD_CUP_FINALISTS.has(awayTeam) &&
+    homeTeam !== awayTeam;
+
+  return (
+    match.id === WORLD_CUP_2026_FINAL_MATCH_ID ||
+    (match.tournament_id === WORLD_CUP_2026_TOURNAMENT_ID && hasFinalists)
+  );
 }
 
 function pointsForEntry(match: any, entry: any, actualHome: number, actualAway: number) {
@@ -120,6 +145,16 @@ export async function POST(req: Request, context: RouteContext) {
       }
     }
 
+    const finalMatch = isWorldCupFinal(match);
+    const finalWinnerSide = winnerForScores(homeScore, awayScore);
+
+    if (finalMatch && finalWinnerSide === "draw") {
+      return jsonError(
+        "The World Cup Final must have one winning team. Enter the final score after extra time or penalties.",
+        400,
+      );
+    }
+
     const { error: matchError } = await admin
       .from("prediction_matches")
       .update({ home_score: homeScore, away_score: awayScore })
@@ -134,15 +169,89 @@ export async function POST(req: Request, context: RouteContext) {
 
     if (entriesError) return jsonError(entriesError.message, 400);
 
-    await Promise.all(
-      (entries ?? []).map((entry: any) => {
+    const entryUpdates = await Promise.all(
+      (entries ?? []).map(async (entry: any) => {
         const points = pointsForEntry(match, entry, homeScore!, awayScore!);
+        const { error: entryUpdateError } = await admin
+          .from("prediction_entries")
+          .update({ points })
+          .eq("id", entry.id);
 
-        return admin.from("prediction_entries").update({ points }).eq("id", entry.id);
+        return entryUpdateError;
       }),
     );
 
-    return NextResponse.json({ ok: true });
+    const failedEntryUpdate = entryUpdates.find(Boolean);
+    if (failedEntryUpdate) {
+      return jsonError(failedEntryUpdate.message, 400);
+    }
+
+    let tournamentWinner: string | null = null;
+    let winnerBonusRecipients = 0;
+
+    if (finalMatch) {
+      tournamentWinner =
+        finalWinnerSide === "home" ? match.home_team : match.away_team;
+
+      const { error: resetWinnerPointsError } = await admin
+        .from("world_cup_winner_predictions")
+        .update({ points: 0 })
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+
+      if (resetWinnerPointsError) {
+        return jsonError(
+          `Final score was saved, but champion bonus points could not be reset: ${resetWinnerPointsError.message}`,
+          500,
+        );
+      }
+
+      const normalizedWinner = normalizeTeamName(tournamentWinner);
+
+      const { data: winnerPredictions, error: winnerPredictionsError } =
+        await admin
+          .from("world_cup_winner_predictions")
+          .select("id, team_name");
+
+      if (winnerPredictionsError) {
+        return jsonError(
+          `Final score was saved, but champion predictions could not be loaded: ${winnerPredictionsError.message}`,
+          500,
+        );
+      }
+
+      const winningPredictionIds = (winnerPredictions ?? [])
+        .filter(
+          (prediction: any) =>
+            normalizeTeamName(prediction.team_name) === normalizedWinner,
+        )
+        .map((prediction: any) => prediction.id)
+        .filter(Boolean);
+
+      if (winningPredictionIds.length > 0) {
+        const { error: awardWinnerPointsError } = await admin
+          .from("world_cup_winner_predictions")
+          .update({ points: WORLD_CUP_WINNER_BONUS_POINTS })
+          .in("id", winningPredictionIds);
+
+        if (awardWinnerPointsError) {
+          return jsonError(
+            `Final score was saved, but champion bonus points could not be awarded: ${awardWinnerPointsError.message}`,
+            500,
+          );
+        }
+      }
+
+      winnerBonusRecipients = winningPredictionIds.length;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      tournament_winner: tournamentWinner,
+      winner_bonus_points: finalMatch
+        ? WORLD_CUP_WINNER_BONUS_POINTS
+        : 0,
+      winner_bonus_recipients: winnerBonusRecipients,
+    });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Unexpected result save error.", 500);
   }

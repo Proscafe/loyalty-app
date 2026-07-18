@@ -82,6 +82,7 @@ export function WorldCupClient({
   clientName,
   stats,
   existingWinnerPick,
+  tournamentWinner,
   leaderboard,
 }: {
   clientName: string;
@@ -91,6 +92,7 @@ export function WorldCupClient({
     totalPredictions: number;
   };
   existingWinnerPick: WinnerPick | null;
+  tournamentWinner: string | null;
   leaderboard: LeaderboardRow[];
 }) {
   const [winnerPick, setWinnerPick] = useState<WinnerPick | null>(existingWinnerPick);
@@ -222,7 +224,9 @@ export function WorldCupClient({
           >
             <span className="min-w-0">
               <span className="block truncate text-[15px] font-black">
-                {winnerPick ? winnerPick.teamName : "Champion picks are closed"}
+                {tournamentWinner
+                  ? `${tournamentWinner} World Cup Winners`
+                  : "Argentina / Spain World Cup Winners"}
               </span>
             </span>
 
