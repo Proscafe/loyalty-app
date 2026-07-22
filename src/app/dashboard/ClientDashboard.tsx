@@ -1777,15 +1777,15 @@ export function ClientDashboard({
         >
           <div className="relative z-10 flex min-h-[150px] items-center justify-between gap-3 px-4 py-4">
             <div className="min-w-0 flex-1 text-left">
-              <p className="font-raleway text-[15px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]">
+              <p className="font-raleway text-[17px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]">
                 Cheers to <span className="text-[#f0cf61]">28</span> years
               </p>
 
-              <h2 className="mt-3 font-raleway text-[42px] font-black uppercase leading-[0.84] tracking-[-0.045em] text-[#f0cf61] drop-shadow-[0_3px_8px_rgba(0,0,0,0.25)]">
+              <h2 className="mt-3 font-raleway text-[47px] font-black uppercase leading-[0.84] tracking-[-0.045em] text-[#f0cf61] drop-shadow-[0_3px_8px_rgba(0,0,0,0.25)]">
                 August
               </h2>
 
-              <p className="mt-4 whitespace-nowrap font-raleway text-[10.5px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] sm:text-[11px]">
+              <p className="mt-4 whitespace-nowrap font-raleway text-[11.8px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] sm:text-[11px]">
                 Offers • Giveaways • More
               </p>
             </div>
