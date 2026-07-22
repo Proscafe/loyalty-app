@@ -1785,7 +1785,7 @@ export function ClientDashboard({
                 August
               </h2>
 
-              <p className="mt-4 whitespace-nowrap font-raleway text-[10px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] sm:text-[11px]">
+              <p className="mt-4 whitespace-nowrap font-raleway text-[10.5px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] sm:text-[11px]">
                 Offers • Giveaways • More
               </p>
             </div>
