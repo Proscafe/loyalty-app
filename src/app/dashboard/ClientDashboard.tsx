@@ -1795,10 +1795,10 @@ export function ClientDashboard({
                 {daysUntilAugust}
               </div>
               <div className="mt-3 font-raleway text-[12px] font-black uppercase leading-[1.05] tracking-[0.08em] text-[#f0cf61] drop-shadow-[0_2px_4px_rgba(0,0,0,0.32)]">
-                Days
-                <br />
-                Left
-              </div>
+  {daysUntilAugust === 1 ? "Day" : "Days"}
+  <br />
+  Left
+</div>
             </div>
           </div>
         </section>
