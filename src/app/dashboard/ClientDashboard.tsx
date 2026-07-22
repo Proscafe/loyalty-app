@@ -1856,6 +1856,91 @@ export function ClientDashboard({
             <DisabledLoyaltyProgramCard />
           )}
         </section>
+
+        <section className="mt-10 pb-8">
+          <div className="flex items-center justify-center gap-5">
+            <a
+              href="https://www.instagram.com/pros_cafe"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Instagram"
+              className="inline-flex h-10 w-10 items-center justify-center"
+            >
+              <Image
+                src="/instagram.png"
+                alt="Instagram"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
+            </a>
+
+            <a
+              href="https://www.tiktok.com/@pros_cafe"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="TikTok"
+              className="inline-flex h-10 w-10 items-center justify-center"
+            >
+              <Image
+                src="/tik-tok.png"
+                alt="TikTok"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
+            </a>
+
+            <a
+              href="https://wa.me/9613720277"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="WhatsApp"
+              className="inline-flex h-10 w-10 items-center justify-center"
+            >
+              <Image
+                src="/whatsapp.png"
+                alt="WhatsApp"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
+            </a>
+
+            <a
+              href="https://fb.com/proscafe"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Facebook"
+              className="inline-flex h-10 w-10 items-center justify-center"
+            >
+              <Image
+                src="/facebook.png"
+                alt="Facebook"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
+            </a>
+
+            <a
+              href="https://shark-accounting.com/menu/Pros_cafe_dekwaneh/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Menu"
+              className="inline-flex h-10 w-10 items-center justify-center"
+            >
+              <Image
+                src="/dish.png"
+                alt="Menu"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+              />
+            </a>
+          </div>
+        </section>
+
         {celebrationReward ? (
           <RewardCelebrationModal
             reward={celebrationReward}
