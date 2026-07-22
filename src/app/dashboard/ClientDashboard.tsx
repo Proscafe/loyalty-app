@@ -99,6 +99,21 @@ function pluralizeTitle(count: number, singular: string, plural?: string) {
   return `${count} ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 }
 
+function getDaysUntilAugustFirst() {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let target = new Date(now.getFullYear(), 7, 1);
+
+  if (today.getTime() > target.getTime()) {
+    target = new Date(now.getFullYear() + 1, 7, 1);
+  }
+
+  return Math.max(
+    0,
+    Math.ceil((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)),
+  );
+}
+
 function normalizeCategoryName(name?: string | null) {
   const safeName = cleanText(name);
   const lower = safeName.toLowerCase();
@@ -865,6 +880,9 @@ export function ClientDashboard({
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
   const [showGameScanCard, setShowGameScanCard] = useState(false);
+  const [daysUntilAugust, setDaysUntilAugust] = useState(() =>
+    getDaysUntilAugustFirst(),
+  );
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(
@@ -877,6 +895,23 @@ export function ClientDashboard({
   useEffect(() => {
     setLocalRewards((rewards ?? initialRewards ?? []) as ClientReward[]);
   }, [rewards, initialRewards]);
+
+  useEffect(() => {
+    function refreshAugustCountdown() {
+      setDaysUntilAugust(getDaysUntilAugustFirst());
+    }
+
+    refreshAugustCountdown();
+    const interval = window.setInterval(refreshAugustCountdown, 60 * 60 * 1000);
+    window.addEventListener("focus", refreshAugustCountdown);
+    document.addEventListener("visibilitychange", refreshAugustCountdown);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshAugustCountdown);
+      document.removeEventListener("visibilitychange", refreshAugustCountdown);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -1727,58 +1762,43 @@ export function ClientDashboard({
         ) : null}
 
         <section
-          role="button"
-          tabIndex={0}
-          onClick={() => router.push("/world-cup")}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              router.push("/world-cup");
-            }
-          }}
-          className="relative mt-6 cursor-pointer overflow-hidden border border-white/15 px-4 py-4 shadow-[0_22px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl transition active:scale-[0.99]"
+          className="relative mt-6 overflow-hidden border border-white/15 shadow-[0_22px_60px_rgba(0,0,0,0.18)]"
           style={{
             borderRadius: 18,
             minHeight: 150,
-            background:
-              "linear-gradient(135deg, rgba(121, 134, 115, 0.96) 0%, rgba(104, 116, 104, 0.94) 45%, rgba(88, 98, 86, 0.96) 100%)",
+            backgroundColor: "#788272",
+            backgroundImage:
+              "linear-gradient(90deg, rgba(69,82,68,0.58) 0%, rgba(69,82,68,0.34) 54%, rgba(69,82,68,0.2) 100%), url('/Card 28 YRS.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
           }}
+          aria-label={`${daysUntilAugust} days until August 1`}
         >
-          <div
-            className="pointer-events-none absolute inset-0 opacity-58"
-            style={{
-              backgroundImage: "url('/WC-branding.png')",
-              backgroundSize: "auto 92%",
-              backgroundPosition: "right bottom",
-              backgroundRepeat: "no-repeat",
-            }}
-            aria-hidden="true"
-          />
+          <div className="relative z-10 flex min-h-[150px] items-center justify-between gap-3 px-4 py-4">
+            <div className="min-w-0 flex-1 text-left">
+              <p className="font-raleway text-[15px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]">
+                Cheers to <span className="text-[#f0cf61]">28</span> years
+              </p>
 
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#586256]/12 via-transparent to-transparent" />
-
-          <div className="relative z-10 flex min-h-[118px] items-center justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="font-raleway text-[23px] font-black leading-[1.08] tracking-[0.01em] text-white">
-                Predict the scores
-                <br />
-                <span className="text-[#f0cf61]">&amp; win rewards</span>
+              <h2 className="mt-3 font-raleway text-[42px] font-black uppercase leading-[0.84] tracking-[-0.045em] text-[#f0cf61] drop-shadow-[0_3px_8px_rgba(0,0,0,0.25)]">
+                August
               </h2>
 
-              <div className="mt-4 inline-flex items-center justify-center rounded-[10px] bg-[#f0cf61] px-5 py-3 font-raleway text-[15px] font-bold text-[#1c2530] shadow-[0_12px_28px_rgba(0,0,0,0.18)]">
-                Play Now
-              </div>
+              <p className="mt-4 whitespace-nowrap font-raleway text-[10px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] sm:text-[11px]">
+                Offers • Giveaways • More
+              </p>
             </div>
 
-            <div className="flex h-[122px] w-[92px] shrink-0 items-center justify-center">
-              <Image
-                src="/WC-logo.png"
-                alt="World Cup"
-                width={96}
-                height={122}
-                className="h-[122px] w-[96px] object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.26)]"
-                priority={false}
-              />
+            <div className="flex w-[82px] shrink-0 flex-col items-center justify-center border-l border-white/25 pl-3 text-center">
+              <div className="font-raleway text-[58px] font-black leading-[0.78] tracking-[-0.06em] text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]">
+                {daysUntilAugust}
+              </div>
+              <div className="mt-3 font-raleway text-[12px] font-black uppercase leading-[1.05] tracking-[0.08em] text-[#f0cf61] drop-shadow-[0_2px_4px_rgba(0,0,0,0.32)]">
+                Days
+                <br />
+                Left
+              </div>
             </div>
           </div>
         </section>
