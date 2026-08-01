@@ -1775,7 +1775,7 @@ export function ClientDashboard({
           }}
           aria-label={`${daysUntilAugust} days until August 1`}
         >
-          <div className="relative z-10 flex min-h-[150px] items-center justify-between gap-3 px-4 py-4">
+          <div className="relative z-10 flex min-h-[150px] items-center px-5 py-4">
             <div className="min-w-0 flex-1 text-left">
               <p className="font-raleway text-[17px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]">
                 Cheers to <span className="text-[#f0cf61]">28</span> years
@@ -1790,16 +1790,7 @@ export function ClientDashboard({
               </p>
             </div>
 
-            <div className="flex w-[82px] shrink-0 flex-col items-center justify-center border-l border-white/25 pl-3 text-center">
-              <div className="font-raleway text-[58px] font-black leading-[0.78] tracking-[-0.06em] text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]">
-                {daysUntilAugust}
-              </div>
-              <div className="mt-3 font-raleway text-[12px] font-black uppercase leading-[1.05] tracking-[0.08em] text-[#f0cf61] drop-shadow-[0_2px_4px_rgba(0,0,0,0.32)]">
-  {daysUntilAugust === 1 ? "Day" : "Days"}
-  <br />
-  Left
-</div>
-            </div>
+            
           </div>
         </section>
 
