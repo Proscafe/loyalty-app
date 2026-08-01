@@ -1849,86 +1849,59 @@ export function ClientDashboard({
         </section>
 
         <section className="mt-10 pb-8">
-          <div className="flex items-center justify-center gap-5">
-            <a
-              href="https://www.instagram.com/pros_cafe"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Instagram"
-              className="inline-flex h-10 w-10 items-center justify-center"
-            >
-              <Image
-                src="/instagram.png"
-                alt="Instagram"
-                width={32}
-                height={32}
-                className="h-8 w-8 object-contain"
-              />
-            </a>
-
-            <a
-              href="https://www.tiktok.com/@pros_cafe"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="TikTok"
-              className="inline-flex h-10 w-10 items-center justify-center"
-            >
-              <Image
-                src="/tik-tok.png"
-                alt="TikTok"
-                width={32}
-                height={32}
-                className="h-8 w-8 object-contain"
-              />
-            </a>
-
-            <a
-              href="https://wa.me/9613720277"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="WhatsApp"
-              className="inline-flex h-10 w-10 items-center justify-center"
-            >
-              <Image
-                src="/whatsapp.png"
-                alt="WhatsApp"
-                width={32}
-                height={32}
-                className="h-8 w-8 object-contain"
-              />
-            </a>
-
-            <a
-              href="https://fb.com/proscafe"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Facebook"
-              className="inline-flex h-10 w-10 items-center justify-center"
-            >
-              <Image
-                src="/facebook.png"
-                alt="Facebook"
-                width={32}
-                height={32}
-                className="h-8 w-8 object-contain"
-              />
-            </a>
-
-            <a
-              href="https://shark-accounting.com/menu/Pros_cafe_dekwaneh/"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Menu"
-              className="inline-flex h-10 w-10 items-center justify-center"
-            >
-              <Image
-                src="/dish.png"
-                alt="Menu"
-                width={32}
-                height={32}
-                className="h-8 w-8 object-contain"
-              />
-            </a>
+          <div
+            className="mx-auto flex w-full items-center justify-between rounded-full border border-white/20 px-5 py-4 backdrop-blur-xl"
+            style={{
+              background:
+                "linear-gradient(145deg, rgba(255,255,255,0.13), rgba(255,255,255,0.055))",
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,0.16), 0 16px 40px rgba(82,42,37,0.18)",
+            }}
+          >
+            {[
+              {
+                href: "https://www.instagram.com/pros_cafe",
+                src: "/instagram.png",
+                alt: "Instagram",
+              },
+              {
+                href: "https://www.tiktok.com/@pros_cafe",
+                src: "/tik-tok.png",
+                alt: "TikTok",
+              },
+              {
+                href: "https://wa.me/9613720277",
+                src: "/whatsapp.png",
+                alt: "WhatsApp",
+              },
+              {
+                href: "https://fb.com/proscafe",
+                src: "/facebook.png",
+                alt: "Facebook",
+              },
+              {
+                href: "https://shark-accounting.com/menu/Pros_cafe_dekwaneh/",
+                src: "/dish.png",
+                alt: "Menu",
+              },
+            ].map((item) => (
+              <a
+                key={item.alt}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={item.alt}
+                className="flex h-[58px] w-[58px] items-center justify-center rounded-full border-2 border-[#efd2c2]/85 bg-[#d6a690]/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_18px_rgba(93,45,40,0.14)] transition-transform duration-200 active:scale-95"
+              >
+                <Image
+                  src={item.src}
+                  alt={item.alt}
+                  width={29}
+                  height={29}
+                  className="h-[29px] w-[29px] object-contain"
+                />
+              </a>
+            ))}
           </div>
         </section>
 
