@@ -14,31 +14,42 @@ function getSafeRedirectPath(path: string | null) {
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const supabase = useMemo(() => createClient(), []);
-  const redirectTo = getSafeRedirectPath(searchParams.get("redirectTo"));
+
+  const redirectTo = getSafeRedirectPath(
+    searchParams.get("redirectTo"),
+  );
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+  async function handleLogin(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
+
     setLoading(true);
     setError("");
     setMessage("");
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    setLoading(false);
+    const { error: signInError } =
+      await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
     if (signInError) {
+      console.error("Login error:", signInError);
+
       setError("Wrong email or password.");
+      setLoading(false);
       return;
     }
 
@@ -48,33 +59,46 @@ export function LoginForm() {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
+      console.error("User loading error:", userError);
+
       setError("Unable to load your account.");
+      setLoading(false);
       return;
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+    const { data: profile, error: profileError } =
+      await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
 
     if (profileError) {
+      console.error("Profile role error:", profileError);
+
       setError("Unable to load your account role.");
+      setLoading(false);
       return;
     }
+
+    setLoading(false);
 
     if (redirectTo) {
       router.replace(redirectTo);
-    } else {
-      const role = String(profile?.role ?? "").trim().toLowerCase();
+      router.refresh();
+      return;
+    }
 
-      if (role === "master_admin" || role === "admin") {
-        router.replace("/admin");
-      } else if (role === "staff") {
-        router.replace("/staff");
-      } else {
-        router.replace("/dashboard");
-      }
+    const role = String(profile?.role ?? "")
+      .trim()
+      .toLowerCase();
+
+    if (role === "master_admin" || role === "admin") {
+      router.replace("/admin");
+    } else if (role === "staff") {
+      router.replace("/staff");
+    } else {
+      router.replace("/dashboard");
     }
 
     router.refresh();
@@ -85,31 +109,48 @@ export function LoginForm() {
     setMessage("");
 
     const cleanEmail = email.trim();
+
     if (!cleanEmail) {
-      setError("Enter your email first, then press Forgot password.");
+      setError(
+        "Enter your email first, then press Forgot password.",
+      );
       return;
     }
 
     setResetLoading(true);
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
+
+    const { error: resetError } =
+      await supabase.auth.resetPasswordForEmail(
+        cleanEmail,
+        {
+          redirectTo: `${window.location.origin}/reset-password`,
+        },
+      );
+
     setResetLoading(false);
 
     if (resetError) {
+      console.error("Password reset error:", resetError);
       setError(resetError.message);
       return;
     }
 
-    setMessage("Password reset link sent to your email.");
+    setMessage(
+      "Password reset link sent to your email.",
+    );
   }
 
   return (
-    <form onSubmit={handleLogin} className="space-y-3">
+    <form
+      onSubmit={handleLogin}
+      className="space-y-3"
+    >
       <input
         type="email"
         value={email}
-        onChange={(event) => setEmail(event.target.value)}
+        onChange={(event) =>
+          setEmail(event.target.value)
+        }
         placeholder="Email"
         autoComplete="email"
         className="w-full rounded-2xl border border-white/50 bg-white/80 px-4 py-3 text-[14px] font-bold text-[#18212b] outline-none placeholder:text-[#6b7280] focus:border-[#d35d58]"
@@ -119,15 +160,26 @@ export function LoginForm() {
       <input
         type="password"
         value={password}
-        onChange={(event) => setPassword(event.target.value)}
+        onChange={(event) =>
+          setPassword(event.target.value)
+        }
         placeholder="Password"
         autoComplete="current-password"
         className="w-full rounded-2xl border border-white/50 bg-white/80 px-4 py-3 text-[14px] font-bold text-[#18212b] outline-none placeholder:text-[#6b7280] focus:border-[#d35d58]"
         required
       />
 
-      {error ? <p className="text-center text-[12px] font-bold text-[#b42318]">{error}</p> : null}
-      {message ? <p className="text-center text-[12px] font-bold text-[#235d2f]">{message}</p> : null}
+      {error ? (
+        <p className="text-center text-[12px] font-bold text-[#b42318]">
+          {error}
+        </p>
+      ) : null}
+
+      {message ? (
+        <p className="text-center text-[12px] font-bold text-[#235d2f]">
+          {message}
+        </p>
+      ) : null}
 
       <button
         type="submit"
@@ -139,7 +191,11 @@ export function LoginForm() {
 
       <div className="pt-2 text-center text-[13px] font-medium text-[#18212b]">
         <span>New here? </span>
-        <a href="https://www.proscafe.net/register" className="font-black text-[#c85b58] hover:underline">
+
+        <a
+          href="/register"
+          className="font-black text-[#c85b58] hover:underline"
+        >
           Create an account
         </a>
       </div>
@@ -151,7 +207,9 @@ export function LoginForm() {
           disabled={resetLoading}
           className="mx-auto block text-center text-[13px] font-black text-[#2563eb] hover:underline disabled:opacity-60"
         >
-          {resetLoading ? "Sending reset link..." : "Forgot Password?"}
+          {resetLoading
+            ? "Sending reset link..."
+            : "Forgot Password?"}
         </button>
       ) : null}
     </form>
