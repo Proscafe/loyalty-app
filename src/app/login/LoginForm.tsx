@@ -123,7 +123,10 @@ export function LoginForm() {
       await supabase.auth.resetPasswordForEmail(
         cleanEmail,
         {
-          redirectTo: `${window.location.origin}/reset-password`,
+          redirectTo:
+            process.env.NODE_ENV === "production"
+              ? "https://www.proscafe.net/reset-password"
+              : `${window.location.origin}/reset-password`,
         },
       );
 
