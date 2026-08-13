@@ -172,6 +172,7 @@ export default function CommentCardsPageClient({
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const desktopFilterRef = useRef<HTMLDivElement | null>(null);
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
   const [giftRow, setGiftRow] = useState<any | null>(null);
@@ -593,7 +594,7 @@ export default function CommentCardsPageClient({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setFilterOpen(true)}
+                  onClick={() => setMobileFilterOpen(true)}
                   className="h-11 shrink-0 rounded-full bg-[#ffd66b] px-6 text-[12px] font-black text-[#365665] lg:hidden"
                 >
                   {mobileFilterLabel}
@@ -779,10 +780,10 @@ export default function CommentCardsPageClient({
             </div>
           </section>
 
-          {filterOpen ? (
+          {mobileFilterOpen ? (
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 px-5 lg:hidden"
-              onClick={() => setFilterOpen(false)}
+              onClick={() => setMobileFilterOpen(false)}
             >
               <div
                 className="w-full max-w-[320px] rounded-[28px] border border-white/15 bg-[#365665]/95 p-4 backdrop-blur-2xl"
@@ -798,7 +799,7 @@ export default function CommentCardsPageClient({
                       type="button"
                       onClick={() => {
                         setTimeFilter(item.key);
-                        if (item.key !== "date_range") setFilterOpen(false);
+                        if (item.key !== "date_range") setMobileFilterOpen(false);
                       }}
                       className={`h-12 rounded-full text-[12px] font-black ${timeFilter === item.key ? "bg-[#ffd66b] text-[#365665]" : "bg-white/10 text-white"}`}
                     >
@@ -833,7 +834,7 @@ export default function CommentCardsPageClient({
                     </label>
                     <button
                       type="button"
-                      onClick={() => setFilterOpen(false)}
+                      onClick={() => setMobileFilterOpen(false)}
                       className="h-12 rounded-full bg-[#ffd66b] text-[12px] font-black text-[#365665]"
                     >
                       Apply range
