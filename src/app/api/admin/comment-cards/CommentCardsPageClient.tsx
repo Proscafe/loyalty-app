@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { AdminPageShell } from "@/components/AdminPageShell";
 import { AdminMobileHeader } from "@/components/AdminMobileHeader";
 
@@ -172,6 +173,7 @@ export default function CommentCardsPageClient({
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const desktopFilterRef = useRef<HTMLDivElement | null>(null);
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
   const [giftRow, setGiftRow] = useState<any | null>(null);
@@ -591,17 +593,33 @@ export default function CommentCardsPageClient({
                     Review feedback, ratings, and follow up with customers.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setFilterOpen(true)}
-                  className="h-11 shrink-0 rounded-full bg-[#ffd66b] px-6 text-[12px] font-black text-[#365665] lg:hidden"
-                >
-                  {mobileFilterLabel}
-                </button>
+                <div className="flex items-center gap-2 lg:hidden">
+                  <Link
+                    href="/admin/comment-cards/questions"
+                    className="flex h-11 shrink-0 items-center justify-center rounded-full border border-white/35 px-4 text-[11px] font-black uppercase tracking-[0.08em] text-white"
+                  >
+                    Edit
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setMobileFilterOpen(true)}
+                    className="h-11 shrink-0 rounded-full bg-[#ffd66b] px-6 text-[12px] font-black text-[#365665]"
+                  >
+                    {mobileFilterLabel}
+                  </button>
+                </div>
+
               </div>
             </div>
 
             <div className="mt-3 flex flex-col gap-3 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:flex-row lg:items-center lg:justify-end">
+              <Link
+                href="/admin/comment-cards/questions"
+                className="hidden h-10 items-center justify-center rounded-full border border-white/80 bg-transparent px-5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-white/10 lg:flex"
+              >
+                Edit
+              </Link>
+
               <div
                 ref={desktopFilterRef}
                 className="relative hidden lg:block"
@@ -779,10 +797,10 @@ export default function CommentCardsPageClient({
             </div>
           </section>
 
-          {filterOpen ? (
+          {mobileFilterOpen ? (
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 px-5 lg:hidden"
-              onClick={() => setFilterOpen(false)}
+              onClick={() => setMobileFilterOpen(false)}
             >
               <div
                 className="w-full max-w-[320px] rounded-[28px] border border-white/15 bg-[#365665]/95 p-4 backdrop-blur-2xl"
@@ -798,7 +816,7 @@ export default function CommentCardsPageClient({
                       type="button"
                       onClick={() => {
                         setTimeFilter(item.key);
-                        if (item.key !== "date_range") setFilterOpen(false);
+                        if (item.key !== "date_range") setMobileFilterOpen(false);
                       }}
                       className={`h-12 rounded-full text-[12px] font-black ${timeFilter === item.key ? "bg-[#ffd66b] text-[#365665]" : "bg-white/10 text-white"}`}
                     >
@@ -833,7 +851,7 @@ export default function CommentCardsPageClient({
                     </label>
                     <button
                       type="button"
-                      onClick={() => setFilterOpen(false)}
+                      onClick={() => setMobileFilterOpen(false)}
                       className="h-12 rounded-full bg-[#ffd66b] text-[12px] font-black text-[#365665]"
                     >
                       Apply range
