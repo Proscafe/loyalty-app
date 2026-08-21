@@ -141,8 +141,8 @@ export default function KidsBirthdaysPage() {
             "#2f39d8",
           ];
 
-          const angle = (index * 137.508) * (Math.PI / 180);
-          const ring = 0.44 + ((index % 13) / 18);
+          const angle = index * 137.508 * (Math.PI / 180);
+          const ring = 0.44 + (index % 13) / 18;
           const horizontal = 42 + ((index * 17) % 54);
           const vertical = 26 + ((index * 23) % 50);
 
@@ -150,13 +150,19 @@ export default function KidsBirthdaysPage() {
           const burstY = Math.sin(angle) * vertical * ring;
 
           const width = 4 + ((index * 11) % 8);
+
           const height =
             index % 4 === 0
               ? width
-              : Math.max(2, Math.round(width * (0.28 + ((index % 3) * 0.12))));
+              : Math.max(
+                  2,
+                  Math.round(
+                    width * (0.28 + (index % 3) * 0.12),
+                  ),
+                );
 
           const delay = ((index * 19) % 420) / 1000;
-          const duration = 3.4 + (((index * 29) % 12) / 10);
+          const duration = 3.4 + ((index * 29) % 12) / 10;
           const startRotate = (index * 47) % 360;
           const drop = 8 + ((index * 31) % 18);
 
@@ -182,13 +188,16 @@ export default function KidsBirthdaysPage() {
                   "--burst-y": `${burstY}vh`,
                   "--drop": `${drop}vh`,
                   "--start-rotate": `${startRotate}deg`,
-                  "--confetti-color": colors[index % colors.length],
+                  "--confetti-color":
+                    colors[index % colors.length],
                 } as React.CSSProperties
               }
             />
           );
         })}
       </div>
+
+      {/* HERO */}
       <section className="relative isolate min-h-[760px] overflow-hidden px-5 pb-14 pt-6 sm:min-h-[820px] sm:px-8 lg:min-h-[900px] lg:px-12 lg:pb-24 lg:pt-8">
         <video
           className="absolute inset-0 -z-30 h-full w-full object-cover"
@@ -206,6 +215,7 @@ export default function KidsBirthdaysPage() {
           className="absolute inset-0 -z-20 bg-[#172554]/52"
         />
 
+        {/* LOGO */}
         <div className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-start">
           <Link
             href="/"
@@ -223,7 +233,8 @@ export default function KidsBirthdaysPage() {
           </Link>
         </div>
 
-        <div className="relative z-20 mx-auto mt-16 max-w-4xl text-center sm:mt-20">
+        {/* HERO CONTENT */}
+        <div className="relative z-20 mx-auto mt-24 max-w-4xl text-center sm:mt-20">
           <div className="mx-auto mb-5 inline-flex rounded-full bg-white/85 px-5 py-2.5 text-[12px] font-black uppercase tracking-[0.2em] text-[#2330c9] shadow-sm backdrop-blur sm:text-[13px]">
             Kids Birthdays
           </div>
@@ -240,11 +251,14 @@ export default function KidsBirthdaysPage() {
 
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <a
-              href="tel:+9611681144"
-              className="inline-flex h-13 items-center justify-center rounded-full bg-[#ffd45a] px-7 py-4 text-[12px] font-black uppercase tracking-[0.08em] text-[#2330c9] shadow-[0_16px_40px_rgba(0,0,0,0.20)] transition hover:-translate-y-0.5 hover:bg-[#ffdf78]"
+              href="https://wa.me/9613720277"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-13 items-center justify-center rounded-full bg-[#ffbb24] px-7 py-4 text-[12px] font-black uppercase tracking-[0.08em] text-[#2330c9] shadow-[0_16px_40px_rgba(0,0,0,0.20)] transition hover:-translate-y-0.5 hover:bg-[#ffc83f]"
             >
               Book Your Birthday
             </a>
+
             <a
               href="#packages"
               className="inline-flex h-13 items-center justify-center rounded-full border-2 border-[#2330c9]/15 bg-white/80 px-7 py-4 text-[12px] font-black uppercase tracking-[0.08em] text-[#2330c9] backdrop-blur transition hover:bg-white"
@@ -255,12 +269,14 @@ export default function KidsBirthdaysPage() {
         </div>
       </section>
 
+      {/* INTRO / FEATURES */}
       <section className="px-5 py-12 sm:px-8 lg:px-12 lg:py-20">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto mb-9 max-w-2xl text-center">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#ff9d13]">
               Book your birthday with us
             </p>
+
             <h2 className="mt-3 text-[34px] font-black leading-[0.98] tracking-[-0.04em] text-[#2330c9] sm:text-[46px]">
               More fun.
               <span className="block">Less planning.</span>
@@ -268,6 +284,7 @@ export default function KidsBirthdaysPage() {
           </div>
 
           <div className="grid gap-5 lg:grid-cols-3">
+            {/* KIDS PLAYGROUND */}
             <article className="rounded-[30px] bg-white p-4 shadow-[0_18px_60px_rgba(38,78,120,0.09)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-[24px]">
                 <Image
@@ -277,19 +294,24 @@ export default function KidsBirthdaysPage() {
                   className="object-cover"
                 />
               </div>
+
               <div className="px-2 pb-3 pt-5">
                 <div className="inline-flex rounded-full bg-[#ffd45a] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#2330c9]">
                   Always Free
                 </div>
+
                 <h3 className="mt-3 text-[25px] font-black uppercase text-[#2330c9]">
                   Kids Playground
                 </h3>
+
                 <p className="mt-2 text-sm font-semibold leading-6 text-[#28436a]/65">
-                  A fun space for kids to play while everyone enjoys the celebration.
+                  A fun space for kids to play while everyone enjoys the
+                  celebration.
                 </p>
               </div>
             </article>
 
+            {/* READY TO PARTY */}
             <article className="rounded-[30px] bg-[#2330c9] p-4 text-white shadow-[0_22px_70px_rgba(35,48,201,0.22)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-[24px]">
                 <Image
@@ -299,19 +321,24 @@ export default function KidsBirthdaysPage() {
                   className="object-cover"
                 />
               </div>
+
               <div className="px-2 pb-3 pt-5">
                 <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#ffd45a]">
                   Your Celebration
                 </div>
+
                 <h3 className="mt-1 text-[25px] font-black uppercase">
                   Ready to Party
                 </h3>
+
                 <p className="mt-2 text-sm font-semibold leading-6 text-white/72">
-                  We set the scene for cake, food, photos, and birthday memories.
+                  We set the scene for cake, food, photos, and birthday
+                  memories.
                 </p>
               </div>
             </article>
 
+            {/* KIDS ANIMATION */}
             <article className="rounded-[30px] bg-white p-4 shadow-[0_18px_60px_rgba(38,78,120,0.09)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-[24px]">
                 <Image
@@ -321,13 +348,16 @@ export default function KidsBirthdaysPage() {
                   className="object-cover"
                 />
               </div>
+
               <div className="px-2 pb-3 pt-5">
                 <div className="inline-flex rounded-full bg-[#ffd45a] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#2330c9]">
                   Free on Sundays
                 </div>
+
                 <h3 className="mt-3 text-[25px] font-black uppercase text-[#2330c9]">
                   Kids Animation
                 </h3>
+
                 <p className="mt-2 text-sm font-semibold leading-6 text-[#28436a]/65">
                   Book a Sunday birthday and enjoy free kids entertainment.
                 </p>
@@ -337,6 +367,7 @@ export default function KidsBirthdaysPage() {
         </div>
       </section>
 
+      {/* PACKAGES */}
       <section
         id="packages"
         className="relative overflow-hidden bg-[#2330c9] px-5 py-14 text-white sm:px-8 lg:px-12 lg:py-20"
@@ -345,6 +376,7 @@ export default function KidsBirthdaysPage() {
           aria-hidden="true"
           className="absolute -right-24 -top-20 h-72 w-72 rounded-full bg-[#05a9ee]/25 blur-2xl"
         />
+
         <div
           aria-hidden="true"
           className="absolute -bottom-28 -left-20 h-72 w-72 rounded-full bg-[#ffbb24]/20 blur-2xl"
@@ -356,12 +388,15 @@ export default function KidsBirthdaysPage() {
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#ffd45a]">
                 Pick your package
               </p>
+
               <h2 className="mt-2 text-[38px] font-black tracking-[-0.045em] sm:text-[52px]">
                 Birthday Buffet
               </h2>
             </div>
+
             <p className="max-w-[420px] text-sm font-semibold leading-6 text-white/65">
-              Choose the package that fits your celebration. Food and drinks included.
+              Choose the package that fits your celebration. Food and drinks
+              included.
             </p>
           </div>
 
@@ -376,7 +411,9 @@ export default function KidsBirthdaysPage() {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <h3 className="text-[24px] font-black">{item.name}</h3>
+                  <h3 className="text-[24px] font-black">
+                    {item.name}
+                  </h3>
 
                   {item.featured ? (
                     <div className="shrink-0 rounded-full bg-[#2330c9] px-3 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white">
@@ -389,6 +426,7 @@ export default function KidsBirthdaysPage() {
                   <span className="text-[48px] font-black leading-none tracking-[-0.05em]">
                     {item.price}
                   </span>
+
                   <span className="pb-1 text-[12px] font-black uppercase tracking-[0.12em] opacity-65">
                     USD / PRS
                   </span>
@@ -413,6 +451,7 @@ export default function KidsBirthdaysPage() {
         </div>
       </section>
 
+      {/* FINAL CTA */}
       <section className="px-5 py-14 sm:px-8 lg:px-12 lg:py-20">
         <div className="mx-auto grid max-w-6xl items-center gap-8 overflow-hidden rounded-[34px] bg-white p-5 shadow-[0_22px_80px_rgba(38,78,120,0.10)] sm:p-8 lg:grid-cols-[0.9fr_1.1fr] lg:p-10">
           <div className="relative aspect-[4/3] overflow-hidden rounded-[26px]">
@@ -428,11 +467,14 @@ export default function KidsBirthdaysPage() {
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#ff9d13]">
               WHOA! IT&apos;S YOUR BIRTHDAY
             </p>
+
             <h2 className="mt-3 text-[39px] font-black leading-[0.98] tracking-[-0.05em] text-[#2330c9] sm:text-[52px]">
               Celebrate your way.
             </h2>
+
             <p className="mt-5 max-w-[520px] text-[15px] font-semibold leading-7 text-[#28436a]/68">
-              Bring the cake, invite your crew, and we&apos;ll handle the food, fun, and party setup.
+              Bring the cake, invite your crew, and we&apos;ll handle the food,
+              fun, and party setup.
             </p>
 
             <div className="mt-7">
@@ -443,6 +485,7 @@ export default function KidsBirthdaysPage() {
                 <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-[#2330c9]/45">
                   Call Us
                 </span>
+
                 <span className="mt-1 block text-[20px] font-black text-[#2330c9]">
                   03 72 02 77
                 </span>
@@ -461,6 +504,7 @@ export default function KidsBirthdaysPage() {
         </div>
       </section>
 
+      {/* FOOTER */}
       <footer className="px-5 pb-8 text-center sm:px-8">
         <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#2330c9]/40">
           Powered by{" "}
