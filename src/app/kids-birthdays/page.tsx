@@ -126,6 +126,7 @@ export default function KidsBirthdaysPage() {
         }
       `}</style>
 
+      {/* CONFETTI */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-[9999] overflow-hidden"
@@ -235,7 +236,7 @@ export default function KidsBirthdaysPage() {
 
         {/* HERO CONTENT */}
         <div className="relative z-20 mx-auto mt-24 max-w-4xl text-center sm:mt-20">
-          <div className="mx-auto mb-5 inline-flex rounded-full bg-white/85 px-5 py-2.5 text-[12px] font-black uppercase tracking-[0.2em] text-[#2330c9] shadow-sm backdrop-blur sm:text-[13px]">
+          <div className="mx-auto mb-5 text-[13px] font-black uppercase tracking-[0.2em] text-[#ffbb24] sm:text-[14px]">
             Kids Birthdays
           </div>
 
@@ -269,7 +270,7 @@ export default function KidsBirthdaysPage() {
         </div>
       </section>
 
-      {/* INTRO / FEATURES */}
+      {/* FEATURES */}
       <section className="px-5 py-12 sm:px-8 lg:px-12 lg:py-20">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto mb-9 max-w-2xl text-center">
@@ -284,7 +285,6 @@ export default function KidsBirthdaysPage() {
           </div>
 
           <div className="grid gap-5 lg:grid-cols-3">
-            {/* KIDS PLAYGROUND */}
             <article className="rounded-[30px] bg-white p-4 shadow-[0_18px_60px_rgba(38,78,120,0.09)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-[24px]">
                 <Image
@@ -311,7 +311,6 @@ export default function KidsBirthdaysPage() {
               </div>
             </article>
 
-            {/* READY TO PARTY */}
             <article className="rounded-[30px] bg-[#2330c9] p-4 text-white shadow-[0_22px_70px_rgba(35,48,201,0.22)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-[24px]">
                 <Image
@@ -338,7 +337,6 @@ export default function KidsBirthdaysPage() {
               </div>
             </article>
 
-            {/* KIDS ANIMATION */}
             <article className="rounded-[30px] bg-white p-4 shadow-[0_18px_60px_rgba(38,78,120,0.09)]">
               <div className="relative aspect-[4/3] overflow-hidden rounded-[24px]">
                 <Image
