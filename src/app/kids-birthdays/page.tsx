@@ -157,9 +157,7 @@ export default function KidsBirthdaysPage() {
               ? width
               : Math.max(
                   2,
-                  Math.round(
-                    width * (0.28 + (index % 3) * 0.12),
-                  ),
+                  Math.round(width * (0.28 + (index % 3) * 0.12)),
                 );
 
           const delay = ((index * 19) % 420) / 1000;
@@ -189,8 +187,7 @@ export default function KidsBirthdaysPage() {
                   "--burst-y": `${burstY}vh`,
                   "--drop": `${drop}vh`,
                   "--start-rotate": `${startRotate}deg`,
-                  "--confetti-color":
-                    colors[index % colors.length],
+                  "--confetti-color": colors[index % colors.length],
                 } as React.CSSProperties
               }
             />
@@ -235,9 +232,12 @@ export default function KidsBirthdaysPage() {
         </div>
 
         {/* HERO CONTENT */}
-        <div className="relative z-20 mx-auto mt-24 max-w-4xl text-center sm:mt-20">
-          <div className="mx-auto mb-5 text-[13px] font-black uppercase tracking-[0.2em] text-[#ffbb24] sm:text-[14px]">
-            Kids Birthdays
+        <div className="relative z-20 mx-auto mt-24 w-full max-w-4xl text-center sm:mt-20">
+          {/* CENTERED KIDS BIRTHDAYS */}
+          <div className="mb-5 flex w-full items-center justify-center">
+            <span className="block text-center text-[13px] font-black uppercase tracking-[0.2em] text-[#ffbb24] sm:text-[14px]">
+                KIDS&apos; BIRTHDAYS
+            </span>
           </div>
 
           <h1 className="font-raleway text-[52px] font-black uppercase leading-[0.84] tracking-[-0.055em] text-white drop-shadow-[0_6px_24px_rgba(0,0,0,0.26)] sm:text-[76px] lg:text-[102px]">
@@ -255,14 +255,14 @@ export default function KidsBirthdaysPage() {
               href="https://wa.me/9613720277"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-13 items-center justify-center rounded-full bg-[#ffbb24] px-7 py-4 text-[12px] font-black uppercase tracking-[0.08em] text-[#2330c9] shadow-[0_16px_40px_rgba(0,0,0,0.20)] transition hover:-translate-y-0.5 hover:bg-[#ffc83f]"
+              className="inline-flex items-center justify-center rounded-full bg-[#ffbb24] px-7 py-4 text-[12px] font-black uppercase tracking-[0.08em] text-[#2330c9] shadow-[0_16px_40px_rgba(0,0,0,0.20)] transition hover:-translate-y-0.5 hover:bg-[#ffc83f]"
             >
               Book Your Birthday
             </a>
 
             <a
               href="#packages"
-              className="inline-flex h-13 items-center justify-center rounded-full border-2 border-[#2330c9]/15 bg-white/80 px-7 py-4 text-[12px] font-black uppercase tracking-[0.08em] text-[#2330c9] backdrop-blur transition hover:bg-white"
+              className="inline-flex items-center justify-center rounded-full border-2 border-[#2330c9]/15 bg-white/80 px-7 py-4 text-[12px] font-black uppercase tracking-[0.08em] text-[#2330c9] backdrop-blur transition hover:bg-white"
             >
               View Packages
             </a>
@@ -409,9 +409,7 @@ export default function KidsBirthdaysPage() {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <h3 className="text-[24px] font-black">
-                    {item.name}
-                  </h3>
+                  <h3 className="text-[24px] font-black">{item.name}</h3>
 
                   {item.featured ? (
                     <div className="shrink-0 rounded-full bg-[#2330c9] px-3 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white">
@@ -475,10 +473,11 @@ export default function KidsBirthdaysPage() {
               fun, and party setup.
             </p>
 
-            <div className="mt-7">
+            {/* CONTACT + LOCATION */}
+            <div className="mt-7 space-y-3">
               <a
                 href="tel:+9613720277"
-                className="block rounded-[20px] bg-[#eef9ff] px-5 py-4"
+                className="block rounded-[20px] bg-[#eef9ff] px-5 py-4 transition hover:bg-[#e4f5ff]"
               >
                 <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-[#2330c9]/45">
                   Call Us
@@ -486,6 +485,21 @@ export default function KidsBirthdaysPage() {
 
                 <span className="mt-1 block text-[20px] font-black text-[#2330c9]">
                   03 72 02 77
+                </span>
+              </a>
+
+              <a
+                href="https://maps.app.goo.gl/mK3SQwgUsA5edczH6"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block rounded-[20px] bg-[#eef9ff] px-5 py-4 transition hover:bg-[#e4f5ff]"
+              >
+                <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-[#2330c9]/45">
+                  Location
+                </span>
+
+                <span className="mt-1 block text-[20px] font-black text-[#2330c9]">
+                  Dekwaneh Map
                 </span>
               </a>
             </div>
