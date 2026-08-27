@@ -185,7 +185,7 @@ export async function PATCH(req: Request) {
 
   if (body.action === "set_role") {
     const role = body.role;
-    if (!["client", "staff", "master_admin"].includes(role ?? "")) return jsonError("Invalid role.");
+    if (!["client", "staff", "supervisor", "master_admin"].includes(role ?? "")) return jsonError("Invalid role.");
     const { error: e } = await admin.from("profiles").update({ role }).eq("id", userId);
     if (e) return jsonError(e.message);
     return NextResponse.json({ success: true });
@@ -199,6 +199,7 @@ export async function PATCH(req: Request) {
 
   if (body.action === "reactivate") {
     const role = body.role ?? "client";
+    if (!["client", "staff", "supervisor", "master_admin"].includes(role)) return jsonError("Invalid role.");
     const { error: e } = await admin.from("profiles").update({ is_active: true, role }).eq("id", userId);
     if (e) return jsonError(e.message);
     return NextResponse.json({ success: true });

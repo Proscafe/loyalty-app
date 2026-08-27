@@ -111,7 +111,8 @@ function desktopVisitDayKey(value?: string | null) {
 
 function desktopRoleLabel(role: UserRole) {
   if (role === "master_admin") return "Admin";
-  if (role === "staff") return "Staff";
+  if (role === "staff") return "Manager";
+  if (role === "supervisor") return "Supervisor";
   return "Client";
 }
 
@@ -706,7 +707,8 @@ function DesktopClientProfilePanel({
               }`}
             >
               <option value="client">Client</option>
-              <option value="staff">Staff</option>
+              <option value="staff">Manager</option>
+              <option value="supervisor">Supervisor</option>
               <option value="master_admin">Admin</option>
               <option value="deactivated">Deactivate</option>
             </select>
@@ -2299,7 +2301,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       }
 
       // Client activity filters should not hide Staff/Admin rows.
-      // This keeps the desktop Profile Tab filter working for Staff and Admin.
+      // This keeps the desktop Profile Tab filter working for Managers, Supervisors, and Admin.
       if (isClient) {
         const created = (user as any).created_at;
         if (
@@ -2425,7 +2427,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
       if (filter !== "all" && user.role !== filter) return false;
 
-      // Date and last-visit filters are customer activity filters, so they should not hide Staff/Admin.
+      // Date and last-visit filters are customer activity filters, so they should not hide Managers/Supervisors/Admin.
       if (isClient) {
         const created = (user as any).created_at;
         if (!isWithinDesktopTimeRange(created, timeRange, rangeStart, rangeEnd))
@@ -2878,7 +2880,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             >
                               <option value="all">All profiles</option>
                               <option value="client">Clients</option>
-                              <option value="staff">Staff</option>
+                              <option value="staff">Manager</option>
+              <option value="supervisor">Supervisor</option>
                               <option value="master_admin">Admin</option>
                               <option value="deactivated">
                                 Deactivated profiles
