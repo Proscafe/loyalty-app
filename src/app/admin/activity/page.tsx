@@ -15,8 +15,9 @@ type ProfileRow = AnyRow & {
 };
 type CategoryRow = { id: string; name?: string | null };
 
-function iso(value?: string | null) {
-  return value ? new Date(value).toISOString() : new Date().toISOString();
+function safeDate(value?: string | null) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
 function profileLabel(row?: AnyRow | null) {
@@ -25,8 +26,14 @@ function profileLabel(row?: AnyRow | null) {
 }
 
 function rewardLabel(row: AnyRow) {
-  const value = String(row.reward_type ?? "").trim();
-  return value || "Gift";
+  return String(
+    row.reward_label ??
+      row.reward_name ??
+      row.title ??
+      row.reward_type ??
+      row.gift_type ??
+      "Gift",
+  ).trim();
 }
 
 function isBirthdayReward(row: AnyRow) {
@@ -35,6 +42,7 @@ function isBirthdayReward(row: AnyRow) {
     row.reward_source,
     row.description,
     row.reward_note,
+    row.action_type,
   ]
     .map((value) => String(value ?? "").toLowerCase())
     .join(" ");
@@ -48,9 +56,49 @@ function isBirthdayReward(row: AnyRow) {
   );
 }
 
-export default async function AdminActivityPage() {
-  // One-time-safe repair: creates only missing birthday reward rows
+function isSystemReward(row: AnyRow) {
+  const text = [
+    row.source,
+    row.reward_source,
+    row.description,
+    row.reward_note,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
 
+  return (
+    isBirthdayReward(row) ||
+    text.includes("game_prediction") ||
+    text.includes("prediction_match:") ||
+    text.includes("winner in") ||
+    Boolean(
+      row.source_match_id ||
+        row.game_id ||
+        row.match_id ||
+        row.prediction_match_id ||
+        row.prediction_entry_id,
+    )
+  );
+}
+
+function stampDelta(row: AnyRow) {
+  const before = Number(row.stamp_count_before);
+  const after = Number(row.stamp_count_after);
+
+  if (Number.isFinite(before) && Number.isFinite(after)) {
+    return after - before;
+  }
+
+  const explicit = Number(row.stamp_delta ?? row.quantity);
+  if (Number.isFinite(explicit) && explicit !== 0) return explicit;
+
+  const action = String(row.action_type ?? "").toLowerCase();
+  if (/remove|deduct|redeem|spent/.test(action)) return -1;
+
+  return 1;
+}
+
+export default async function AdminActivityPage() {
   const supabase = await createClient();
 
   const [
@@ -66,12 +114,12 @@ export default async function AdminActivityPage() {
       .from("stamp_transactions")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(1000),
+      .limit(1500),
     supabase
       .from("rewards")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(1500),
+      .limit(2000),
     supabase
       .from("contact_history")
       .select("*")
@@ -81,6 +129,7 @@ export default async function AdminActivityPage() {
 
   const profileRows = profiles ?? [];
   const categoryRows = categories ?? [];
+
   const profileById = new Map(
     profileRows.map((profile: AnyRow) => [String(profile.id), profile]),
   );
@@ -89,50 +138,173 @@ export default async function AdminActivityPage() {
   );
 
   const staffIds = new Set<string>();
-  for (const stamp of stamps ?? []) {
-    if ((stamp as AnyRow).staff_id) staffIds.add(String((stamp as AnyRow).staff_id));
+
+  for (const rawStamp of stamps ?? []) {
+    const row = rawStamp as AnyRow;
+    if (row.staff_id) staffIds.add(String(row.staff_id));
+    if (row.created_by) staffIds.add(String(row.created_by));
   }
-  for (const reward of rewards ?? []) {
-    if ((reward as AnyRow).redeemed_by) {
-      staffIds.add(String((reward as AnyRow).redeemed_by));
+
+  for (const rawReward of rewards ?? []) {
+    const row = rawReward as AnyRow;
+    for (const value of [
+      row.redeemed_by,
+      row.staff_id,
+      row.issued_by,
+      row.created_by,
+      row.issuer_id,
+    ]) {
+      if (value) staffIds.add(String(value));
     }
   }
 
   let staffById = new Map<string, AnyRow>();
+
   if (staffIds.size > 0) {
-    const { data: staff } = await supabase
+    const { data: staffProfiles } = await supabase
       .from("profiles")
       .select("id, full_name, email, client_code")
       .in("id", Array.from(staffIds));
 
     staffById = new Map(
-      (staff ?? []).map((profile: AnyRow) => [String(profile.id), profile]),
+      (staffProfiles ?? []).map((profile: AnyRow) => [
+        String(profile.id),
+        profile,
+      ]),
     );
+  }
+
+  const stampByRewardId = new Map<string, AnyRow>();
+
+  for (const rawStamp of stamps ?? []) {
+    const row = rawStamp as AnyRow;
+    const rewardId = String(row.reward_id ?? "").trim();
+    if (!rewardId) continue;
+
+    const existing = stampByRewardId.get(rewardId);
+    if (!existing) {
+      stampByRewardId.set(rewardId, row);
+      continue;
+    }
+
+    const currentTime = safeDate(row.created_at)?.getTime() ?? 0;
+    const existingTime = safeDate(existing.created_at)?.getTime() ?? 0;
+
+    if (currentTime > existingTime) stampByRewardId.set(rewardId, row);
   }
 
   const activities: AnyRow[] = [];
 
-  for (const stamp of stamps ?? []) {
-    const row = stamp as AnyRow;
+  const rewardEarnEvents = (rewards ?? [])
+    .map((rawReward) => {
+      const reward = rawReward as AnyRow;
+      const earnedAt = safeDate(reward.earned_at ?? reward.created_at);
+      if (!earnedAt) return null;
+
+      return {
+        clientId: String(reward.client_id ?? ""),
+        categoryId: String(reward.category_id ?? ""),
+        time: earnedAt.getTime(),
+        rewardId: String(reward.id ?? ""),
+      };
+    })
+    .filter(
+      (
+        item,
+      ): item is {
+        clientId: string;
+        categoryId: string;
+        time: number;
+        rewardId: string;
+      } => Boolean(item),
+    );
+
+  function stampBelongsToReward(row: AnyRow) {
+    const rewardId = String(row.reward_id ?? "").trim();
+
+    if (rewardId && rewardEarnEvents.some((event) => event.rewardId === rewardId)) {
+      return true;
+    }
+
+    const clientId = String(row.client_id ?? "");
+    const categoryId = String(row.category_id ?? "");
+    const stampTime = safeDate(row.created_at)?.getTime();
+
+    if (!clientId || !categoryId || !stampTime) return false;
+
+    // When earning a loyalty reward creates multiple stamp log rows at the
+    // same moment, hide those stamp rows and show only the resulting gift.
+    return rewardEarnEvents.some(
+      (event) =>
+        event.clientId === clientId &&
+        event.categoryId === categoryId &&
+        Math.abs(event.time - stampTime) <= 120000,
+    );
+  }
+
+  for (const rawStamp of stamps ?? []) {
+    const row = rawStamp as AnyRow;
+    const delta = stampDelta(row);
+
+    if (delta === 0) continue;
+    if (stampBelongsToReward(row)) continue;
+
     const client = profileById.get(String(row.client_id ?? ""));
     const category = categoryById.get(String(row.category_id ?? ""));
-    const staff = staffById.get(String(row.staff_id ?? ""));
+    const staff =
+      staffById.get(String(row.staff_id ?? "")) ??
+      staffById.get(String(row.created_by ?? ""));
 
     activities.push({
       ...row,
       activity_source: "stamp",
+      stamp_delta: Math.abs(delta),
+      stamp_direction: delta < 0 ? "redeemed" : "earned",
       client_name: profileLabel(client) ?? "Client",
       category_name: category?.name ?? null,
-      issued_by_name: profileLabel(staff) ?? "Staff user",
+      issued_by_name:
+        profileLabel(staff) ||
+        String(row.staff_name ?? row.issued_by_name ?? "Staff user").trim(),
+      created_at: row.created_at,
     });
   }
 
-  for (const reward of rewards ?? []) {
-    const row = reward as AnyRow;
+  for (const rawReward of rewards ?? []) {
+    const row = rawReward as AnyRow;
     const client = profileById.get(String(row.client_id ?? ""));
     const birthday = isBirthdayReward(row);
+    const systemReward = isSystemReward(row);
     const clientName = profileLabel(client) ?? "Client";
     const rewardName = rewardLabel(row);
+
+    const linkedStamp = stampByRewardId.get(String(row.id ?? ""));
+    const linkedStaff = linkedStamp
+      ? staffById.get(
+          String(linkedStamp.staff_id ?? linkedStamp.created_by ?? ""),
+        )
+      : null;
+
+    const directStaff =
+      staffById.get(
+        String(
+          row.staff_id ??
+            row.issued_by ??
+            row.created_by ??
+            row.issuer_id ??
+            "",
+        ),
+      ) ?? null;
+
+    const issuerName = systemReward
+      ? "System"
+      : profileLabel(directStaff) ||
+        profileLabel(linkedStaff) ||
+        String(
+          row.issued_by_name ??
+            row.staff_name ??
+            row.issuer_name ??
+            "System",
+        ).trim();
 
     activities.push({
       ...row,
@@ -141,13 +313,20 @@ export default async function AdminActivityPage() {
       action_type: birthday ? "birthday_gift_issued" : "gift_issued",
       reward_label: rewardName,
       client_name: clientName,
-      issued_by_name: birthday ? "System" : "System",
+      issued_by_name: issuerName || "System",
       is_birthday: birthday,
       birthday_reward: birthday,
       created_at: row.earned_at ?? row.created_at,
     });
 
-    if (row.redeemed_at || String(row.status ?? "").toLowerCase() === "redeemed") {
+    const isRedeemed =
+      Boolean(row.redeemed_at) ||
+      String(row.status ?? row.reward_status ?? "").toLowerCase() ===
+        "redeemed";
+
+    if (isRedeemed) {
+      const redeemedStaff = staffById.get(String(row.redeemed_by ?? ""));
+
       activities.push({
         ...row,
         id: `${row.id}-redeemed`,
@@ -156,35 +335,52 @@ export default async function AdminActivityPage() {
         reward_label: rewardName,
         client_name: clientName,
         issued_by_name:
-          profileLabel(staffById.get(String(row.redeemed_by ?? ""))) ?? "Staff user",
+          profileLabel(redeemedStaff) ||
+          String(row.redeemed_by_name ?? row.staff_name ?? "Staff user"),
         is_birthday: birthday,
         birthday_reward: birthday,
-        created_at: row.redeemed_at ?? row.updated_at ?? row.created_at,
+        created_at:
+          row.redeemed_at ??
+          row.updated_at ??
+          row.claimed_at ??
+          row.created_at,
       });
     }
   }
 
-  for (const contact of contacts ?? []) {
-    const row = contact as AnyRow;
+  for (const rawContact of contacts ?? []) {
+    const row = rawContact as AnyRow;
+    const client =
+      profileById.get(String(row.client_id ?? row.profile_id ?? "")) ?? null;
+
     activities.push({
       ...row,
       activity_source: "contact",
       action_type: "contacted",
-      client_id: row.source_id ?? null,
-      issued_by_name: "Staff user",
+      client_id: row.client_id ?? row.profile_id ?? row.source_id ?? null,
+      client_name:
+        profileLabel(client) ??
+        String(row.client_name ?? row.contact_key ?? "Client"),
+      issued_by_name:
+        String(
+          row.staff_name ??
+            row.issued_by_name ??
+            row.contacted_by_name ??
+            "Staff user",
+        ).trim(),
       created_at: row.contacted_at ?? row.created_at,
     });
   }
 
-  activities.sort(
-    (a, b) =>
-      new Date(iso(b.created_at)).getTime() -
-      new Date(iso(a.created_at)).getTime(),
-  );
+  activities.sort((a, b) => {
+    const aTime = safeDate(a.created_at)?.getTime() ?? 0;
+    const bTime = safeDate(b.created_at)?.getTime() ?? 0;
+    return bTime - aTime;
+  });
 
   return (
     <ActivityPageClient
-      activities={activities.slice(0, 1500)}
+      activities={activities.slice(0, 2000)}
       profiles={profileRows as ProfileRow[]}
       categories={categoryRows as CategoryRow[]}
     />

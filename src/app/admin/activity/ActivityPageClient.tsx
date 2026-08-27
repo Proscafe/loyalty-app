@@ -13,7 +13,7 @@ type ProfileRow = {
   client_code?: string | null;
 };
 type CategoryRow = { id: string; name?: string | null };
-type Filter = "today" | "week" | "month";
+type Filter = "today" | "week" | "month" | "custom" | "all";
 
 const PAGE_BG = "#0F2A2D";
 const GLASS_PANEL = "rgba(255,255,255,0.10)";
@@ -22,6 +22,8 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "week", label: "This week" },
   { key: "month", label: "This month" },
+  { key: "custom", label: "Date Range" },
+  { key: "all", label: "Show All" },
 ];
 
 function validDate(value?: string | null) {
@@ -49,25 +51,8 @@ function timeOnly(value?: string | null) {
   });
 }
 
-function monthKey(value?: string | null) {
-  const date = validDate(value);
-  if (!date) return null;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
 
-function monthLabelFromKey(key: string) {
-  const [year, month] = key.split("-").map(Number);
-  if (!year || !month) return "Month";
-  return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-}
 
-function isSameMonthKey(value: string | null | undefined, key: string | null) {
-  if (!key) return true;
-  return monthKey(value) === key;
-}
 
 function startOfToday() {
   const now = new Date();
@@ -88,25 +73,6 @@ function startOfMonth() {
   return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 }
 
-function beirutStampWindowKey(value?: string | null) {
-  const date = validDate(value);
-  if (!date) return null;
-  const beirut = new Date(date.getTime() + 3 * 60 * 60 * 1000);
-  const hour = beirut.getUTCHours();
-  if (hour >= 5 && hour < 9) return null;
-  const start = new Date(
-    Date.UTC(
-      beirut.getUTCFullYear(),
-      beirut.getUTCMonth(),
-      beirut.getUTCDate(),
-      9,
-      0,
-      0,
-    ),
-  );
-  if (hour < 5) start.setUTCDate(start.getUTCDate() - 1);
-  return start.toISOString().slice(0, 10);
-}
 
 function isSamePeriod(value: string | null | undefined, filter: Filter) {
   const date = validDate(value);
@@ -120,6 +86,23 @@ function isSamePeriod(value: string | null | undefined, filter: Filter) {
     return time >= startOfWeek() && time < todayStart + 86400000;
   if (filter === "month")
     return time >= startOfMonth() && time < todayStart + 86400000;
+  if (filter === "all") return true;
+  return true;
+}
+
+function isInsideCustomRange(
+  value: string | null | undefined,
+  dateFrom: string,
+  dateTo: string,
+) {
+  const date = validDate(value);
+  if (!date) return false;
+
+  const start = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+  const end = dateTo ? new Date(`${dateTo}T23:59:59.999`) : null;
+
+  if (start && date < start) return false;
+  if (end && date > end) return false;
   return true;
 }
 
@@ -232,8 +215,8 @@ function activitySentence(
   if (type === "Contact") return `${clientName} was marked as contacted`;
   if (/bounced|returned/.test(action)) return `${clientName} gift was returned`;
   if (type === "Gift" && isBirthdayGift(row))
-    return `${clientName} received Birthday Gift - ${item}`;
-  if (type === "Gift") return `${clientName} received ${item}`;
+    return `${clientName} received 🎉 Birthday Gift - ${item}`;
+  if (type === "Gift") return `${clientName} received 🎁 ${item}`;
   return `${clientName} ${titleCase(row.action_type).toLowerCase()}`;
 }
 
@@ -287,7 +270,8 @@ export default function ActivityPageClient({
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("today");
-  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [desktopFilterOpen, setDesktopFilterOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const desktopFilterRef = useRef<HTMLDivElement | null>(null);
@@ -317,90 +301,51 @@ export default function ActivityPageClient({
     };
   }, []);
 
-  const enriched = useMemo(() => {
-    const base = activities.map((row) => {
-      const profile = profileById.get(
-        String(row.client_id ?? row.profile_id ?? ""),
-      );
-      const category = categoryById.get(String(row.category_id ?? ""));
-      const clientName = cleanText(
-        row.client_name ??
-          profile?.full_name ??
-          profile?.client_code ??
-          "Client",
-      );
-      const categoryName = cleanText(
-        row.category_name ??
-          category?.name ??
-          (row.activity_source === "reward" ? "Gift" : "—"),
-      );
-      const type = activityType(row, categoryName);
-      const itemLabel = rewardOrStampLabel(row, categoryName);
-      const activity = activitySentence(row, clientName, categoryName);
-      const staffName = cleanText(
-        row.issued_by_name ?? row.staff_name ?? row.issuer_name ?? "System",
-      );
-      return {
-        row,
-        clientName,
-        categoryName,
-        type,
-        itemLabel,
-        activity,
-        staffName,
-      };
-    });
+  const enriched = useMemo(
+    () =>
+      activities.map((row) => {
+        const profile = profileById.get(
+          String(row.client_id ?? row.profile_id ?? ""),
+        );
+        const category = categoryById.get(String(row.category_id ?? ""));
+        const clientName = cleanText(
+          row.client_name ??
+            profile?.full_name ??
+            profile?.client_code ??
+            "Client",
+        );
+        const categoryName = cleanText(
+          row.category_name ??
+            category?.name ??
+            (row.activity_source === "reward" ? "Gift" : "—"),
+        );
+        const type = activityType(row, categoryName);
+        const itemLabel = rewardOrStampLabel(row, categoryName);
+        const activity = activitySentence(row, clientName, categoryName);
+        const staffName = cleanText(
+          row.issued_by_name ??
+            row.staff_name ??
+            row.issuer_name ??
+            "System",
+        );
 
-    const groupedStampKeys = new Set<string>();
-    const seenSingles = new Map<string, number>();
+        return {
+          row,
+          clientName,
+          categoryName,
+          type,
+          itemLabel,
+          activity,
+          staffName,
+        };
+      }),
+    [activities, profileById, categoryById],
+  );
 
-    for (const item of base) {
-      if (!isStampLike(item.row, item.categoryName)) continue;
-      const key = `${item.clientName.toLowerCase()}::${item.categoryName.toLowerCase()}::${beirutStampWindowKey(item.row.created_at) ?? `${dateOnly(item.row.created_at)}-${timeOnly(item.row.created_at)}`}`;
-      if (Number(item.row.stamp_delta ?? 1) > 1) groupedStampKeys.add(key);
-    }
 
-    return base
-      .map((item) => {
-        const key = isStampLike(item.row, item.categoryName)
-          ? `${item.clientName.toLowerCase()}::${item.categoryName.toLowerCase()}::${beirutStampWindowKey(item.row.created_at) ?? `${dateOnly(item.row.created_at)}-${timeOnly(item.row.created_at)}`}`
-          : null;
 
-        let duplicate = false;
-        let hidden = false;
-
-        if (key && isStampLike(item.row, item.categoryName)) {
-          const currentCount = (seenSingles.get(key) ?? 0) + 1;
-          seenSingles.set(key, currentCount);
-          duplicate = currentCount > 1 && !groupedStampKeys.has(key);
-
-          if (
-            groupedStampKeys.has(key) &&
-            Number(item.row.stamp_delta ?? 1) === 1
-          ) {
-            hidden = true;
-          }
-        }
-
-        return { ...item, duplicate, hidden };
-      })
-      .filter((item) => !item.hidden);
-  }, [activities, profileById, categoryById]);
-
-  const availableMonths = useMemo(() => {
-    const months = new Map<string, string>();
-    for (const item of enriched) {
-      const key = monthKey(item.row.created_at);
-      if (key && !months.has(key)) months.set(key, monthLabelFromKey(key));
-    }
-    return Array.from(months.entries())
-      .sort(([a], [b]) => (a < b ? 1 : -1))
-      .map(([key, label]) => ({ key, label }));
-  }, [enriched]);
-
-  const desktopFilterLabel = selectedMonth
-    ? monthLabelFromKey(selectedMonth)
-    : (FILTERS.find((item) => item.key === filter)?.label ?? "Today");
+  const desktopFilterLabel =
+    FILTERS.find((item) => item.key === filter)?.label ?? "Today";
   const mobileFilterLabel = desktopFilterLabel;
 
   const visibleRows = enriched.filter(
@@ -421,8 +366,8 @@ export default function ActivityPageClient({
           .includes(term);
       return (
         matchesSearch &&
-        (selectedMonth
-          ? isSameMonthKey(row.created_at, selectedMonth)
+        (filter === "custom"
+          ? isInsideCustomRange(row.created_at, dateFrom, dateTo)
           : isSamePeriod(row.created_at, filter))
       );
     },
@@ -430,15 +375,11 @@ export default function ActivityPageClient({
 
   function chooseFilter(nextFilter: Filter) {
     setFilter(nextFilter);
-    setSelectedMonth(null);
-    setDesktopFilterOpen(false);
-    setMobileFilterOpen(false);
-  }
 
-  function chooseMonth(month: string) {
-    setSelectedMonth(month);
-    setDesktopFilterOpen(false);
-    setMobileFilterOpen(false);
+    if (nextFilter !== "custom") {
+      setDesktopFilterOpen(false);
+      setMobileFilterOpen(false);
+    }
   }
 
   function openClientCard(clientId: unknown) {
@@ -546,42 +487,51 @@ export default function ActivityPageClient({
                     type="button"
                     onClick={() => chooseFilter(item.key)}
                     className={`flex h-12 w-full items-center justify-between rounded-[18px] px-4 text-left text-[13px] font-black transition ${
-                      !selectedMonth && filter === item.key
+                      filter === item.key
                         ? "bg-[#ffd66b] text-[#365665]"
                         : "bg-white/10 text-white hover:bg-white/15"
                     }`}
                   >
                     {item.label}
-                    {!selectedMonth && filter === item.key ? (
-                      <span>✓</span>
-                    ) : null}
+                    {filter === item.key ? <span>✓</span> : null}
                   </button>
                 ))}
               </div>
 
-              {availableMonths.length > 0 ? (
-                <>
-                  <div className="my-4 h-px bg-white/12" />
-                  <div className="mb-2 px-2 text-[11px] font-black uppercase tracking-[0.18em] text-white/62">
-                    Month
-                  </div>
-                  <div className="max-h-[210px] space-y-2 overflow-y-auto pr-1">
-                    {availableMonths.map((month) => (
-                      <button
-                        key={month.key}
-                        type="button"
-                        onClick={() => chooseMonth(month.key)}
-                        className={`flex h-11 w-full items-center rounded-[16px] px-4 text-left text-[12px] font-black transition ${
-                          selectedMonth === month.key
-                            ? "bg-[#ffd66b] text-[#365665]"
-                            : "bg-white/10 text-white hover:bg-white/15"
-                        }`}
-                      >
-                        {month.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
+              {filter === "custom" ? (
+                <div className="mt-4 space-y-3 rounded-[18px] bg-[#ffd66b] p-3">
+                  <label className="block">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-[0.12em] text-[#365665]">
+                      From
+                    </span>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(event) => setDateFrom(event.target.value)}
+                      className="h-10 w-full rounded-[12px] border-0 bg-white px-3 text-[12px] font-bold text-[#365665] outline-none"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-[0.12em] text-[#365665]">
+                      To
+                    </span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(event) => setDateTo(event.target.value)}
+                      className="h-10 w-full rounded-[12px] border-0 bg-white px-3 text-[12px] font-bold text-[#365665] outline-none"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setMobileFilterOpen(false)}
+                    className="h-10 w-full rounded-[12px] bg-[#365665] text-[10px] font-black uppercase tracking-[0.08em] text-white"
+                  >
+                    Apply
+                  </button>
+                </div>
               ) : null}
             </div>
           </div>
@@ -625,48 +575,57 @@ export default function ActivityPageClient({
                     </button>
 
                     {desktopFilterOpen ? (
-                      <div className="absolute right-0 top-12 z-50 w-[230px] overflow-hidden rounded-[20px] border border-white/15 bg-[#365665]/95 p-2 text-white shadow-[0_26px_70px_rgba(18,35,38,0.36)] backdrop-blur-2xl">
+                      <div className="absolute right-0 top-12 z-50 w-[250px] overflow-hidden rounded-[20px] border border-white/15 bg-[#ffd66b] p-2 shadow-[0_26px_70px_rgba(18,35,38,0.36)]">
                         {FILTERS.map((item) => (
                           <button
                             key={item.key}
                             type="button"
                             onClick={() => chooseFilter(item.key)}
                             className={`flex h-10 w-full items-center justify-between rounded-[14px] px-4 text-left text-[12px] font-black transition ${
-                              !selectedMonth && filter === item.key
-                                ? "bg-[#ffd66b] text-[#365665]"
-                                : "text-white/90 hover:bg-white/12"
+                              filter === item.key
+                                ? "bg-[#2563eb] text-white"
+                                : "text-[#365665] hover:bg-white/35"
                             }`}
                           >
                             {item.label}
                           </button>
                         ))}
 
-                        <div className="my-2 h-px bg-white/12" />
-                        <div className="px-4 pb-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
-                          Month
-                        </div>
-                        <div className="max-h-[220px] overflow-y-auto pr-1">
-                          {availableMonths.length === 0 ? (
-                            <div className="px-4 py-3 text-[12px] font-bold text-white/60">
-                              No months available
-                            </div>
-                          ) : (
-                            availableMonths.map((month) => (
-                              <button
-                                key={month.key}
-                                type="button"
-                                onClick={() => chooseMonth(month.key)}
-                                className={`flex h-10 w-full items-center rounded-[14px] px-4 text-left text-[12px] font-black transition ${
-                                  selectedMonth === month.key
-                                    ? "bg-[#ffd66b] text-[#365665]"
-                                    : "text-white/90 hover:bg-white/12"
-                                }`}
-                              >
-                                {month.label}
-                              </button>
-                            ))
-                          )}
-                        </div>
+                        {filter === "custom" ? (
+                          <div className="mt-2 space-y-2 rounded-[14px] bg-white/30 p-3">
+                            <label className="block">
+                              <span className="mb-1 block text-[9px] font-black uppercase text-[#365665]">
+                                From
+                              </span>
+                              <input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(event) => setDateFrom(event.target.value)}
+                                className="h-9 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-bold text-[#365665] outline-none"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="mb-1 block text-[9px] font-black uppercase text-[#365665]">
+                                To
+                              </span>
+                              <input
+                                type="date"
+                                value={dateTo}
+                                onChange={(event) => setDateTo(event.target.value)}
+                                className="h-9 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-bold text-[#365665] outline-none"
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => setDesktopFilterOpen(false)}
+                              className="h-9 w-full rounded-[10px] bg-[#365665] text-[10px] font-black uppercase text-white"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -698,7 +657,6 @@ export default function ActivityPageClient({
                       row,
                       activity,
                       staffName,
-                      duplicate,
                       type,
                       itemLabel,
                       categoryName,
@@ -709,7 +667,7 @@ export default function ActivityPageClient({
                         onClick={() =>
                           openClientCard(row.client_id ?? row.profile_id)
                         }
-                        className={`flex w-full cursor-pointer items-center justify-between gap-6 border-b border-white/10 px-7 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0 ${duplicate ? "bg-[#ffd66b]/16" : ""}`}
+                        className="flex w-full cursor-pointer items-center justify-between gap-6 border-b border-white/10 px-7 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0"
                       >
                         <div className="min-w-0 break-words">
                           {renderHighlightedActivity(
@@ -718,11 +676,6 @@ export default function ActivityPageClient({
                             itemLabel,
                             categoryName,
                           )}
-                          {duplicate ? (
-                            <span className="ml-2 rounded-full bg-[#ffd66b] px-2 py-1 text-[9px] font-black uppercase text-[#365665]">
-                              Double
-                            </span>
-                          ) : null}
                         </div>
                         <div className="shrink-0 text-right text-[12px] font-black text-white/90">
                           {staffName} · {dateOnly(row.created_at)} ·{" "}
@@ -745,7 +698,6 @@ export default function ActivityPageClient({
                       row,
                       activity,
                       staffName,
-                      duplicate,
                       type,
                       itemLabel,
                       categoryName,
@@ -756,7 +708,7 @@ export default function ActivityPageClient({
                         onClick={() =>
                           openClientCard(row.client_id ?? row.profile_id)
                         }
-                        className={`flex w-full cursor-pointer flex-col gap-1 border-b border-white/10 px-5 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0 ${duplicate ? "bg-[#ffd66b]/18" : ""}`}
+                        className="flex w-full cursor-pointer flex-col gap-1 border-b border-white/10 px-5 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0"
                       >
                         <div className="min-w-0 break-words leading-[1.35]">
                           {renderHighlightedActivity(
@@ -765,11 +717,6 @@ export default function ActivityPageClient({
                             itemLabel,
                             categoryName,
                           )}
-                          {duplicate ? (
-                            <span className="ml-2 rounded-full bg-[#ffd66b] px-2 py-1 text-[9px] font-black uppercase text-[#365665]">
-                              Double
-                            </span>
-                          ) : null}
                         </div>
                         <div className="text-[11px] font-black text-white/76">
                           {staffName} · {dateOnly(row.created_at)} ·{" "}
