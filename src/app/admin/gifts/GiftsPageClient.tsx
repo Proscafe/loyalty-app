@@ -321,7 +321,7 @@ export default function GiftsPageClient({
   const [giftRows, setGiftRows] = useState<GiftRow[]>(gifts);
   const [query, setQuery] = useState("");
   const [segment, setSegment] = useState<Segment>("all");
-  const [dateRange, setDateRange] = useState<DateRange>("today");
+  const [dateRange, setDateRange] = useState<DateRange>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -459,9 +459,10 @@ export default function GiftsPageClient({
             profile?.client_code ??
             "Client",
         );
-        const issuedBy = isGamePrediction
-          ? "System"
-          : cleanText(
+        const issuedBy =
+          giftTypeFor(gift, source, label) === "Birthday" || isGamePrediction
+            ? "System"
+            : cleanText(
               gift.issued_by_name ??
                 gift.staff_name ??
                 gift.issuer_name ??
@@ -886,7 +887,10 @@ export default function GiftsPageClient({
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setSegment(item.key)}
+                onClick={() => {
+                  setSegment(item.key);
+                  if (item.key === "birthday") setDateRange("all");
+                }}
                 className={`h-9 shrink-0 rounded-full px-4 text-[11px] font-black uppercase tracking-[0.08em] transition ${
                   segment === item.key
                     ? "bg-[#ffd66b] text-[#365665]"

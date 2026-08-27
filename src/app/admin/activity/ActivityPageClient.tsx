@@ -135,6 +135,25 @@ function cleanText(value?: unknown) {
   return text || "—";
 }
 
+function isBirthdayGift(row: ActivityRow) {
+  const text = [
+    row.source,
+    row.reward_source,
+    row.description,
+    row.reward_note,
+    row.action_type,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  return Boolean(
+    row.is_birthday === true ||
+      row.birthday_reward === true ||
+      row.is_birthday_reward === true ||
+      text.includes("birthday")
+  );
+}
+
 function isStampLike(row: ActivityRow, categoryName: string) {
   if (row.activity_source === "stamp") return true;
   const action = String(row.action_type ?? "").toLowerCase();
@@ -212,6 +231,8 @@ function activitySentence(
   if (type === "Expired") return `${clientName} gift expired`;
   if (type === "Contact") return `${clientName} was marked as contacted`;
   if (/bounced|returned/.test(action)) return `${clientName} gift was returned`;
+  if (type === "Gift" && isBirthdayGift(row))
+    return `${clientName} received Birthday Gift - ${item}`;
   if (type === "Gift") return `${clientName} received ${item}`;
   return `${clientName} ${titleCase(row.action_type).toLowerCase()}`;
 }
