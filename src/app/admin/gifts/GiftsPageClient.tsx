@@ -238,31 +238,41 @@ function giftTypeFor(gift: GiftRow, source: string, label?: string) {
     gift.category_name,
     gift.reward_category,
     gift.reward_type,
+    gift.description,
+    gift.reward_note,
     gift.game_id,
     gift.match_id,
+    gift.source_match_id,
     gift.prediction_match_id,
     gift.prediction_entry_id,
     gift.comment_card_id,
     gift.comment_id,
     gift.birthday_id,
     gift.loyalty_program_id,
-    gift.category_id,
   );
 
+  const explicitBirthday =
+    gift.is_birthday === true ||
+    gift.birthday_reward === true ||
+    gift.is_birthday_reward === true ||
+    haystack.includes("birthday");
+
+  const explicitGame =
+    String(gift.source ?? "").toLowerCase() === "game_prediction" ||
+    Boolean(
+      gift.source_match_id ||
+        gift.game_id ||
+        gift.match_id ||
+        gift.prediction_match_id ||
+        gift.prediction_entry_id,
+    ) ||
+    haystack.includes("prediction_match:") ||
+    haystack.includes("winner in") ||
+    haystack.includes("game_prediction");
+
   if (haystack.includes("comment")) return "Comment Cards";
-  if (haystack.includes("birthday")) return "Birthday";
-  if (haystack.includes("winner in") || haystack.includes("prediction"))
-    return "Games";
-  if (
-    haystack.includes("game") ||
-    haystack.includes("prediction") ||
-    haystack.includes("match") ||
-    haystack.includes("world cup") ||
-    haystack.includes("football") ||
-    (haystack.includes("system") && haystack.includes("free dessert"))
-  ) {
-    return "Games";
-  }
+  if (explicitBirthday) return "Birthday";
+  if (explicitGame) return "Games";
   return "Loyalty Card";
 }
 
@@ -401,23 +411,38 @@ export default function GiftsPageClient({
           gift.reward_type,
           gift.reward_label,
         );
+        const isBirthdayGift =
+          gift.is_birthday === true ||
+          gift.birthday_reward === true ||
+          gift.is_birthday_reward === true ||
+          sourceText.includes("birthday");
+
         const isGamePrediction =
-          sourceText.includes("game_prediction") ||
-          sourceText.includes("prediction") ||
-          sourceText.includes("winner in") ||
-          Boolean(gift.prediction_match_id || gift.prediction_entry_id);
-        const source = isGamePrediction
-          ? "Games"
-          : cleanText(
-              gift.source ??
-                gift.reward_source ??
-                gift.activity_source ??
-                (String(gift.reward_type ?? "")
-                  .toLowerCase()
-                  .includes("birthday")
-                  ? "Birthdays"
-                  : "System"),
-            );
+          !isBirthdayGift &&
+          (
+            String(gift.source ?? "").toLowerCase() === "game_prediction" ||
+            sourceText.includes("game_prediction") ||
+            sourceText.includes("prediction_match:") ||
+            sourceText.includes("winner in") ||
+            Boolean(
+              gift.source_match_id ||
+                gift.game_id ||
+                gift.match_id ||
+                gift.prediction_match_id ||
+                gift.prediction_entry_id
+            )
+          );
+
+        const source = isBirthdayGift
+          ? "Birthdays"
+          : isGamePrediction
+            ? "Games"
+            : cleanText(
+                gift.source ??
+                  gift.reward_source ??
+                  gift.activity_source ??
+                  "System",
+              );
         const rawLabel = displayGiftLabel(
           gift.reward_label ??
             gift.gift_type ??

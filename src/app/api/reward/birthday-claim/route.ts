@@ -348,9 +348,24 @@ export async function POST(req: Request) {
 
   if (existing) {
     if (existing.status !== "claimed") {
+      const claimedAt = new Date().toISOString();
+      const existingExpiry =
+        existing.expires_at ||
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
       const { data: updated, error: updateError } = await db
         .from("rewards")
-        .update({ status: "claimed" })
+        .update({
+          status: "claimed",
+          reward_status: "claimed",
+          claimed_at: claimedAt,
+          expires_at: existingExpiry,
+          description: existing.description || `Birthday Gift - ${rewardType}`,
+          source: "birthday",
+          reward_source: "birthday",
+          is_birthday: true,
+          birthday_reward: true,
+        })
         .eq("id", existing.id)
         .select("*")
         .single();
@@ -385,7 +400,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "birthday_category_not_found" }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAtIso = new Date(
+    now.getTime() + 30 * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
   const { data: reward, error: insertError } = await db
     .from("rewards")
@@ -393,8 +412,19 @@ export async function POST(req: Request) {
       client_id: user.id,
       category_id: categoryId,
       reward_type: rewardType,
+      reward_name: rewardType,
+      title: rewardType,
+      description: `Birthday Gift - ${rewardType}`,
       status: "claimed",
-      earned_at: now,
+      reward_status: "claimed",
+      earned_at: nowIso,
+      claimed_at: nowIso,
+      expires_at: expiresAtIso,
+      source: "birthday",
+      reward_source: "birthday",
+      is_birthday: true,
+      birthday_reward: true,
+      reward_icon: "birthday-cake",
     })
     .select("*")
     .single();

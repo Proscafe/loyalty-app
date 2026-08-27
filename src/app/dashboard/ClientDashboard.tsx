@@ -41,6 +41,10 @@ type ClientReward = {
   claimed_at?: string | null;
   expires_at?: string | null;
   is_birthday_reward?: boolean;
+  is_birthday?: boolean | null;
+  birthday_reward?: boolean | null;
+  source?: string | null;
+  reward_source?: string | null;
   gift_icon?: string;
 };
 
@@ -414,9 +418,16 @@ function isBirthdayRewardType(value?: string | null) {
 }
 
 function isBirthdayReward(reward: ClientReward) {
+  const sourceText = `${cleanText(reward.source)} ${cleanText(reward.reward_source)} ${cleanText(
+    reward.description,
+  )}`.toLowerCase();
+
   return Boolean(
     reward.is_birthday_reward ||
+      reward.is_birthday ||
+      reward.birthday_reward ||
       String(reward.id || "").startsWith("birthday-") ||
+      sourceText.includes("birthday") ||
       (isBirthdayRewardType(reward.reward_type) &&
         cleanText(reward.description).toLowerCase().includes("birthday"))
   );
@@ -506,7 +517,6 @@ function isExpiredRewardStillVisible(reward: ClientReward) {
 }
 
 function getValidityLabel(reward: ClientReward) {
-  if (reward.is_birthday_reward) return null;
   if (reward.status === "redeemed") return null;
 
   const expiresAt = rewardExpiryDate(reward);

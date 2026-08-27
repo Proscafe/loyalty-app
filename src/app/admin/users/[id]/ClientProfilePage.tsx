@@ -49,6 +49,12 @@ type RewardRow = AnyRow & {
   redeemed_at?: string | null;
   created_at?: string | null;
   expires_at?: string | null;
+  description?: string | null;
+  source?: string | null;
+  reward_source?: string | null;
+  is_birthday?: boolean | null;
+  birthday_reward?: boolean | null;
+  is_birthday_reward?: boolean | null;
 };
 
 type TransactionRow = AnyRow & {
@@ -172,6 +178,29 @@ function normalizeRewardText(value?: string | null) {
   return String(value || "Reward")
     .replace(/ Item$/i, "")
     .trim();
+}
+
+function isBirthdayRewardRow(reward: RewardRow) {
+  const sourceText = `${String(reward.source ?? "")} ${String(
+    reward.reward_source ?? "",
+  )} ${String(reward.description ?? "")}`.toLowerCase();
+
+  return Boolean(
+    reward.is_birthday ||
+      reward.birthday_reward ||
+      reward.is_birthday_reward ||
+      sourceText.includes("birthday"),
+  );
+}
+
+function rewardTimelineLabel(reward: RewardRow, clientName: string) {
+  const rewardName = normalizeRewardText(reward.reward_type);
+
+  if (isBirthdayRewardRow(reward)) {
+    return `${clientName} received Birthday Gift - ${rewardName}`;
+  }
+
+  return `${clientName} received ${rewardName}`;
 }
 
 function statusPillClass(status?: string | null) {
@@ -419,8 +448,8 @@ export default function ClientProfilePage({
     const rewardItems = visibleRewards.map((reward) => ({
       id: `reward-${reward.id}`,
       date: reward.earned_at ?? reward.created_at,
-      label: `${profile?.full_name || "Client"} received ${normalizeRewardText(reward.reward_type)}`,
-      badge: "Gift",
+      label: rewardTimelineLabel(reward, profile?.full_name || "Client"),
+      badge: isBirthdayRewardRow(reward) ? "Birthday" : "Gift",
     }));
     const noteItems = notes.map((note) => ({
       id: `note-${note.id}`,
