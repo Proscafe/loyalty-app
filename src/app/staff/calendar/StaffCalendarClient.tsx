@@ -7,7 +7,7 @@ const PAGE_BG =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
 const GOOGLE_CALENDAR_URL =
-  "https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=Asia%2FBeirut&showPrint=0&showTitle=0&showNav=1&showDate=1&showTabs=0&showCalendars=0&showTz=0&mode=AGENDA&src=proscafe%40gmail.com";
+  "https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=Asia%2FBeirut&showPrint=0&showTitle=0&showNav=1&showDate=1&showTabs=0&showCalendars=0&showTz=0&mode=AGENDA&src=proscafe%40gmail.com&color=%233F51B5&src=e0a4bd6b61c8c175b86402ddd59b15ee9ce5efeb66c413df610f5c8ef61ff5a4%40group.calendar.google.com&color=%23D50000";
 
 export function StaffCalendarClient() {
   return (
@@ -27,7 +27,7 @@ export function StaffCalendarClient() {
         <section className="mt-4 overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.08] shadow-[0_16px_40px_rgba(31,45,36,0.14)] backdrop-blur-2xl">
           <div className="relative h-[calc(100vh-150px)] min-h-[620px] w-full bg-white">
             <iframe
-              key="pros-calendar-agenda-v2"
+              key="pros-calendar-agenda-v4-calendar-colors"
               src={GOOGLE_CALENDAR_URL}
               title="Pro's Cafe Google Calendar"
               className="absolute inset-0 h-full w-full border-0"
