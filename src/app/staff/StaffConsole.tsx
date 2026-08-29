@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -13,6 +14,7 @@ import { motion } from "framer-motion";
 
 import { AppShell } from "@/components/AppShell";
 import { Toast } from "@/components/Toast";
+import { StaffBottomNav } from "@/components/StaffBottomNav";
 import { createClient } from "@/lib/supabase/client";
 
 import type {
@@ -525,6 +527,7 @@ function UniversalStableQrScanner({
     </div>
   );
 }
+
 
 function StaffConsole({
   profile,
@@ -1724,6 +1727,20 @@ function StaffConsole({
   }
 
   useEffect(() => {
+    if (searchParams.get("scan") !== "1") {
+      return;
+    }
+
+    setScanning(true);
+
+    window.history.replaceState(
+      null,
+      "",
+      "/staff",
+    );
+  }, [searchParams]);
+
+  useEffect(() => {
     const codeFromUrl =
       searchParams.get(
         "client",
@@ -2060,7 +2077,7 @@ function StaffConsole({
         />
       )}
 
-      <div className="mx-auto w-full max-w-md px-4 pb-12 pt-5 font-raleway text-white">
+      <div className="mx-auto w-full max-w-md px-4 pb-32 pt-5 font-raleway text-white">
         {!client && (
           <section className="space-y-5">
             <div className="relative overflow-hidden rounded-[16px] border border-white/20 bg-white/12 px-5 py-5 shadow-[0_18px_50px_rgba(71,23,24,0.14)] backdrop-blur-2xl">
@@ -2086,6 +2103,7 @@ function StaffConsole({
               </div>
             </div>
 
+
             {pushStatus !==
               "enabled" && (
               <button
@@ -2102,45 +2120,16 @@ function StaffConsole({
               </button>
             )}
 
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1 rounded-full border border-white/45 bg-[#e7e9e3] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl">
-                <input
-                  className="h-8 w-full bg-transparent text-[14px] font-black text-[#365665] outline-none placeholder:text-[#365665]/58"
-                  placeholder="Search for client..."
-                  value={query}
-                  onChange={(
-                    event,
-                  ) =>
-                    setQuery(
-                      event.target
-                        .value,
-                    )
-                  }
-                  autoComplete="off"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setScanning(
-                    true,
-                  )
+            <div className="w-full rounded-full border border-white/45 bg-[#e7e9e3] px-5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl">
+              <input
+                className="h-9 w-full bg-transparent text-[14px] font-black text-[#365665] outline-none placeholder:text-[#365665]/58"
+                placeholder="Search for client..."
+                value={query}
+                onChange={(event) =>
+                  setQuery(event.target.value)
                 }
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/45 bg-[#e7e9e3] text-[#365665] shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl active:scale-95"
-                title="Scan QR"
-                aria-label="Scan QR"
-              >
-                <span className="relative block h-6 w-6">
-                  <span className="absolute left-0 top-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
-
-                  <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
-
-                  <span className="absolute bottom-0 left-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
-
-                  <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-[3px] border-2 border-[#365665]" />
-                </span>
-              </button>
+                autoComplete="off"
+              />
             </div>
 
             {searching && (
@@ -2514,6 +2503,9 @@ function StaffConsole({
           </>
         )}
       </div>
+
+      <StaffBottomNav onScan={() => setScanning(true)} />
+
     </AppShell>
   );
 }
