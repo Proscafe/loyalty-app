@@ -164,15 +164,9 @@ export function StaffActivityClient() {
           className="mt-1"
         />
 
-        <section className="mb-4 mt-4 rounded-[22px] bg-white/[0.10] px-5 py-5 shadow-[0_18px_50px_rgba(35,54,47,0.14)] backdrop-blur-2xl">
-          <h1 className="text-[30px] font-black tracking-[-0.05em] text-white">
-            Activity
-          </h1>
+        <div className="mt-4">
+{loading ? (
 
-          <div className="mt-2 text-[11px] font-bold text-white/62">  </div>
-        </section>
-
-        {loading ? (
           <div className="rounded-[20px] bg-white/[0.08] px-4 py-7 text-center text-[12px] font-bold text-white/65 backdrop-blur-xl">
             Loading activity...
           </div>
@@ -208,6 +202,7 @@ export function StaffActivityClient() {
             ))}
           </section>
         )}
+        </div>
       </div>
 
       <StaffBottomNav active="activity" />

@@ -179,38 +179,7 @@ export default function ReportsClient({
 
         {!selected ? (
           <>
-            <section
-              className="relative mb-5 overflow-hidden"
-              style={{
-                height: 96,
-                minHeight: 96,
-                borderRadius: 18,
-                border: "none",
-                backgroundImage: "url('/client-main-card.png')",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                backgroundRepeat: "no-repeat",
-                boxShadow: "0 18px 46px rgba(35,48,39,0.14)",
-              }}
-            >
-              <div
-                className="relative z-10 flex h-full items-center"
-                style={{ paddingLeft: 20, paddingRight: 24 }}
-              >
-                <h1
-                  className="font-black leading-none text-white"
-                  style={{
-                    fontSize: 27,
-                    letterSpacing: "-0.045em",
-                    margin: 0,
-                  }}
-                >
-                  Reports
-                </h1>
-              </div>
-            </section>
-
-            <section className="grid grid-cols-2 gap-3">
+            <section className="mt-4 grid grid-cols-2 gap-3">
               {orderedDefinitions.map((form) => {
                 const isKitchen =
                   form.type === "kitchen_checklist" ||
