@@ -31,7 +31,7 @@ export default async function AdminReportsPage() {
       .order("report_type"),
     supabase
       .from("internal_report_settings")
-      .select("email_enabled,email_recipients,email_report_types")
+      .select("email_enabled,email_recipients,email_report_types,email_recipient_rules")
       .eq("id", 1)
       .maybeSingle(),
   ]);

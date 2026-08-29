@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+
 import { requireRole } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
-import { REPORT_TYPES, type ReportDefinition, type ReportType } from "@/lib/internal-reports";
+import {
+  createAdminClient,
+  createClient,
+} from "@/lib/supabase/server";
+import {
+  REPORT_TYPES,
+  type ReportDefinition,
+  type ReportType,
+} from "@/lib/internal-reports";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -20,6 +29,14 @@ function roleLabel(role: string) {
   if (role === "supervisor") return "Supervisor";
   if (role === "master_admin") return "Admin";
   return role;
+}
+
+function normalizeReportType(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 async function sendReportEmail({
@@ -41,57 +58,110 @@ async function sendReportEmail({
     process.env.GMAIL_SMTP_USER ||
     process.env.GMAIL_USER ||
     process.env.SMTP_USER;
+
   const pass =
     process.env.GMAIL_SMTP_APP_PASSWORD ||
     process.env.GMAIL_APP_PASSWORD ||
     process.env.SMTP_PASSWORD;
 
-  if (!user || !pass || recipients.length === 0) return;
+  if (!user || !pass) {
+    throw new Error("SMTP credentials are missing.");
+  }
 
   const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
     auth: { user, pass },
   });
 
-  const sections = definition.sections.map((section) => `
-    <div style="margin-top:24px">
-      <h2 style="font-size:16px;margin:0 0 10px;color:#365665">${escapeHtml(section.title)}</h2>
-      ${section.questions.map((question) => {
-        const answer = String(answers[question.key] ?? "").trim() || "—";
-        const bad = answer === "No";
-        return `<div style="padding:12px 14px;margin:0 0 8px;border-radius:12px;background:${bad ? "#ffe2de" : "#f3f5f2"}">
-          <div style="font-size:11px;font-weight:700;color:#65747a;text-transform:uppercase">${escapeHtml(question.label)}</div>
-          <div style="margin-top:5px;font-size:14px;font-weight:700;color:${bad ? "#a62d23" : "#182f38"};white-space:pre-wrap">${escapeHtml(answer)}</div>
-        </div>`;
-      }).join("")}
-    </div>
-  `).join("");
+  await transporter.verify();
 
-  await transporter.sendMail({
+  const sections = definition.sections
+    .map(
+      (section) => `
+        <div style="margin-top:24px">
+          <h2 style="font-size:16px;margin:0 0 10px;color:#365665">
+            ${escapeHtml(section.title)}
+          </h2>
+          ${section.questions
+            .map((question) => {
+              const answer =
+                String(answers[question.key] ?? "").trim() || "—";
+              const bad = answer === "No";
+
+              return `
+                <div style="padding:12px 14px;margin:0 0 8px;border-radius:12px;background:${
+                  bad ? "#ffe2de" : "#f3f5f2"
+                }">
+                  <div style="font-size:11px;font-weight:700;color:#65747a;text-transform:uppercase">
+                    ${escapeHtml(question.label)}
+                  </div>
+                  <div style="margin-top:5px;font-size:14px;font-weight:700;color:${
+                    bad ? "#a62d23" : "#182f38"
+                  };white-space:pre-wrap">
+                    ${escapeHtml(answer)}
+                  </div>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      `,
+    )
+    .join("");
+
+  const info = await transporter.sendMail({
     from: `"PRO's Cafe Reports" <${user}>`,
     to: recipients.join(", "),
     subject: `${definition.title} — ${submitter}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:680px;margin:auto;color:#182f38">
         <div style="background:#365665;padding:22px;border-radius:18px;color:white">
-          <div style="font-size:12px;font-weight:700;color:#ffd66b">${escapeHtml(roleLabel(role))}</div>
-          <h1 style="margin:6px 0 4px;font-size:26px">${escapeHtml(definition.title)}</h1>
-          <div style="font-size:14px">${escapeHtml(submitter)} · ${escapeHtml(new Date(createdAt).toLocaleString())}</div>
+          <div style="font-size:12px;font-weight:700;color:#ffd66b">
+            ${escapeHtml(roleLabel(role))}
+          </div>
+          <h1 style="margin:6px 0 4px;font-size:26px">
+            ${escapeHtml(definition.title)}
+          </h1>
+          <div style="font-size:14px">
+            ${escapeHtml(submitter)} ·
+            ${escapeHtml(new Date(createdAt).toLocaleString())}
+          </div>
         </div>
         ${sections}
       </div>
     `,
   });
+
+  return {
+    messageId: info.messageId,
+    accepted: info.accepted.map(String),
+    rejected: info.rejected.map(String),
+  };
 }
 
 export async function POST(request: Request) {
-  const profile = await requireRole(["staff", "supervisor", "master_admin"]);
+  const profile = await requireRole([
+    "staff",
+    "supervisor",
+    "master_admin",
+  ]);
+
   const body = await request.json().catch(() => null);
   const reportType = body?.report_type as ReportType;
   const answers = body?.answers;
 
-  if (!REPORT_TYPES.includes(reportType) || !answers || typeof answers !== "object" || Array.isArray(answers)) {
-    return NextResponse.json({ error: "Invalid report submission." }, { status: 400 });
+  if (
+    !REPORT_TYPES.includes(reportType) ||
+    !answers ||
+    typeof answers !== "object" ||
+    Array.isArray(answers)
+  ) {
+    return NextResponse.json(
+      { error: "Invalid report submission." },
+      { status: 400 },
+    );
   }
 
   const supabase = await createClient();
@@ -103,7 +173,14 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (formError || !formRow || formRow.is_active === false) {
-    return NextResponse.json({ error: formError?.message || "This report form is unavailable." }, { status: 400 });
+    return NextResponse.json(
+      {
+        error:
+          formError?.message ||
+          "This report form is unavailable.",
+      },
+      { status: 400 },
+    );
   }
 
   const definition: ReportDefinition = {
@@ -116,20 +193,32 @@ export async function POST(request: Request) {
 
   for (const section of definition.sections) {
     for (const question of section.questions) {
-      if (question.required && !String(answers[question.key] ?? "").trim()) {
-        return NextResponse.json({ error: `Please answer: ${question.label}` }, { status: 400 });
+      if (
+        question.required &&
+        !String(answers[question.key] ?? "").trim()
+      ) {
+        return NextResponse.json(
+          {
+            error: `Please answer: ${question.label}`,
+          },
+          { status: 400 },
+        );
       }
     }
   }
 
   const cleanAnswers: Record<string, string> = {};
+
   for (const section of definition.sections) {
     for (const question of section.questions) {
-      cleanAnswers[question.key] = String(answers[question.key] ?? "").trim();
+      cleanAnswers[question.key] = String(
+        answers[question.key] ?? "",
+      ).trim();
     }
   }
 
   const createdAt = new Date().toISOString();
+
   const { data: inserted, error: insertError } = await supabase
     .from("internal_reports")
     .insert({
@@ -143,21 +232,112 @@ export async function POST(request: Request) {
     .select("id")
     .single();
 
-  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  if (insertError) {
+    return NextResponse.json(
+      { error: insertError.message },
+      { status: 500 },
+    );
+  }
 
-  // Email is intentionally best-effort: a mail outage must never lose the report.
+  const emailResult: {
+    attempted: boolean;
+    recipients: string[];
+    accepted: string[];
+    rejected: string[];
+    reportType: string;
+    normalizedReportType: string;
+    rulesLoaded: number;
+    matchedRecipients: string[];
+    messageId?: string;
+    error?: string;
+  } = {
+    attempted: false,
+    recipients: [],
+    accepted: [],
+    rejected: [],
+    reportType,
+    normalizedReportType: normalizeReportType(reportType),
+    rulesLoaded: 0,
+    matchedRecipients: [],
+  };
+
   try {
-    const { data: settings } = await supabase
+    const adminSupabase = createAdminClient();
+
+    const {
+      data: settings,
+      error: settingsError,
+    } = await adminSupabase
       .from("internal_report_settings")
-      .select("email_enabled,email_recipients,email_report_types")
+      .select(
+        "email_enabled,email_recipients,email_report_types,email_recipient_rules",
+      )
       .eq("id", 1)
       .maybeSingle();
 
-    const recipients = Array.isArray(settings?.email_recipients) ? settings.email_recipients : [];
-    const enabledTypes = Array.isArray(settings?.email_report_types) ? settings.email_report_types : [];
+    if (settingsError) {
+      throw new Error(settingsError.message);
+    }
 
-    if (settings?.email_enabled && recipients.length && enabledTypes.includes(reportType)) {
-      await sendReportEmail({
+    const recipientRules = Array.isArray(
+      settings?.email_recipient_rules,
+    )
+      ? settings.email_recipient_rules
+      : [];
+
+    emailResult.rulesLoaded = recipientRules.length;
+
+    const normalizedType = normalizeReportType(reportType);
+
+    const matchingRecipients = recipientRules
+      .filter((rule: any) => {
+        const types = Array.isArray(rule?.report_types)
+          ? rule.report_types.map(normalizeReportType)
+          : [];
+
+        return types.includes(normalizedType);
+      })
+      .map((rule: any) =>
+        String(rule?.email ?? "")
+          .trim()
+          .toLowerCase(),
+      )
+      .filter(Boolean);
+
+    const legacyTypes = Array.isArray(
+      settings?.email_report_types,
+    )
+      ? settings.email_report_types.map(normalizeReportType)
+      : [];
+
+    const legacyRecipients =
+      recipientRules.length === 0 &&
+      legacyTypes.includes(normalizedType) &&
+      Array.isArray(settings?.email_recipients)
+        ? settings.email_recipients
+            .map((email: unknown) =>
+              String(email ?? "")
+                .trim()
+                .toLowerCase(),
+            )
+            .filter(Boolean)
+        : [];
+
+    const recipients = Array.from(
+      new Set(
+        recipientRules.length
+          ? matchingRecipients
+          : legacyRecipients,
+      ),
+    );
+
+    emailResult.recipients = recipients;
+    emailResult.matchedRecipients = recipients;
+
+    if (recipients.length > 0) {
+      emailResult.attempted = true;
+
+      const delivery = await sendReportEmail({
         recipients,
         definition,
         answers: cleanAnswers,
@@ -165,10 +345,23 @@ export async function POST(request: Request) {
         role: profile.role,
         createdAt,
       });
+
+      emailResult.accepted = delivery.accepted;
+      emailResult.rejected = delivery.rejected;
+      emailResult.messageId = delivery.messageId;
     }
   } catch (error) {
+    emailResult.error =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
     console.error("Report email failed:", error);
   }
 
-  return NextResponse.json({ ok: true, id: inserted?.id });
+  return NextResponse.json({
+    ok: true,
+    id: inserted?.id,
+    email: emailResult,
+  });
 }
