@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminPageShell } from "@/components/AdminPageShell";
 import { AdminMobileHeader } from "@/components/AdminMobileHeader";
@@ -184,6 +185,8 @@ export default function CommentCardsPageClient({
     if (!filterOpen) return;
 
     function closeFilterOnOutsideClick(event: MouseEvent | TouchEvent) {
+      // Desktop dropdown only. On mobile the filter is a full-screen modal.
+      if (!window.matchMedia("(min-width: 1024px)").matches) return;
       if (!desktopFilterRef.current) return;
       if (!desktopFilterRef.current.contains(event.target as Node)) {
         setFilterOpen(false);
@@ -602,6 +605,36 @@ export default function CommentCardsPageClient({
             </div>
 
             <div className="mt-3 flex flex-col gap-3 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:flex-row lg:items-center lg:justify-end">
+              <Link
+                href="/admin/comment-cards/questions"
+                className="hidden h-10 items-center gap-2 rounded-full border border-white/70 bg-white/10 px-4 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-white/20 lg:flex"
+                aria-label="Edit comment card questions"
+                title="Edit comment card questions"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                  className="h-4 w-4 shrink-0"
+                >
+                  <path
+                    d="M4 20h4.25L19.1 9.15a2.1 2.1 0 0 0 0-2.97l-1.28-1.28a2.1 2.1 0 0 0-2.97 0L4 15.75V20Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="m13.6 6.15 4.25 4.25M4 20l4.25-1"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>Edit</span>
+              </Link>
+
               <div
                 ref={desktopFilterRef}
                 className="relative hidden lg:block"

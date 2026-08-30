@@ -1,459 +1,149 @@
 import { NextResponse } from "next/server";
-import { createClient as createServerClient } from "@/lib/supabase/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
+import { requireRole } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/server";
+
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const runtime = "nodejs";
 
 type QuestionType = "rating" | "select" | "textarea";
 
-type QuestionUpdate = {
-  id?: string;
-  question_text?: string;
-  question_type?: QuestionType;
-  is_active?: boolean;
-  is_required?: boolean;
-  sort_order?: number;
-  options?: string[];
-};
+const QUESTION_TYPES: QuestionType[] = [
+  "rating",
+  "select",
+  "textarea",
+];
 
-type QuestionCreate = {
-  question_text?: string;
-  question_type?: QuestionType;
-  is_required?: boolean;
-  options?: string[];
-};
+function normalizeOptions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
 
-type ProfileRoleRow = {
-  id: string;
-  role: string | null;
-};
-
-type AuthSuccess = {
-  ok: true;
-  admin: any;
-};
-
-type AuthFailure = {
-  ok: false;
-  response: NextResponse;
-};
-
-type AuthResult = AuthSuccess | AuthFailure;
-
-const selectFields =
-  "id, question_key, question_text, question_type, is_active, is_required, sort_order, options, is_system, created_at, updated_at";
-
-function jsonError(message: string, status = 400) {
-  return NextResponse.json(
-    {
-      error: message,
-    },
-    {
-      status,
-    },
-  );
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
 }
 
-function getAdminClient() {
-  const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL;
+export async function GET() {
+  await requireRole(["master_admin"]);
 
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabase = createAdminClient();
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return null;
-  }
-
-  /*
-   * We intentionally use an untyped Supabase client here.
-   *
-   * comment_card_questions was added after the project's
-   * generated Supabase TypeScript definitions, so the generated
-   * Database type currently resolves this new table to `never`.
-   *
-   * This route remains server-only and protected by the
-   * master_admin authorization check below.
-   */
-  return createSupabaseClient<any>(
-    supabaseUrl,
-    serviceRoleKey,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    },
-  );
-}
-
-async function requireMasterAdmin(): Promise<AuthResult> {
-  const supabase = await createServerClient();
-  const admin = getAdminClient();
-
-  if (!admin) {
-    return {
-      ok: false,
-      response: jsonError(
-        "Supabase admin client is not configured.",
-        500,
-      ),
-    };
-  }
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return {
-      ok: false,
-      response: jsonError(
-        "Unauthorized.",
-        401,
-      ),
-    };
-  }
-
-  const {
-    data: profileData,
-    error: profileError,
-  } = await admin
-    .from("profiles")
-    .select("id, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const profile =
-    profileData as ProfileRoleRow | null;
-
-  if (profileError) {
-    return {
-      ok: false,
-      response: jsonError(
-        profileError.message,
-        400,
-      ),
-    };
-  }
-
-  if (
-    !profile ||
-    profile.role !== "master_admin"
-  ) {
-    return {
-      ok: false,
-      response: jsonError(
-        "Master admin access required.",
-        403,
-      ),
-    };
-  }
-
-  return {
-    ok: true,
-    admin,
-  };
-}
-
-export async function GET(): Promise<Response> {
-  const auth = await requireMasterAdmin();
-
-  if (!auth.ok) {
-    return auth.response;
-  }
-
-  const { admin } = auth;
-
-  const {
-    data,
-    error: queryError,
-  } = await admin
+  const { data, error } = await supabase
     .from("comment_card_questions")
-    .select(selectFields)
-    .order("sort_order", {
-      ascending: true,
-    })
-    .order("created_at", {
-      ascending: true,
-    });
+    .select(
+      "id, question_key, question_text, question_type, is_active, is_required, sort_order, options, created_at, updated_at",
+    )
+    .order("sort_order", { ascending: true });
 
-  if (queryError) {
-    return jsonError(
-      queryError.message,
-      400,
-    );
-  }
-
-  return NextResponse.json(
-    {
-      questions: data ?? [],
-    },
-    {
-      headers: {
-        "Cache-Control":
-          "no-store, no-cache, must-revalidate",
-      },
-    },
-  );
-}
-
-export async function POST(
-  request: Request,
-): Promise<Response> {
-  const auth = await requireMasterAdmin();
-
-  if (!auth.ok) {
-    return auth.response;
-  }
-
-  const { admin } = auth;
-
-  const body = (await request
-    .json()
-    .catch(() => null)) as QuestionCreate | null;
-
-  if (!body) {
-    return jsonError(
-      "Invalid request.",
-    );
-  }
-
-  const questionText = String(
-    body.question_text ?? "",
-  ).trim();
-
-  const questionType =
-    body.question_type ?? "rating";
-
-  if (!questionText) {
-    return jsonError(
-      "Question text is required.",
-    );
-  }
-
-  if (
-    ![
-      "rating",
-      "select",
-      "textarea",
-    ].includes(questionType)
-  ) {
-    return jsonError(
-      "Invalid question type.",
-    );
-  }
-
-  const {
-    data: lastQuestionData,
-    error: lastQuestionError,
-  } = await admin
-    .from("comment_card_questions")
-    .select("sort_order")
-    .order("sort_order", {
-      ascending: false,
-    })
-    .limit(1)
-    .maybeSingle();
-
-  if (lastQuestionError) {
-    return jsonError(
-      lastQuestionError.message,
-      400,
-    );
-  }
-
-  const lastQuestion =
-    lastQuestionData as {
-      sort_order?: number | null;
-    } | null;
-
-  const sortOrder =
-    Number(
-      lastQuestion?.sort_order ?? 0,
-    ) + 10;
-
-  const questionKey =
-    `custom_${crypto
-      .randomUUID()
-      .replace(/-/g, "")}`;
-
-  const options =
-    questionType === "select"
-      ? Array.isArray(body.options)
-        ? body.options
-            .map((item) =>
-              String(item).trim(),
-            )
-            .filter(Boolean)
-        : []
-      : [];
-
-  const {
-    data,
-    error: insertError,
-  } = await admin
-    .from("comment_card_questions")
-    .insert({
-      question_key: questionKey,
-      question_text: questionText,
-      question_type: questionType,
-      is_active: true,
-      is_required: Boolean(
-        body.is_required,
-      ),
-      sort_order: sortOrder,
-      options,
-      is_system: false,
-    })
-    .select(selectFields)
-    .single();
-
-  if (insertError) {
-    return jsonError(
-      insertError.message,
-      400,
+  if (error) {
+    return NextResponse.json(
+      { error: error.message || "Could not load questions." },
+      { status: 500 },
     );
   }
 
   return NextResponse.json({
-    question: data,
+    questions: Array.isArray(data) ? data : [],
   });
 }
 
-export async function PATCH(
-  request: Request,
-): Promise<Response> {
-  const auth = await requireMasterAdmin();
+export async function PATCH(request: Request) {
+  await requireRole(["master_admin"]);
 
-  if (!auth.ok) {
-    return auth.response;
-  }
+  const body = await request.json().catch(() => null);
 
-  const { admin } = auth;
+  const id = String(body?.id ?? "").trim();
 
-  const body = (await request
-    .json()
-    .catch(() => null)) as QuestionUpdate | null;
-
-  if (!body?.id) {
-    return jsonError(
-      "Question id is required.",
+  if (!id) {
+    return NextResponse.json(
+      { error: "Question id is required." },
+      { status: 400 },
     );
   }
 
-  const update: Record<
-    string,
-    unknown
-  > = {};
+  const update: Record<string, unknown> = {};
 
-  if (
-    body.question_text !== undefined
-  ) {
-    const questionText = String(
-      body.question_text,
-    ).trim();
+  if ("question_text" in (body ?? {})) {
+    const questionText = String(body?.question_text ?? "").trim();
 
     if (!questionText) {
-      return jsonError(
-        "Question text cannot be empty.",
+      return NextResponse.json(
+        { error: "Question text cannot be empty." },
+        { status: 400 },
       );
     }
 
-    update.question_text =
-      questionText;
+    update.question_text = questionText;
   }
 
-  if (
-    body.question_type !== undefined
-  ) {
-    if (
-      ![
-        "rating",
-        "select",
-        "textarea",
-      ].includes(body.question_type)
-    ) {
-      return jsonError(
-        "Invalid question type.",
+  if ("is_active" in (body ?? {})) {
+    update.is_active = Boolean(body?.is_active);
+  }
+
+  if ("is_required" in (body ?? {})) {
+    update.is_required = Boolean(body?.is_required);
+  }
+
+  if ("sort_order" in (body ?? {})) {
+    const sortOrder = Number(body?.sort_order);
+
+    if (!Number.isFinite(sortOrder)) {
+      return NextResponse.json(
+        { error: "Invalid sort order." },
+        { status: 400 },
       );
     }
 
-    update.question_type =
-      body.question_type;
+    update.sort_order = sortOrder;
   }
 
-  if (
-    body.is_active !== undefined
-  ) {
-    update.is_active = Boolean(
-      body.is_active,
-    );
+  if ("options" in (body ?? {})) {
+    update.options = normalizeOptions(body?.options);
   }
 
-  if (
-    body.is_required !== undefined
-  ) {
-    update.is_required = Boolean(
-      body.is_required,
-    );
-  }
+  if ("question_type" in (body ?? {})) {
+    const questionType = String(body?.question_type ?? "") as QuestionType;
 
-  if (
-    body.sort_order !== undefined
-  ) {
-    const sortOrder = Number(
-      body.sort_order,
-    );
-
-    if (!Number.isInteger(sortOrder)) {
-      return jsonError(
-        "sort_order must be a whole number.",
+    if (!QUESTION_TYPES.includes(questionType)) {
+      return NextResponse.json(
+        { error: "Invalid question type." },
+        { status: 400 },
       );
     }
 
-    update.sort_order =
-      sortOrder;
+    update.question_type = questionType;
   }
 
-  if (
-    body.options !== undefined
-  ) {
-    update.options =
-      Array.isArray(body.options)
-        ? body.options
-            .map((item) =>
-              String(item).trim(),
-            )
-            .filter(Boolean)
-        : [];
-  }
-
-  if (
-    Object.keys(update).length === 0
-  ) {
-    return jsonError(
-      "Nothing to update.",
+  if (!Object.keys(update).length) {
+    return NextResponse.json(
+      { error: "No changes were provided." },
+      { status: 400 },
     );
   }
 
-  const {
-    data,
-    error: updateError,
-  } = await admin
+  update.updated_at = new Date().toISOString();
+
+  const supabase = createAdminClient();
+
+  const { data, error } = await supabase
     .from("comment_card_questions")
     .update(update)
-    .eq("id", body.id)
-    .select(selectFields)
-    .single();
+    .eq("id", id)
+    .select(
+      "id, question_key, question_text, question_type, is_active, is_required, sort_order, options, created_at, updated_at",
+    )
+    .maybeSingle();
 
-  if (updateError) {
-    return jsonError(
-      updateError.message,
-      400,
+  if (error) {
+    return NextResponse.json(
+      { error: error.message || "Could not save question." },
+      { status: 500 },
+    );
+  }
+
+  if (!data) {
+    return NextResponse.json(
+      { error: "Question not found." },
+      { status: 404 },
     );
   }
 

@@ -48,6 +48,79 @@ const LEBANON_PHONE_PREFIXES = [
   "81",
 ];
 
+const FALLBACK_QUESTIONS: CommentCardQuestion[] = [
+  {
+    id: "experience_rating",
+    question_key: "experience_rating",
+    question_text: "How was your experience?",
+    question_type: "rating",
+    is_active: true,
+    is_required: true,
+    sort_order: 10,
+    options: [],
+  },
+  {
+    id: "food_rating",
+    question_key: "food_rating",
+    question_text: "How was the food?",
+    question_type: "rating",
+    is_active: true,
+    is_required: true,
+    sort_order: 20,
+    options: [],
+  },
+  {
+    id: "service_rating",
+    question_key: "service_rating",
+    question_text: "How was the service?",
+    question_type: "rating",
+    is_active: true,
+    is_required: true,
+    sort_order: 30,
+    options: [],
+  },
+  {
+    id: "cleanliness_rating",
+    question_key: "cleanliness_rating",
+    question_text: "Was the place clean?",
+    question_type: "rating",
+    is_active: true,
+    is_required: true,
+    sort_order: 40,
+    options: [],
+  },
+  {
+    id: "visit_again_rating",
+    question_key: "visit_again_rating",
+    question_text: "Would you visit again?",
+    question_type: "rating",
+    is_active: true,
+    is_required: true,
+    sort_order: 50,
+    options: [],
+  },
+  {
+    id: "heard_about_us",
+    question_key: "heard_about_us",
+    question_text: "How did you hear about us?",
+    question_type: "select",
+    is_active: true,
+    is_required: true,
+    sort_order: 60,
+    options: ["Social Media", "Friend or Family", "Google", "Other"],
+  },
+  {
+    id: "comments",
+    question_key: "comments",
+    question_text: "Any comments or suggestions?",
+    question_type: "textarea",
+    is_active: true,
+    is_required: false,
+    sort_order: 70,
+    options: [],
+  },
+];
+
 function normalizeLebanonPhone(rawValue: string): NormalizedPhoneResult {
   const value = rawValue.trim();
 
@@ -177,15 +250,12 @@ function ratingKeyForQuestion(questionKey: string): keyof Ratings | null {
   return null;
 }
 
-export function CommentCardForm({
-  initialQuestions,
-}: {
-  initialQuestions: CommentCardQuestion[];
-}) {
+export function CommentCardForm() {
   const supabase = useMemo(() => createClient(), []);
 
-  const questions = initialQuestions;
-  const questionsLoading = false;
+  const [questions, setQuestions] =
+    useState<CommentCardQuestion[]>(FALLBACK_QUESTIONS);
+  const [questionsLoading, setQuestionsLoading] = useState(true);
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -260,6 +330,54 @@ export function CommentCardForm({
   function updateRating(key: keyof Ratings, value: number) {
     setRatings((current) => ({ ...current, [key]: value }));
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadQuestions() {
+      try {
+        const response = await fetch("/api/comment-card-questions", {
+          cache: "no-store",
+        });
+
+        const json = (await response.json().catch(() => ({}))) as {
+          questions?: CommentCardQuestion[];
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(
+            json.error || "Could not load comment card questions.",
+          );
+        }
+
+        if (cancelled) return;
+
+        const loadedQuestions = Array.isArray(json.questions)
+          ? json.questions
+          : [];
+
+        setQuestions(
+          loadedQuestions.length ? loadedQuestions : FALLBACK_QUESTIONS,
+        );
+      } catch (queryError) {
+        if (cancelled) return;
+
+        console.error("Could not load comment card questions:", queryError);
+        setQuestions(FALLBACK_QUESTIONS);
+      } finally {
+        if (!cancelled) {
+          setQuestionsLoading(false);
+        }
+      }
+    }
+
+    void loadQuestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hearSheetOpen) return;
