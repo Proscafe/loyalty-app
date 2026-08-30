@@ -720,7 +720,7 @@ function DesktopClientProfilePanel({
                   event.target.value as "week" | "month" | "all",
                 )
               }
-              className="rounded-full border-0 bg-white px-3 py-2 text-[11px] font-black text-white outline-none"
+              className="rounded-full border-0 bg-white px-3 py-2 text-[11px] font-black text-[#365665] outline-none"
             >
               <option value="week">This Week</option>
               <option value="month">This Month</option>
@@ -1120,6 +1120,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
   >(null);
   const [gamePlayerRows, setGamePlayerRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataRefreshKey, setDataRefreshKey] = useState(0);
   const adminProfile = useMemo(
     () =>
       (users.find((user) => user.id === adminId) ?? {
@@ -1597,7 +1598,38 @@ export function UsersPage({ adminId }: { adminId: string }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [dataRefreshKey]);
+
+  // Keep Users synchronized with profile changes made anywhere in the app.
+  useEffect(() => {
+    const refresh = () => setDataRefreshKey((value) => value + 1);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const profilesChannel = supabase
+      .channel("admin-users-live-profiles")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "profiles",
+        },
+        () => refresh(),
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      supabase.removeChannel(profilesChannel);
+    };
+  }, [supabase]);
 
   // Close filter dropdown on outside click
   useEffect(() => {
@@ -1689,6 +1721,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
     setUsers((cur) => cur.map((u) => (u.id === userId ? { ...u, role } : u)));
     setSelectedUser((prev) => (prev?.id === userId ? { ...prev, role } : prev));
     flash("Role updated.");
+    setDataRefreshKey((value) => value + 1);
   }
 
   async function deactivateUser(userId: string) {
@@ -1709,6 +1742,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       prev?.id === userId ? { ...prev, is_active: false } : prev,
     );
     flash("User deactivated.");
+    setDataRefreshKey((value) => value + 1);
   }
 
   async function reactivateUser(userId: string, role: UserRole) {
@@ -1729,6 +1763,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       prev?.id === userId ? { ...prev, is_active: true, role } : prev,
     );
     flash("User reactivated.");
+    setDataRefreshKey((value) => value + 1);
   }
 
   async function addStampToSelectedClient(categoryId: string) {

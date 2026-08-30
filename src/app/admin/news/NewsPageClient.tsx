@@ -9,7 +9,7 @@ const PAGE_BG =
 const GLASS_PANEL = "rgba(255,255,255,0.10)";
 const GLASS_CARD =
   "linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055))";
-type Audience = "" | "Client" | "Staff" | "Admin";
+type Audience = "" | "Client" | "Staff" | "Supervisor" | "Admin";
 type SendMode = "now" | "scheduled";
 type NotificationStatus = "Draft" | "Scheduled" | "Sent" | "Failed";
 
@@ -23,7 +23,7 @@ type NotificationHistoryRow = {
   message: string;
 };
 
-const AUDIENCES: Exclude<Audience, "">[] = ["Client", "Staff", "Admin"];
+const AUDIENCES: Exclude<Audience, "">[] = ["Client", "Staff", "Supervisor", "Admin"];
 
 const NOTIFICATION_TYPES = [
   "Announcements",

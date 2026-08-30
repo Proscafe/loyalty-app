@@ -49,6 +49,12 @@ type RewardRow = AnyRow & {
   redeemed_at?: string | null;
   created_at?: string | null;
   expires_at?: string | null;
+  description?: string | null;
+  source?: string | null;
+  reward_source?: string | null;
+  is_birthday?: boolean | null;
+  birthday_reward?: boolean | null;
+  is_birthday_reward?: boolean | null;
 };
 
 type TransactionRow = AnyRow & {
@@ -174,6 +180,29 @@ function normalizeRewardText(value?: string | null) {
     .trim();
 }
 
+function isBirthdayRewardRow(reward: RewardRow) {
+  const sourceText = `${String(reward.source ?? "")} ${String(
+    reward.reward_source ?? "",
+  )} ${String(reward.description ?? "")}`.toLowerCase();
+
+  return Boolean(
+    reward.is_birthday ||
+      reward.birthday_reward ||
+      reward.is_birthday_reward ||
+      sourceText.includes("birthday"),
+  );
+}
+
+function rewardTimelineLabel(reward: RewardRow, clientName: string) {
+  const rewardName = normalizeRewardText(reward.reward_type);
+
+  if (isBirthdayRewardRow(reward)) {
+    return `${clientName} received Birthday Gift - ${rewardName}`;
+  }
+
+  return `${clientName} received ${rewardName}`;
+}
+
 function statusPillClass(status?: string | null) {
   const value = String(status ?? "").toLowerCase();
   if (value === "available") return "bg-[#ffd66b] text-[#365665]";
@@ -215,12 +244,23 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function getProfileStatus(profile: ProfileRow | null): "client" | "staff" | "admin" | "deactivated" {
+type ProfileStatus =
+  | "client"
+  | "staff"
+  | "supervisor"
+  | "master_admin"
+  | "deactivated";
+
+function getProfileStatus(profile: ProfileRow | null): ProfileStatus {
   if (!profile) return "client";
   if (profile.is_active === false) return "deactivated";
+
   const role = String(profile.role || "client").toLowerCase();
-  if (role === "admin") return "admin";
+
+  if (role === "master_admin" || role === "admin") return "master_admin";
+  if (role === "supervisor") return "supervisor";
   if (role === "staff") return "staff";
+
   return "client";
 }
 
@@ -242,7 +282,7 @@ export default function ClientProfilePage({
   contactHistory?: ContactHistoryRow[];
 }) {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [toast, setToast] = useState<string | null>(null);
   const [tone, setTone] = useState<"success" | "error">("success");
   const [giftOpen, setGiftOpen] = useState(false);
@@ -251,7 +291,9 @@ export default function ClientProfilePage({
   const [visitsOpen, setVisitsOpen] = useState(false);
   const [giftsSectionOpen, setGiftsSectionOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<"month" | "all">("month");
-  const [profileStatus, setProfileStatus] = useState<"client" | "staff" | "admin" | "deactivated">(() => getProfileStatus(profile));
+  const [profileStatus, setProfileStatus] = useState<ProfileStatus>(() =>
+    getProfileStatus(profile),
+  );
   const [giftCategoryId, setGiftCategoryId] = useState(categories[0]?.id ?? "");
   const [giftNote, setGiftNote] = useState("");
   const [phoneDraft, setPhoneDraft] = useState(profile?.phone ?? "");
@@ -272,6 +314,39 @@ export default function ClientProfilePage({
   useEffect(() => {
     setProfileStatus(getProfileStatus(profile));
   }, [profile?.id, profile?.role, profile?.is_active]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    const refresh = () => router.refresh();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const channel = supabase
+      .channel(`admin-user-profile-${profile.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${profile.id}`,
+        },
+        () => refresh(),
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id, router, supabase]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -328,9 +403,17 @@ export default function ClientProfilePage({
 
   const visitRows = useMemo(() => {
     const byDay = new Map<string, string>();
+
     visibleTransactions.forEach((txn) => {
+      const action = String(txn.action_type ?? "").toLowerCase();
+
+      // Only a real earned stamp counts as a visit.
+      // Manual removals stay in the audit trail but do not create visits.
+      if (action !== "add_stamp") return;
+
       const key = dayKey(txn.created_at);
       if (!key || !txn.created_at) return;
+
       const existing = byDay.get(key);
       if (
         !existing ||
@@ -339,20 +422,27 @@ export default function ClientProfilePage({
         byDay.set(key, txn.created_at);
       }
     });
+
     return Array.from(byDay.entries())
       .map(([day, date]) => ({ day, date }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [visibleTransactions]);
 
   const lifetimeSpend = useMemo(() => {
-    return visibleTransactions.reduce((sum, txn) => {
+    const netValue = visibleTransactions.reduce((sum, txn) => {
       const action = String(txn.action_type ?? "").toLowerCase();
-      if (action.includes("remove")) return sum;
       const category = txn.category_id
         ? categoryById.get(txn.category_id)
         : null;
-      return sum + parseMoneyValue(category?.average_price);
+      const categoryValue = parseMoneyValue(category?.average_price);
+
+      if (action === "add_stamp") return sum + categoryValue;
+      if (action === "remove_stamp") return sum - categoryValue;
+
+      return sum;
     }, 0);
+
+    return Math.max(0, netValue);
   }, [categoryById, visibleTransactions]);
 
   const giftCounts = useMemo(() => {
@@ -386,19 +476,26 @@ export default function ClientProfilePage({
         ? categoryById.get(txn.category_id)
         : null;
       const categoryName = displayCategoryName(category?.name);
-      const action = String(txn.action_type ?? "activity").replace(/_/g, " ");
+      const actionType = String(txn.action_type ?? "activity").toLowerCase();
+      const actionLabel =
+        actionType === "add_stamp"
+          ? "added a"
+          : actionType === "remove_stamp"
+            ? "removed a"
+            : actionType.replace(/_/g, " ");
+
       return {
         id: `txn-${txn.id}`,
         date: txn.created_at,
-        label: `${profile?.full_name || "Client"} ${action} ${categoryName}`,
-        badge: "Stamp",
+        label: `${profile?.full_name || "Client"} ${actionLabel} ${categoryName} stamp`,
+        badge: actionType === "remove_stamp" ? "Removed" : "Stamp",
       };
     });
     const rewardItems = visibleRewards.map((reward) => ({
       id: `reward-${reward.id}`,
       date: reward.earned_at ?? reward.created_at,
-      label: `${profile?.full_name || "Client"} received ${normalizeRewardText(reward.reward_type)}`,
-      badge: "Gift",
+      label: rewardTimelineLabel(reward, profile?.full_name || "Client"),
+      badge: isBirthdayRewardRow(reward) ? "Birthday" : "Gift",
     }));
     const noteItems = notes.map((note) => ({
       id: `note-${note.id}`,
@@ -531,31 +628,55 @@ export default function ClientProfilePage({
     flash("Note deleted.");
   }
 
-  async function updateProfileStatus(nextStatus: "client" | "staff" | "admin" | "deactivated") {
+  async function updateProfileStatus(nextStatus: ProfileStatus) {
     if (!profile?.id) return;
 
     const previousStatus = profileStatus;
     setProfileStatus(nextStatus);
 
-    const nextRole = nextStatus === "deactivated"
-      ? String(profile.role || "client").toLowerCase() || "client"
-      : nextStatus;
+    let body: Record<string, unknown>;
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        role: nextRole,
-        is_active: nextStatus === "deactivated" ? false : true,
-      })
-      .eq("id", profile.id);
+    if (nextStatus === "deactivated") {
+      body = {
+        user_id: profile.id,
+        action: "deactivate",
+      };
+    } else if (profile.is_active === false) {
+      body = {
+        user_id: profile.id,
+        action: "reactivate",
+        role: nextStatus,
+      };
+    } else {
+      body = {
+        user_id: profile.id,
+        action: "set_role",
+        role: nextStatus,
+      };
+    }
 
-    if (error) {
+    const response = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+
+    const json = (await response?.json().catch(() => ({}))) as {
+      error?: string;
+    };
+
+    if (!response?.ok) {
       setProfileStatus(previousStatus);
-      flash(error.message, "error");
+      flash(json.error || "Could not update profile.", "error");
       return;
     }
 
-    flash(nextStatus === "deactivated" ? "Profile deactivated." : "Profile role updated.");
+    flash(
+      nextStatus === "deactivated"
+        ? "Profile deactivated."
+        : "Profile role updated.",
+    );
+
     router.refresh();
   }
 
@@ -632,93 +753,37 @@ export default function ClientProfilePage({
   async function updateStamp(categoryId: string, direction: 1 | -1) {
     if (!profile?.id) return;
 
-    const current = stampByCategory.get(categoryId);
-    const currentCount = Math.max(0, current?.stamp_count ?? 0);
-    const nextCount = Math.max(0, Math.min(5, currentCount + direction));
-    const canCompleteAlreadyFullCard = direction > 0 && currentCount >= 5;
+    const categoryName = displayCategoryName(categoryById.get(categoryId)?.name);
 
-    if (nextCount === currentCount && !canCompleteAlreadyFullCard) return;
+    const response = await fetch("/api/profile-stamps/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: profile.id,
+        categoryId,
+        direction,
+        staffId: adminId,
+      }),
+    }).catch(() => null);
 
-    const now = new Date().toISOString();
-    const completionReached = direction > 0 && (nextCount >= 5 || currentCount >= 5);
-    const stampCountToSave = completionReached ? 0 : nextCount;
+    const payload = (await response?.json().catch(() => null)) as {
+      error?: string;
+      completed?: boolean;
+      reward_type?: string;
+      stamp_count?: number;
+    } | null;
 
-    const result = current
-      ? await supabase
-          .from("client_stamps")
-          .update({
-            stamp_count: stampCountToSave,
-            updated_at: now,
-          })
-          .eq("client_id", profile.id)
-          .eq("category_id", categoryId)
-      : await supabase.from("client_stamps").insert({
-          client_id: profile.id,
-          category_id: categoryId,
-          stamp_count: stampCountToSave,
-          updated_at: now,
-        });
-
-    if (result.error) {
-      flash(result.error.message, "error");
+    if (!response?.ok) {
+      flash(payload?.error || "Could not update stamps.", "error");
       return;
     }
 
-    await supabase.from("stamp_transactions").insert({
-      client_id: profile.id,
-      category_id: categoryId,
-      action_type: direction > 0 ? "add_stamp" : "remove_stamp",
-      stamp_count: 1,
-      stamp_count_before: currentCount,
-      stamp_count_after: nextCount,
-      staff_id: adminId,
-      created_at: now,
-    });
-
-    if (completionReached) {
-      const categoryName = displayCategoryName(categoryById.get(categoryId)?.name);
-      const rewardType = `Free ${categoryName}`;
-      const earnedAt = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-      const { data: reward, error: rewardError } = await supabase
-        .from("rewards")
-        .insert({
-          client_id: profile.id,
-          category_id: categoryId,
-          reward_type: rewardType,
-          status: "available",
-          earned_at: earnedAt,
-          expires_at: expiresAt,
-          source: "loyalty_card",
-          source_label: categoryName,
-        })
-        .select("id")
-        .single();
-
-      if (rewardError) {
-        flash(rewardError.message, "error");
-        return;
-      }
-
-      await supabase.from("stamp_transactions").insert({
-        client_id: profile.id,
-        category_id: categoryId,
-        action_type: "reward_earned",
-        stamp_count: 5,
-        stamp_count_before: currentCount,
-        stamp_count_after: 0,
-        reward_id: reward?.id ?? null,
-        staff_id: adminId,
-        created_at: new Date().toISOString(),
-      });
-
-      flash(`${rewardType} earned and stamps reset.`);
-      router.refresh();
-      return;
+    if (payload?.completed) {
+      flash(`${payload.reward_type || `Free ${categoryName}`} earned and stamps reset.`);
+    } else {
+      flash(direction > 0 ? "Stamp added." : "Stamp removed.");
     }
 
-    flash(direction > 0 ? "Stamp added." : "Stamp removed.");
     router.refresh();
   }
 
@@ -809,15 +874,16 @@ export default function ClientProfilePage({
                 value={profileStatus}
                 onChange={(event) =>
                   void updateProfileStatus(
-                    event.target.value as "client" | "staff" | "admin" | "deactivated",
+                    event.target.value as ProfileStatus,
                   )
                 }
                 className="h-[38px] rounded-full border-0 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665] outline-none"
                 aria-label="Change profile role"
               >
                 <option value="client">Client</option>
-                <option value="staff">Staff</option>
-                <option value="admin">Admin</option>
+                <option value="staff">Manager</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="master_admin">Admin</option>
                 <option value="deactivated">Deactivate</option>
               </select>
               {currentWhatsAppUrl ? (

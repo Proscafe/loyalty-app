@@ -15,6 +15,7 @@ type Props = {
   onScan?: () => void;
   reserveHref?: string;
   calendarHref?: string;
+  isSupervisor?: boolean;
 };
 
 function StaffNavIcon({ name }: { name: StaffNavKey }) {
@@ -42,6 +43,7 @@ export function StaffBottomNav({
   onScan,
   reserveHref,
   calendarHref = "/staff/calendar",
+  isSupervisor = false,
 }: Props) {
   const router = useRouter();
 
@@ -78,12 +80,24 @@ export function StaffBottomNav({
         }}
       >
         <div className="absolute inset-x-3 -top-[28px] grid grid-cols-5 items-start gap-1.5">
-          <Link href="/staff/activity" className="relative flex h-[78px] min-w-0 flex-col items-center transition active:scale-95">
-            <span className={circle("activity")}><StaffNavIcon name="activity" /></span>
-            <span className={label("activity")}>Activity</span>
-          </Link>
+          {isSupervisor ? (
+            <button type="button" disabled className="relative flex h-[78px] min-w-0 flex-col items-center cursor-not-allowed opacity-45">
+              <span className="flex h-[46px] w-[46px] items-center justify-center rounded-full border-2 border-[#4f5650] bg-[#4f5650] text-white/55 shadow-[0_6px_16px_rgba(30,43,35,0.12)]"><StaffNavIcon name="activity" /></span>
+              <span className="absolute bottom-[4px] w-full text-center text-[9px] font-black leading-none text-white/45">Activity</span>
+            </button>
+          ) : (
+            <Link href="/staff/activity" className="relative flex h-[78px] min-w-0 flex-col items-center transition active:scale-95">
+              <span className={circle("activity")}><StaffNavIcon name="activity" /></span>
+              <span className={label("activity")}>Activity</span>
+            </Link>
+          )}
 
-          {reserveHref ? (
+          {isSupervisor ? (
+            <button type="button" disabled className="relative flex h-[78px] min-w-0 flex-col items-center cursor-not-allowed opacity-45">
+              <span className="flex h-[46px] w-[46px] items-center justify-center rounded-full border-2 border-[#4f5650] bg-[#4f5650] text-white/55 shadow-[0_6px_16px_rgba(30,43,35,0.12)]"><StaffNavIcon name="reserve" /></span>
+              <span className="absolute bottom-[4px] w-full text-center text-[9px] font-black leading-none text-white/45">Reserve</span>
+            </button>
+          ) : reserveHref ? (
             <Link href={reserveHref} className="relative flex h-[78px] min-w-0 flex-col items-center transition active:scale-95">
               <span className={circle("reserve")}><StaffNavIcon name="reserve" /></span>
               <span className={label("reserve")}>Reserve</span>
@@ -95,11 +109,16 @@ export function StaffBottomNav({
             </button>
           )}
 
-          <button type="button" onClick={openScanner} className="relative -translate-y-[5px] flex h-[83px] min-w-0 flex-col items-center transition active:scale-95">
-            <span className="flex h-[58px] w-[58px] items-center justify-center rounded-full border-[3px] border-white bg-[#ffd66b] text-white shadow-[0_8px_20px_rgba(31,43,35,0.22)] [&_svg]:h-[29px] [&_svg]:w-[29px]">
+          <button
+            type="button"
+            onClick={isSupervisor ? undefined : openScanner}
+            disabled={isSupervisor}
+            className={`relative -translate-y-[5px] flex h-[83px] min-w-0 flex-col items-center ${isSupervisor ? "cursor-not-allowed opacity-45" : "transition active:scale-95"}`}
+          >
+            <span className={`flex h-[58px] w-[58px] items-center justify-center rounded-full border-[3px] text-white shadow-[0_8px_20px_rgba(31,43,35,0.22)] [&_svg]:h-[29px] [&_svg]:w-[29px] ${isSupervisor ? "border-[#4f5650] bg-[#4f5650] text-white/55" : "border-white bg-[#ffd66b]"}`}>
               <StaffNavIcon name="scan" />
             </span>
-            <span className={label("scan")}>Scan</span>
+            <span className={isSupervisor ? "absolute bottom-[4px] w-full text-center text-[9px] font-black leading-none text-white/45" : label("scan")}>Scan</span>
           </button>
 
           <Link href="/staff/reports" className="relative flex h-[78px] min-w-0 flex-col items-center transition active:scale-95">

@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireRole } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/server";
 import ClientProfilePage from "./ClientProfilePage";
 
 export const dynamic = "force-dynamic";
@@ -11,11 +12,8 @@ export default async function AdminClientProfileRoute({
   params: RouteParams;
 }) {
   const { clientId } = await params;
-  const supabase = await createClient();
-
-  const {
-    data: { user: adminUser },
-  } = await supabase.auth.getUser();
+  const adminProfile = await requireRole(["master_admin"]);
+  const supabase = createAdminClient();
 
   const [profileResult, categoriesResult, stampsResult, rewardsResult, transactionsResult, contactHistoryResult] =
     await Promise.all([
@@ -49,7 +47,7 @@ export default async function AdminClientProfileRoute({
 
   return (
     <ClientProfilePage
-      adminId={adminUser?.id ?? "admin"}
+      adminId={adminProfile.id}
       profile={profileResult.data ?? null}
       categories={categoriesResult.data ?? []}
       stamps={stampsResult.data ?? []}

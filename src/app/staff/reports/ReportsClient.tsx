@@ -184,16 +184,26 @@ export default function ReportsClient({
                 const isKitchen =
                   form.type === "kitchen_checklist" ||
                   form.type === "kitchen_report";
+                const isSupervisorFloorDisabled =
+                  profile.role === "supervisor" &&
+                  (form.type === "floor_checklist" ||
+                    form.type === "floor_report");
 
                 return (
                   <button
                     key={form.type}
                     type="button"
-                    onClick={() => openForm(form)}
+                    onClick={() => {
+                      if (!isSupervisorFloorDisabled) openForm(form);
+                    }}
+                    disabled={isSupervisorFloorDisabled}
+                    aria-disabled={isSupervisorFloorDisabled}
                     className={`group relative h-[122px] overflow-hidden rounded-[24px] p-4 text-left backdrop-blur-2xl transition duration-200 hover:-translate-y-0.5 active:scale-[0.985] ${
-                      isKitchen
-                        ? "bg-[#d6bf72]/[0.18] shadow-[0_18px_42px_rgba(45,48,28,0.20),inset_0_0_0_1px_rgba(255,231,151,0.24)] hover:bg-[#d6bf72]/[0.23]"
-                        : "bg-white/[0.10] shadow-[0_18px_42px_rgba(34,49,39,0.20),inset_0_0_0_1px_rgba(255,255,255,0.18)] hover:bg-white/[0.14]"
+                      isSupervisorFloorDisabled
+                        ? "cursor-not-allowed bg-[#4f5650]/80 text-white/45 shadow-[0_18px_42px_rgba(30,35,31,0.16),inset_0_0_0_1px_rgba(255,255,255,0.08)] opacity-55"
+                        : isKitchen
+                          ? "bg-[#d6bf72]/[0.18] shadow-[0_18px_42px_rgba(45,48,28,0.20),inset_0_0_0_1px_rgba(255,231,151,0.24)] hover:bg-[#d6bf72]/[0.23]"
+                          : "bg-white/[0.10] shadow-[0_18px_42px_rgba(34,49,39,0.20),inset_0_0_0_1px_rgba(255,255,255,0.18)] hover:bg-white/[0.14]"
                     }`}
                   >
                     <div className="relative z-10 flex h-full items-center">

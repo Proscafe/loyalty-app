@@ -542,6 +542,9 @@ function StaffConsole({
     [],
   );
 
+  const isSupervisor =
+    profile.role === "supervisor";
+
   const [query, setQuery] =
     useState("");
 
@@ -1731,6 +1734,11 @@ function StaffConsole({
       return;
     }
 
+    if (isSupervisor) {
+      window.history.replaceState(null, "", "/staff");
+      return;
+    }
+
     setScanning(true);
 
     window.history.replaceState(
@@ -2120,14 +2128,15 @@ function StaffConsole({
               </button>
             )}
 
-            <div className="w-full rounded-full border border-white/45 bg-[#e7e9e3] px-5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl">
-              <input
-                className="h-9 w-full bg-transparent text-[14px] font-black text-[#365665] outline-none placeholder:text-[#365665]/58"
-                placeholder="Search for client..."
-                value={query}
-                onChange={(event) =>
-                  setQuery(event.target.value)
-                }
+<div className={`w-full rounded-full border px-5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_14px_34px_rgba(0,0,0,0.08)] backdrop-blur-2xl ${isSupervisor ? "border-white/10 bg-[#4f5650]/80" : "border-white/45 bg-[#e7e9e3]"}`}>
+  <input
+    disabled={isSupervisor}
+    className={`h-9 w-full bg-transparent text-[14px] font-black outline-none ${isSupervisor ? "cursor-not-allowed text-white/45 placeholder:text-white/40" : "text-[#365665] placeholder:text-[#365665]/58"}`}
+    placeholder={isSupervisor ? "Search disabled" : "Search for client..."}
+    value={query}
+    onChange={(event) =>
+      setQuery(event.target.value)
+    }
                 autoComplete="off"
               />
             </div>
@@ -2504,7 +2513,10 @@ function StaffConsole({
         )}
       </div>
 
-      <StaffBottomNav onScan={() => setScanning(true)} />
+      <StaffBottomNav
+        onScan={isSupervisor ? undefined : () => setScanning(true)}
+        isSupervisor={isSupervisor}
+      />
 
     </AppShell>
   );
