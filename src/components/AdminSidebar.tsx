@@ -14,6 +14,7 @@ export type AdminActiveKey =
   | "loyalty-program"
   | "comment-cards"
   | "reports"
+  | "dashboard-banner"
   | "news"
   | "games";
 
@@ -37,6 +38,7 @@ const ADMIN_SIDEBAR_ITEMS: AdminSidebarItem[] = [
   { key: "users", label: "Customer behavior", icon: "👤", href: "/admin/users" },
   { key: "comment-cards", label: "Comment Cards", icon: "✎", href: "/admin/comment-cards" },
   { key: "reports", label: "Reports", icon: "▤", href: "/admin/reports" },
+  { key: "dashboard-banner", label: "Dashboard Banner", icon: "▣", href: "/admin/dashboard-banner" },
   { key: "gifts", label: "Gifts", icon: "🎁", href: "/admin/gifts" },
   { key: "birthdays", label: "Birthdays", icon: "🎂", href: "/admin/birthdays" },
   { key: "loyalty-program", label: "Loyalty Program", icon: "★", href: "/admin/loyalty" },
@@ -49,6 +51,7 @@ function inferActiveKey(pathname: string): AdminActiveKey {
   if (pathname.startsWith("/admin/users")) return "users";
   if (pathname.startsWith("/admin/comment-cards")) return "comment-cards";
   if (pathname.startsWith("/admin/reports")) return "reports";
+  if (pathname.startsWith("/admin/dashboard-banner")) return "dashboard-banner";
   if (pathname.startsWith("/admin/gifts")) return "gifts";
   if (pathname.startsWith("/admin/birthdays")) return "birthdays";
   if (pathname.startsWith("/admin/loyalty")) return "loyalty-program";

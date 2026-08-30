@@ -50,8 +50,16 @@ type ClientReward = {
 
 type AnyRecord = Record<string, any>;
 
+type ClientDashboardBanner = {
+  id: string;
+  image_url: string;
+  link_url?: string | null;
+  sort_order: number;
+};
+
 type ClientDashboardProps = {
   profile: Profile;
+  banners?: ClientDashboardBanner[];
   categories?: unknown[];
   initialStamps?: unknown[];
   initialRewards?: unknown[];
@@ -101,21 +109,6 @@ function firstNameOnly(value?: string | null) {
 function pluralizeTitle(count: number, singular: string, plural?: string) {
   const label = count === 1 ? singular : plural ?? `${singular}s`;
   return `${count} ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
-}
-
-function getDaysUntilAugustFirst() {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  let target = new Date(now.getFullYear(), 7, 1);
-
-  if (today.getTime() > target.getTime()) {
-    target = new Date(now.getFullYear() + 1, 7, 1);
-  }
-
-  return Math.max(
-    0,
-    Math.ceil((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)),
-  );
 }
 
 function normalizeCategoryName(name?: string | null) {
@@ -869,6 +862,7 @@ function RewardCelebrationModal({
 
 export function ClientDashboard({
   profile,
+  banners = [],
   categories = [],
   initialStamps,
   initialRewards,
@@ -890,9 +884,32 @@ export function ClientDashboard({
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrScannerStatus, setQrScannerStatus] = useState<string | null>(null);
   const [showGameScanCard, setShowGameScanCard] = useState(false);
-  const [daysUntilAugust, setDaysUntilAugust] = useState(() =>
-    getDaysUntilAugustFirst(),
+  const [bannerIndex, setBannerIndex] = useState(0);
+
+  const visibleBanners = useMemo(
+    () =>
+      [...banners]
+        .filter((banner) => Boolean(banner.image_url))
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .slice(0, 3),
+    [banners],
   );
+
+  useEffect(() => {
+    if (bannerIndex >= visibleBanners.length) {
+      setBannerIndex(0);
+    }
+  }, [bannerIndex, visibleBanners.length]);
+
+  useEffect(() => {
+    if (visibleBanners.length <= 1) return;
+
+    const timer = window.setInterval(() => {
+      setBannerIndex((current) => (current + 1) % visibleBanners.length);
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [visibleBanners.length]);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(
@@ -906,22 +923,6 @@ export function ClientDashboard({
     setLocalRewards((rewards ?? initialRewards ?? []) as ClientReward[]);
   }, [rewards, initialRewards]);
 
-  useEffect(() => {
-    function refreshAugustCountdown() {
-      setDaysUntilAugust(getDaysUntilAugustFirst());
-    }
-
-    refreshAugustCountdown();
-    const interval = window.setInterval(refreshAugustCountdown, 60 * 60 * 1000);
-    window.addEventListener("focus", refreshAugustCountdown);
-    document.addEventListener("visibilitychange", refreshAugustCountdown);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refreshAugustCountdown);
-      document.removeEventListener("visibilitychange", refreshAugustCountdown);
-    };
-  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -1771,38 +1772,84 @@ export function ClientDashboard({
         </section>
         ) : null}
 
-        <section
-          className="relative mt-6 overflow-hidden border border-white/15 shadow-[0_22px_60px_rgba(0,0,0,0.18)]"
-          style={{
-            borderRadius: 18,
-            minHeight: 150,
-            backgroundColor: "#788272",
-            backgroundImage:
-              "linear-gradient(90deg, rgba(69,82,68,0.58) 0%, rgba(69,82,68,0.34) 54%, rgba(69,82,68,0.2) 100%), url('/Card 28 YRS.png')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }}
-          aria-label={`${daysUntilAugust} days until August 1`}
-        >
-          <div className="relative z-10 flex min-h-[150px] items-center px-5 py-4">
-            <div className="min-w-0 flex-1 text-left">
-              <p className="font-raleway text-[17px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]">
-                Cheers to <span className="text-[#f0cf61]">28</span> years
-              </p>
+        {visibleBanners.length > 0 ? (
+          <section className="mt-6">
+            <div
+              className="relative w-full overflow-hidden border border-white/15 shadow-[0_22px_60px_rgba(0,0,0,0.18)]"
+              style={{
+                borderRadius: 18,
+                aspectRatio: "25 / 9",
+              }}
+            >
+              {visibleBanners.map((banner, index) => {
+                const image = (
+                  <img
+                    src={banner.image_url}
+                    alt={`Dashboard promotion ${index + 1}`}
+                    className="h-full w-full object-cover"
+                    draggable={false}
+                  />
+                );
 
-              <h2 className="mt-3 font-raleway text-[47px] font-black uppercase leading-[0.84] tracking-[-0.045em] text-[#f0cf61] drop-shadow-[0_3px_8px_rgba(0,0,0,0.25)]">
-                August
-              </h2>
-
-              <p className="mt-4 whitespace-nowrap font-raleway text-[11.8px] font-black uppercase leading-none tracking-[0.025em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] sm:text-[11px]">
-                Offers • Giveaways • More
-              </p>
+                return (
+                  <div
+                    key={banner.id}
+                    className={`absolute inset-0 transition-opacity duration-500 ${
+                      index === bannerIndex
+                        ? "pointer-events-auto opacity-100"
+                        : "pointer-events-none opacity-0"
+                    }`}
+                    aria-hidden={index !== bannerIndex}
+                  >
+                    {banner.link_url ? (
+                      <a
+                        href={banner.link_url}
+                        target={
+                          banner.link_url.startsWith("http")
+                            ? "_blank"
+                            : undefined
+                        }
+                        rel={
+                          banner.link_url.startsWith("http")
+                            ? "noopener noreferrer"
+                            : undefined
+                        }
+                        className="block h-full w-full"
+                        aria-label={`Open promotion ${index + 1}`}
+                      >
+                        {image}
+                      </a>
+                    ) : (
+                      image
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
-            
-          </div>
-        </section>
+            {visibleBanners.length > 1 ? (
+              <div
+                className="mt-3 flex items-center justify-center gap-2"
+                aria-label="Promotion slides"
+              >
+                {visibleBanners.map((banner, index) => (
+                  <button
+                    key={banner.id}
+                    type="button"
+                    onClick={() => setBannerIndex(index)}
+                    className={`h-2.5 rounded-full transition-all ${
+                      index === bannerIndex
+                        ? "w-6 bg-[#f0cf61]"
+                        : "w-2.5 bg-white/45"
+                    }`}
+                    aria-label={`Show promotion ${index + 1}`}
+                    aria-current={index === bannerIndex ? "true" : undefined}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {visibleRewards.length > 0 && (
           <section className="mt-10">

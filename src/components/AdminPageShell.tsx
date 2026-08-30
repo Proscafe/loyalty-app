@@ -3,11 +3,22 @@
 import { type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { AdminSidebar, type AdminActiveKey } from "@/components/AdminSidebar";
+import { AdminSidebar } from "@/components/AdminSidebar";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
 
 type AdminPageShellProps = {
-  active?: AdminActiveKey;
+  active?:
+    | "overview"
+    | "activity"
+    | "users"
+    | "gifts"
+    | "birthdays"
+    | "loyalty-program"
+    | "comment-cards"
+    | "reports"
+    | "dashboard-banner"
+    | "news"
+    | "games";
   children: ReactNode;
 };
 
