@@ -105,7 +105,10 @@ export async function POST(request: Request) {
           .eq("id", current.id);
 
         if (error) {
-          return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+          return NextResponse.json(
+            { ok: false, error: error.message },
+            { status: 500 },
+          );
         }
       } else {
         const { error } = await supabase.from("client_stamps").insert({
@@ -116,7 +119,10 @@ export async function POST(request: Request) {
         });
 
         if (error) {
-          return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+          return NextResponse.json(
+            { ok: false, error: error.message },
+            { status: 500 },
+          );
         }
       }
 
@@ -132,7 +138,6 @@ export async function POST(request: Request) {
           action: actionType,
           action_type: actionType,
           amount: direction,
-          stamp_count: direction,
           stamp_count_before: currentCount,
           stamp_count_after: nextCount,
           staff_id: staffId,
@@ -177,9 +182,11 @@ export async function POST(request: Request) {
     }
 
     const rewardType = rewardTitleFor(categoryName);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    ).toISOString();
 
-    // IMPORTANT: create the reward first. If reward insert fails, we do not reset stamps.
+    // Create reward first. If reward insert fails, stamps are not reset.
     const { data: reward, error: rewardError } = await supabase
       .from("rewards")
       .insert({
@@ -219,7 +226,10 @@ export async function POST(request: Request) {
         .eq("id", current.id);
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        return NextResponse.json(
+          { ok: false, error: error.message },
+          { status: 500 },
+        );
       }
     } else {
       const { error } = await supabase.from("client_stamps").insert({
@@ -230,26 +240,40 @@ export async function POST(request: Request) {
       });
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        return NextResponse.json(
+          { ok: false, error: error.message },
+          { status: 500 },
+        );
       }
     }
 
-    await supabase.from("stamp_transactions").insert({
-      client_id: clientId,
-      profile_id: clientId,
-      category_id: categoryId,
-      category: categoryName,
-      action: "reward_earned",
-      action_type: "reward_earned",
-      amount: 5,
-      stamp_count: 5,
-      stamp_count_before: currentCount,
-      stamp_count_after: 0,
-      reward_id: reward?.id ?? null,
-      staff_id: staffId,
-      note: `${rewardType} created after ${categoryName} card completion`,
-      created_at: now,
-    });
+    const { error: completionTransactionError } = await supabase
+      .from("stamp_transactions")
+      .insert({
+        client_id: clientId,
+        profile_id: clientId,
+        category_id: categoryId,
+        category: categoryName,
+        action: "reward_earned",
+        action_type: "reward_earned",
+        amount: 5,
+        stamp_count_before: currentCount,
+        stamp_count_after: 0,
+        reward_id: reward?.id ?? null,
+        staff_id: staffId,
+        note: `${rewardType} created after ${categoryName} card completion`,
+        created_at: now,
+      });
+
+    if (completionTransactionError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Reward was created, but the completion transaction could not be logged: ${completionTransactionError.message}`,
+        },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({
       ok: true,
@@ -259,7 +283,12 @@ export async function POST(request: Request) {
       stamp_count: 0,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not update stamps.";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const message =
+      error instanceof Error ? error.message : "Could not update stamps.";
+
+    return NextResponse.json(
+      { ok: false, error: message },
+      { status: 500 },
+    );
   }
 }
