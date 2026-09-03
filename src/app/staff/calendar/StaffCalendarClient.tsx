@@ -9,7 +9,11 @@ const PAGE_BG =
 const GOOGLE_CALENDAR_URL =
   "https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=Asia%2FBeirut&showPrint=0&showTitle=0&showNav=1&showDate=1&showTabs=0&showCalendars=0&showTz=0&mode=AGENDA&src=proscafe%40gmail.com&color=%233F51B5&src=e0a4bd6b61c8c175b86402ddd59b15ee9ce5efeb66c413df610f5c8ef61ff5a4%40group.calendar.google.com&color=%23D50000";
 
-export function StaffCalendarClient() {
+export function StaffCalendarClient({
+  isSupervisor = false,
+}: {
+  isSupervisor?: boolean;
+}) {
   return (
     <main
       className="min-h-screen px-4 pb-32 pt-2 font-raleway text-white"
@@ -39,7 +43,10 @@ export function StaffCalendarClient() {
         </section>
       </div>
 
-      <StaffBottomNav active="calendar" />
+      <StaffBottomNav
+        active="calendar"
+        isSupervisor={isSupervisor}
+      />
     </main>
   );
 }

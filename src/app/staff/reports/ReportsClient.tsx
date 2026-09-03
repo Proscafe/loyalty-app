@@ -372,7 +372,7 @@ export default function ReportsClient({
           </>
         )}
       </div>
-          <StaffBottomNav active="reports" />
+          <StaffBottomNav active="reports" isSupervisor={profile.role === "supervisor"} />
     </main>
   );
 }
