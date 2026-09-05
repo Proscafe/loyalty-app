@@ -65,6 +65,37 @@ export async function POST(request: Request) {
 
     const categoryName = displayCategoryName(category?.name);
 
+    // A customer must redeem an active gift from this category before
+    // collecting another stamp in the same category.
+    // Removing an existing stamp is still allowed.
+    if (direction > 0) {
+      const { data: activeReward, error: activeRewardError } = await supabase
+        .from("rewards")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("category_id", categoryId)
+        .eq("status", "available")
+        .limit(1)
+        .maybeSingle();
+
+      if (activeRewardError) {
+        return NextResponse.json(
+          { ok: false, error: activeRewardError.message },
+          { status: 500 },
+        );
+      }
+
+      if (activeReward) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Redeem the active ${categoryName} gift before collecting new ${categoryName} stamps.`,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     const { data: currentRows, error: currentError } = await supabase
       .from("client_stamps")
       .select("id, stamp_count")
