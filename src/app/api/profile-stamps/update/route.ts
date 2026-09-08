@@ -94,6 +94,51 @@ export async function POST(request: Request) {
           { status: 409 },
         );
       }
+
+      // Redeeming a gift counts as today's stamp activity for this category.
+      // Use the Beirut calendar day so a new stamp becomes available tomorrow.
+      const { data: redeemedRewards, error: redeemedRewardsError } =
+        await supabase
+          .from("rewards")
+          .select("id, redeemed_at")
+          .eq("client_id", clientId)
+          .eq("category_id", categoryId)
+          .eq("status", "redeemed")
+          .not("redeemed_at", "is", null)
+          .order("redeemed_at", { ascending: false })
+          .limit(10);
+
+      if (redeemedRewardsError) {
+        return NextResponse.json(
+          { ok: false, error: redeemedRewardsError.message },
+          { status: 500 },
+        );
+      }
+
+      const beirutDay = (value: string | Date) =>
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Beirut",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(typeof value === "string" ? new Date(value) : value);
+
+      const todayInBeirut = beirutDay(new Date());
+      const redeemedToday = (redeemedRewards ?? []).some(
+        (reward) =>
+          reward.redeemed_at &&
+          beirutDay(String(reward.redeemed_at)) === todayInBeirut,
+      );
+
+      if (redeemedToday) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `${categoryName} gift was redeemed today. New ${categoryName} stamps can start tomorrow.`,
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const { data: currentRows, error: currentError } = await supabase
