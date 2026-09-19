@@ -45,6 +45,15 @@ const PAGE_BG =
 const CUSTOMER_TABLE_GRID =
   "minmax(130px,1fr) minmax(90px,0.6fr) minmax(78px,0.5fr) minmax(62px,0.38fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(178px,0.95fr) minmax(118px,0.7fr)";
 
+const LOYALTY_LINK = "https://proscafe.net";
+
+type WhatsAppTemplate =
+  | "we_miss_you"
+  | "friendly_reminder"
+  | "vip_comeback"
+  | "needs_attention"
+  | "custom";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function parseMoneyValue(value: string | number | null | undefined) {
@@ -270,6 +279,44 @@ function normalizePhoneForMatch(value?: string | null) {
   if (digits.length === 7) return `0${digits}`;
   if (digits.length > 8) return digits.slice(-8);
   return digits;
+}
+
+function cleanLebaneseWhatsAppPhone(value?: string | null) {
+  let phone = String(value ?? "").trim();
+  if (!phone) return "";
+
+  phone = phone.replace(/[\s\-()]/g, "");
+  if (phone.startsWith("+")) phone = phone.slice(1);
+  if (phone.startsWith("00")) phone = phone.slice(2);
+  phone = phone.replace(/\D/g, "");
+
+  if (phone.startsWith("961")) return phone;
+  if (phone.startsWith("0")) return `961${phone.slice(1)}`;
+  if (phone.length === 7 || phone.length === 8) return `961${phone}`;
+  return phone;
+}
+
+function whatsappTemplateMessage(
+  template: WhatsAppTemplate,
+  user: AdminUser,
+) {
+  const name = String(user.full_name || "there").trim();
+  const days = user.daysSinceLastVisit;
+  const daysText = days === null || days === undefined ? "a little while" : String(days);
+
+  if (template === "we_miss_you") {
+    return `Hi ${name} 👋\nWe missed you at PRO’s Cafe!\n\nIt’s been ${daysText} days since your last visit. We’d love to welcome you back soon for good food, good vibes, and your next loyalty gift.`;
+  }
+  if (template === "friendly_reminder") {
+    return `Hi ${name} 👋\nIt’s been ${daysText} days since your last visit to PRO’s Cafe.\n\nPass by soon — good food and good vibes are waiting for you.`;
+  }
+  if (template === "vip_comeback") {
+    return `Hi ${name} 👋\nWe miss having you at PRO’s Cafe!\n\nYou’re one of our valued guests, and we’d love to welcome you back soon.`;
+  }
+  if (template === "needs_attention") {
+    return `Hi ${name} 👋\nWe noticed it’s been a little while since your last visit to PRO’s Cafe.\n\nWe’d love to see you again and make your next visit even better.`;
+  }
+  return "";
 }
 
 function getGameRowClientId(row: any) {
@@ -1144,6 +1191,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [directGiftCategoryId, setDirectGiftCategoryId] = useState("");
   const [directGiftNote, setDirectGiftNote] = useState("");
   const [directGiftSending, setDirectGiftSending] = useState(false);
+  const [whatsAppTargetUser, setWhatsAppTargetUser] = useState<AdminUser | null>(null);
+  const [whatsAppTemplate, setWhatsAppTemplate] =
+    useState<WhatsAppTemplate>("we_miss_you");
+  const [whatsAppMessage, setWhatsAppMessage] = useState("");
+  const [includeLoyaltyLink, setIncludeLoyaltyLink] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -1178,6 +1230,48 @@ export function UsersPage({ adminId }: { adminId: string }) {
   const [contactHistory, setContactHistory] = useState<
     Record<string, string[]>
   >({});
+
+  function openWhatsAppComposer(user: AdminUser) {
+    setWhatsAppTargetUser(user);
+    setWhatsAppTemplate("we_miss_you");
+    setWhatsAppMessage(whatsappTemplateMessage("we_miss_you", user));
+    setIncludeLoyaltyLink(false);
+  }
+
+  function closeWhatsAppComposer() {
+    setWhatsAppTargetUser(null);
+    setIncludeLoyaltyLink(false);
+  }
+
+  function selectWhatsAppTemplate(template: WhatsAppTemplate) {
+    setWhatsAppTemplate(template);
+    if (!whatsAppTargetUser) return;
+    setWhatsAppMessage(whatsappTemplateMessage(template, whatsAppTargetUser));
+  }
+
+  function launchWhatsApp() {
+    if (!whatsAppTargetUser) return;
+    const phone = cleanLebaneseWhatsAppPhone(whatsAppTargetUser.phone);
+    if (!phone) {
+      flash("This customer does not have a valid phone number.", "error");
+      return;
+    }
+    const baseMessage = whatsAppMessage.trim();
+    const finalMessage = includeLoyaltyLink
+      ? `${baseMessage}${baseMessage ? "\n\n" : ""}Check your gifts and stamps here:\n${LOYALTY_LINK}`
+      : baseMessage;
+    if (!finalMessage) {
+      flash("Write a WhatsApp message first.", "error");
+      return;
+    }
+    window.open(
+      `https://wa.me/${phone}?text=${encodeURIComponent(finalMessage)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    markCustomerContacted(whatsAppTargetUser);
+    closeWhatsAppComposer();
+  }
 
   function flash(message: string, t: "success" | "error" = "success") {
     setTone(t);
@@ -1654,6 +1748,15 @@ export function UsersPage({ adminId }: { adminId: string }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [reportFiltersOpen]);
+
+  useEffect(() => {
+    if (!whatsAppTargetUser) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeWhatsAppComposer();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [whatsAppTargetUser]);
 
   // ── User profile ─────────────────────────────────────────────────────────────
 
@@ -3146,13 +3249,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                   {sortedCustomerReportRows
                     .slice(0, visibleUserCount)
                     .map((row) => {
-                      const digits = String(row.user.phone || "").replace(
-                        /\D/g,
-                        "",
-                      );
-                      const whatsappUrl = digits
-                        ? `https://wa.me/${digits}`
-                        : "";
+                      const whatsappPhone = cleanLebaneseWhatsAppPhone(row.user.phone);
 
                       return (
                         <div
@@ -3222,15 +3319,18 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             ) : (
                               <span className="text-white/36">—</span>
                             )}
-                            {whatsappUrl ? (
-                              <a
-                                href={whatsappUrl}
-                                target="_blank"
-                                rel="noreferrer"
+                            {whatsappPhone ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  openWhatsAppComposer(row.user);
+                                }}
                                 className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
                               >
                                 WA
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-white/36">—</span>
                             )}
@@ -3295,6 +3395,64 @@ export function UsersPage({ adminId }: { adminId: string }) {
           )}
         </section>
       </div>
+      {whatsAppTargetUser ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-[#172b2b]/75 px-4 py-6 backdrop-blur-md"
+          onMouseDown={closeWhatsAppComposer}
+          onTouchStart={closeWhatsAppComposer}
+        >
+          <div
+            className="w-full max-w-[520px] rounded-[30px] border border-white/15 bg-[#365665]/95 p-5 text-white shadow-[0_30px_90px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:p-6"
+            onMouseDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <div className="mb-2 inline-flex rounded-full bg-[#25D366]/18 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#7ff0a5]">
+                  WhatsApp
+                </div>
+                <h3 className="text-[24px] font-black tracking-[-0.04em]">
+                  Send WhatsApp Message
+                </h3>
+              </div>
+              <button type="button" onClick={closeWhatsAppComposer} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-lg font-black text-white/70 hover:bg-white/16">×</button>
+            </div>
+
+            <div className="mb-5 rounded-[18px] bg-white/10 px-4 py-3">
+              <div className="text-[15px] font-black text-white">{whatsAppTargetUser.full_name || "Client"}</div>
+              <div className="mt-1 text-[12px] font-semibold text-white/68">Last visit: {desktopFormatDateOnly(whatsAppTargetUser.lastVisit)}</div>
+              <div className="mt-0.5 text-[12px] font-black text-[#ffd66b]">{whatsAppTargetUser.daysSinceLastVisit === null || whatsAppTargetUser.daysSinceLastVisit === undefined ? "No recorded visit" : `${whatsAppTargetUser.daysSinceLastVisit} days ago`}</div>
+            </div>
+
+            <label className="mb-4 block">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/72">Choose message</span>
+              <select value={whatsAppTemplate} onChange={(event) => selectWhatsAppTemplate(event.target.value as WhatsAppTemplate)} className="h-12 w-full rounded-[16px] border-0 bg-white px-4 text-[13px] font-black text-[#365665] outline-none">
+                <option value="we_miss_you">We miss you</option>
+                <option value="friendly_reminder">Friendly reminder</option>
+                <option value="vip_comeback">VIP comeback</option>
+                <option value="needs_attention">Needs attention</option>
+                <option value="custom">Custom message</option>
+              </select>
+            </label>
+
+            <label className="mb-4 block">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-white/72">WhatsApp message</span>
+              <textarea value={whatsAppMessage} onChange={(event) => setWhatsAppMessage(event.target.value)} rows={8} placeholder="Write your message..." className="w-full resize-none rounded-[18px] border-0 bg-white px-4 py-3 text-[13px] font-semibold leading-5 text-[#365665] outline-none placeholder:text-[#365665]/45" />
+            </label>
+
+            <label className="mb-6 flex cursor-pointer items-center gap-3 rounded-[16px] bg-white/10 px-4 py-3">
+              <input type="checkbox" checked={includeLoyaltyLink} onChange={(event) => setIncludeLoyaltyLink(event.target.checked)} className="h-4 w-4 accent-[#25D366]" />
+              <span className="text-[12px] font-black text-white">Include loyalty link</span>
+            </label>
+
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={closeWhatsAppComposer} className="rounded-full bg-white/10 px-5 py-3 text-[12px] font-black text-white transition hover:bg-white/16">Cancel</button>
+              <button type="button" onClick={launchWhatsApp} className="rounded-full bg-[#ffd66b] px-6 py-3 text-[12px] font-black text-[#365665] transition hover:bg-[#f0cf61]">Open WhatsApp</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {giftTargetUser ? (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 px-4 py-6 backdrop-blur-md"
