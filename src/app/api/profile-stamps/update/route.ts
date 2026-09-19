@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createAdminSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ function getAdminClient() {
     throw new Error("Missing Supabase server environment variables.");
   }
 
-  return createClient(url, serviceRoleKey, {
+  return createAdminSupabaseClient(url, serviceRoleKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -75,6 +76,37 @@ export async function POST(request: Request) {
     const supabase = getAdminClient();
     const now = new Date().toISOString();
 
+    // Verify the logged-in user's real role server-side.
+    // Only master_admin may bypass the active-gift and same-day cooldown rules.
+    const authSupabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await authSupabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized." },
+        { status: 401 },
+      );
+    }
+
+    const { data: actorProfile, error: actorProfileError } = await supabase
+      .from("profiles")
+      .select("id, role, is_active")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (actorProfileError || !actorProfile || actorProfile.is_active === false) {
+      return NextResponse.json(
+        { ok: false, error: "Your profile could not be verified." },
+        { status: 403 },
+      );
+    }
+
+    const isMasterAdmin = String(actorProfile.role) === "master_admin";
+    const transactionStaffId = actorProfile.id;
+
     const { data: category, error: categoryError } = await supabase
       .from("loyalty_categories")
       .select("id,name")
@@ -102,7 +134,7 @@ export async function POST(request: Request) {
      * 3. These restrictions apply only when ADDING a stamp.
      * 4. Removing a stamp is always allowed when a stamp exists.
      */
-    if (direction > 0) {
+    if (direction > 0 && !isMasterAdmin) {
       const { data: activeReward, error: activeRewardError } = await supabase
         .from("rewards")
         .select("id")
@@ -296,7 +328,7 @@ export async function POST(request: Request) {
             amount: direction,
             stamp_count_before: currentCount,
             stamp_count_after: nextCount,
-            staff_id: staffId,
+            staff_id: transactionStaffId,
             note:
               direction > 0
                 ? null
@@ -457,7 +489,7 @@ export async function POST(request: Request) {
         stamp_count_after: 0,
 
         reward_id: reward?.id ?? null,
-        staff_id: staffId,
+        staff_id: transactionStaffId,
 
         note: `${rewardType} created after ${categoryName} card completion`,
         created_at: now,
