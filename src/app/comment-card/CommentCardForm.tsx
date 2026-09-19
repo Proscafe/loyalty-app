@@ -219,14 +219,39 @@ export function CommentCardForm() {
       if (cancelled || questionError || !data) return;
 
       const rawChoices = data.choices;
-      const choices = Array.isArray(rawChoices)
-        ? rawChoices
-        : typeof rawChoices === "string"
-          ? rawChoices
-              .split(/\\r?\\n/)
-              .map((choice) => choice.trim())
-              .filter(Boolean)
-          : [];
+
+      const choices = (() => {
+        if (Array.isArray(rawChoices)) {
+          return rawChoices.map((choice) => String(choice).trim()).filter(Boolean);
+        }
+
+        if (typeof rawChoices === "string") {
+          const value = rawChoices.trim();
+
+          if (!value) return [];
+
+          // Support choices saved as a JSON array as well as one-choice-per-line text.
+          if (value.startsWith("[") && value.endsWith("]")) {
+            try {
+              const parsed = JSON.parse(value);
+              if (Array.isArray(parsed)) {
+                return parsed
+                  .map((choice) => String(choice).trim())
+                  .filter(Boolean);
+              }
+            } catch {
+              // Fall through to newline parsing.
+            }
+          }
+
+          return value
+            .split(/\r?\n/)
+            .map((choice) => choice.trim())
+            .filter(Boolean);
+        }
+
+        return [];
+      })();
 
       setHearQuestionText(
         String(data.question_text || "How did you hear about us?").trim(),
