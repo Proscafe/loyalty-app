@@ -280,8 +280,6 @@ export async function POST(request: Request) {
         earned_at: now,
         created_at: now,
         expires_at: expiresAt,
-        expiry_date: expiresAt,
-        valid_until: expiresAt,
         source: "loyalty_card",
         source_label: categoryName,
       })

@@ -105,9 +105,13 @@ export async function POST(request: Request) {
     .from("stamp_transactions")
     .insert({
       client_id: clientId,
+      profile_id: clientId,
       category_id: categoryId,
+      action: "remove_stamp",
       action_type: "remove_stamp",
-      stamp_count: -1,
+      amount: -1,
+      stamp_count_before: currentCount,
+      stamp_count_after: nextCount,
       staff_id: user.id,
       created_at: now,
     })
