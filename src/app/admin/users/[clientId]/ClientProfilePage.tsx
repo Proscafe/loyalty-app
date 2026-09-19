@@ -304,6 +304,7 @@ export default function ClientProfilePage({
     Array<{ id: string; text: string; created_at: string; updated_at?: string }>
   >([]);
   const [lastContacted, setLastContacted] = useState<string | null>(null);
+  const [claimingGiftId, setClaimingGiftId] = useState<string | null>(null);
 
   function flash(message: string, nextTone: "success" | "error" = "success") {
     setTone(nextTone);
@@ -750,6 +751,76 @@ export default function ClientProfilePage({
     router.refresh();
   }
 
+  async function claimGift(reward: RewardRow) {
+    if (!profile?.id || claimingGiftId) return;
+
+    const status = String(reward.status ?? "").toLowerCase();
+    if (status !== "available") return;
+
+    setClaimingGiftId(reward.id);
+    const now = new Date().toISOString();
+
+    const { error: rewardError } = await supabase
+      .from("rewards")
+      .update({
+        status: "redeemed",
+        reward_status: "redeemed",
+        redeemed_at: now,
+      })
+      .eq("id", reward.id)
+      .eq("client_id", profile.id)
+      .eq("status", "available");
+
+    if (rewardError) {
+      setClaimingGiftId(null);
+      flash(rewardError.message, "error");
+      return;
+    }
+
+    const category = reward.category_id
+      ? categoryById.get(reward.category_id)
+      : null;
+    const categoryName = displayCategoryName(category?.name);
+
+    const { error: transactionError } = await supabase
+      .from("stamp_transactions")
+      .insert({
+        client_id: profile.id,
+        profile_id: profile.id,
+        category_id: reward.category_id ?? null,
+        category: categoryName,
+        action: "reward_redeemed",
+        action_type: "reward_redeemed",
+        amount: 0,
+        reward_id: reward.id,
+        staff_id: adminId,
+        note: `${normalizeRewardText(reward.reward_type)} claimed by admin`,
+        created_at: now,
+      });
+
+    if (transactionError) {
+      await supabase
+        .from("rewards")
+        .update({
+          status: "available",
+          reward_status: "available",
+          redeemed_at: null,
+        })
+        .eq("id", reward.id);
+
+      setClaimingGiftId(null);
+      flash(
+        `Gift claim was rolled back: ${transactionError.message}`,
+        "error",
+      );
+      return;
+    }
+
+    setClaimingGiftId(null);
+    flash("Gift claimed.");
+    router.refresh();
+  }
+
   async function updateStamp(categoryId: string, direction: 1 | -1) {
     if (!profile?.id) return;
 
@@ -1066,9 +1137,21 @@ export default function ClientProfilePage({
                       className="rounded-[18px] bg-white/10 p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-[15px] font-black text-white">
-                            {normalizeRewardText(reward.reward_type)}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <div className="truncate text-[15px] font-black text-white">
+                              {normalizeRewardText(reward.reward_type)}
+                            </div>
+                            {String(reward.status ?? "").toLowerCase() ===
+                              "redeemed" ||
+                            String(reward.status ?? "").toLowerCase() ===
+                              "claimed" ||
+                            reward.redeemed_at ? (
+                              <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-300">
+                                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                                Redeemed
+                              </span>
+                            ) : null}
                           </div>
                           <div className="mt-1 text-[11px] font-bold leading-5 text-white/64">
                             Earned{" "}
@@ -1083,11 +1166,20 @@ export default function ClientProfilePage({
                             ) : null}
                           </div>
                         </div>
-                        <span
-                          className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] ${statusPillClass(reward.status)}`}
-                        >
-                          {String(reward.status || "gift")}
-                        </span>
+
+                        {String(reward.status ?? "").toLowerCase() ===
+                        "available" ? (
+                          <button
+                            type="button"
+                            onClick={() => void claimGift(reward)}
+                            disabled={claimingGiftId === reward.id}
+                            className="shrink-0 rounded-full bg-[#ffd66b] px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665] transition disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {claimingGiftId === reward.id
+                              ? "Claiming..."
+                              : "Claim"}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ))}
