@@ -19,12 +19,17 @@ type CommentCardQuestion = {
   sort_order: number | null;
 };
 
-type Ratings = {
-  experience: number;
-  food: number;
-  service: number;
-  clean: number;
-  visitAgain: number;
+type RatingKey = "experience" | "food" | "service" | "clean" | "visitAgain";
+
+type Ratings = Record<RatingKey, number>;
+
+type RatingQuestionConfig = {
+  question_key: string;
+  question_text: string;
+  is_active: boolean;
+  is_required: boolean;
+  sort_order: number;
+  ratingKey: RatingKey;
 };
 
 type NormalizedPhoneResult = { valid: true; value: string } | { valid: false; message: string };
@@ -45,6 +50,32 @@ const LEBANON_PHONE_PREFIXES = [
   "79",
   "81",
 ];
+
+const RATING_QUESTION_MAP: Record<
+  string,
+  { ratingKey: RatingKey; fallback: string }
+> = {
+  experience_rating: {
+    ratingKey: "experience",
+    fallback: "How was your experience?",
+  },
+  food_rating: {
+    ratingKey: "food",
+    fallback: "How was the food?",
+  },
+  service_rating: {
+    ratingKey: "service",
+    fallback: "How was the service?",
+  },
+  cleanliness_rating: {
+    ratingKey: "clean",
+    fallback: "Was the place clean?",
+  },
+  visit_again_rating: {
+    ratingKey: "visitAgain",
+    fallback: "Would you visit again?",
+  },
+};
 
 function normalizeLebanonPhone(rawValue: string): NormalizedPhoneResult {
   const value = rawValue.trim();
@@ -161,6 +192,16 @@ export function CommentCardForm() {
   );
   const [hearQuestionActive, setHearQuestionActive] = useState(false);
   const [hearQuestionRequired, setHearQuestionRequired] = useState(false);
+  const [ratingQuestions, setRatingQuestions] = useState<RatingQuestionConfig[]>(
+    Object.entries(RATING_QUESTION_MAP).map(([question_key, config], index) => ({
+      question_key,
+      question_text: config.fallback,
+      is_active: true,
+      is_required: true,
+      sort_order: index,
+      ratingKey: config.ratingKey,
+    })),
+  );
   const [comments, setComments] = useState("");
   const dayOptions = Array.from({ length: 31 }, (_, index) =>
     String(index + 1).padStart(2, "0"),
@@ -209,18 +250,51 @@ export function CommentCardForm() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadHearAboutUsQuestion() {
+    async function loadQuestionSettings() {
+      const keys = [...Object.keys(RATING_QUESTION_MAP), "heard_about_us"];
+
       const { data, error: questionError } = await supabase
         .from("comment_card_questions")
         .select(
           "id, question_key, question_text, question_type, options, is_active, is_required, sort_order",
         )
-        .eq("question_key", "heard_about_us")
-        .maybeSingle<CommentCardQuestion>();
+        .in("question_key", keys)
+        .order("sort_order", { ascending: true });
 
-      if (cancelled) return;
+      if (cancelled || questionError || !Array.isArray(data)) return;
 
-      if (questionError || !data) {
+      const byKey = new Map(
+        data.map((question) => [
+          String(question.question_key),
+          question as CommentCardQuestion,
+        ]),
+      );
+
+      const nextRatingQuestions = Object.entries(RATING_QUESTION_MAP)
+        .map(([questionKey, config], index) => {
+          const question = byKey.get(questionKey);
+
+          return {
+            question_key: questionKey,
+            question_text: String(
+              question?.question_text || config.fallback,
+            ).trim(),
+            is_active: question ? question.is_active === true : true,
+            is_required: question ? question.is_required === true : true,
+            sort_order:
+              typeof question?.sort_order === "number"
+                ? question.sort_order
+                : index,
+            ratingKey: config.ratingKey,
+          } satisfies RatingQuestionConfig;
+        })
+        .sort((a, b) => a.sort_order - b.sort_order);
+
+      setRatingQuestions(nextRatingQuestions);
+
+      const hearQuestion = byKey.get("heard_about_us");
+
+      if (!hearQuestion) {
         setHearQuestionActive(false);
         setHearQuestionRequired(false);
         setHearOptions([]);
@@ -228,7 +302,7 @@ export function CommentCardForm() {
         return;
       }
 
-      const rawOptions = data.options;
+      const rawOptions = hearQuestion.options;
       const choices = Array.isArray(rawOptions)
         ? rawOptions.map((option) => String(option).trim()).filter(Boolean)
         : typeof rawOptions === "string"
@@ -239,22 +313,20 @@ export function CommentCardForm() {
           : [];
 
       setHearQuestionText(
-        String(data.question_text || "How did you hear about us?").trim(),
+        String(
+          hearQuestion.question_text || "How did you hear about us?",
+        ).trim(),
       );
-      setHearQuestionActive(data.is_active === true);
-      setHearQuestionRequired(data.is_required === true);
-      setHearOptions(
-        choices
-          .map((choice) => String(choice).trim())
-          .filter(Boolean),
-      );
+      setHearQuestionActive(hearQuestion.is_active === true);
+      setHearQuestionRequired(hearQuestion.is_required === true);
+      setHearOptions(choices);
 
-      if (data.is_active !== true) {
+      if (hearQuestion.is_active !== true) {
         setHearAboutUs("");
       }
     }
 
-    void loadHearAboutUsQuestion();
+    void loadQuestionSettings();
 
     return () => {
       cancelled = true;
@@ -299,10 +371,15 @@ export function CommentCardForm() {
     setError(null);
     setInfo(null);
 
-    const missingRating = Object.values(ratings).some((rating) => rating === 0);
+    const missingRequiredRating = ratingQuestions.some(
+      (question) =>
+        question.is_active &&
+        question.is_required &&
+        ratings[question.ratingKey] === 0,
+    );
 
-    if (missingRating) {
-      setError("Please select stars for all questions.");
+    if (missingRequiredRating) {
+      setError("Please select stars for all required questions.");
       return;
     }
 
@@ -435,35 +512,16 @@ export function CommentCardForm() {
           </div>
         </div>
 
-        <StarRating
-          label="How was your experience?"
-          value={ratings.experience}
-          onChange={(value) => updateRating("experience", value)}
-        />
-
-        <StarRating
-          label="How was the food?"
-          value={ratings.food}
-          onChange={(value) => updateRating("food", value)}
-        />
-
-        <StarRating
-          label="How was the service?"
-          value={ratings.service}
-          onChange={(value) => updateRating("service", value)}
-        />
-
-        <StarRating
-          label="Was the place clean?"
-          value={ratings.clean}
-          onChange={(value) => updateRating("clean", value)}
-        />
-
-        <StarRating
-          label="Would you visit again?"
-          value={ratings.visitAgain}
-          onChange={(value) => updateRating("visitAgain", value)}
-        />
+        {ratingQuestions
+          .filter((question) => question.is_active)
+          .map((question) => (
+            <StarRating
+              key={question.question_key}
+              label={`${question.question_text}${question.is_required ? "*" : ""}`}
+              value={ratings[question.ratingKey]}
+              onChange={(value) => updateRating(question.ratingKey, value)}
+            />
+          ))}
 
         {hearQuestionActive ? (
           <div>
