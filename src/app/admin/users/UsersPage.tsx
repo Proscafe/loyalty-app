@@ -1362,7 +1362,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       "_blank",
       "noopener,noreferrer",
     );
-    markCustomerContacted(whatsAppTargetUser);
+    void markCustomerContacted(whatsAppTargetUser);
     closeWhatsAppComposer();
   }
 
@@ -1376,18 +1376,26 @@ export function UsersPage({ adminId }: { adminId: string }) {
     phone?: string | null,
     email?: string | null,
     fallback?: string | null,
+    clientId?: string | null,
   ) {
     const keys: string[] = [];
+
+    const stableClientId = String(clientId ?? "").trim();
+    if (stableClientId) keys.push(`contact-client-${stableClientId}`);
+
     const phoneKey = normalizePhoneForMatch(phone);
     if (phoneKey) keys.push(`contact-phone-${phoneKey}`);
+
     const emailKey = (email ?? "").trim().toLowerCase();
     if (emailKey) keys.push(`contact-email-${emailKey}`);
+
     const fallbackKey = (fallback ?? "")
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
     if (fallbackKey) keys.push(`contact-name-${fallbackKey}`);
+
     return Array.from(new Set(keys.length ? keys : ["contact-unknown"]));
   }
 
@@ -1398,19 +1406,23 @@ export function UsersPage({ adminId }: { adminId: string }) {
       .slice(0, 20);
   }
 
-  function markCustomerContacted(user: AdminUser) {
+  async function markCustomerContacted(user: AdminUser) {
     const keys = sharedContactKeys(
       user.phone,
       user.email,
       user.full_name || user.id,
+      user.id,
     );
     const date = new Date().toISOString();
     const previous = contactHistoryForKeys(keys);
     const saved = [date, ...previous].slice(0, 20);
     const next = { ...contactHistory };
-    keys.forEach((k) => {
-      next[k] = saved;
+
+    keys.forEach((key) => {
+      next[key] = saved;
     });
+
+    // Optimistic UI + browser fallback.
     setContactHistory(next);
     try {
       window.localStorage.setItem(
@@ -1418,17 +1430,41 @@ export function UsersPage({ adminId }: { adminId: string }) {
         JSON.stringify(next),
       );
     } catch {}
-    void fetch("/api/admin/contact-history", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        keys,
-        contacted_at: date,
-        source: "Customer behavior",
-        source_id: user.id,
-      }),
-    }).catch(() => {});
-    flash("Contact saved.");
+
+    try {
+      const response = await fetch("/api/admin/contact-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          keys,
+          contacted_at: date,
+          source: "Customer behavior",
+          source_id: user.id,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        flash(
+          payload.error || "Contact was not saved to the database.",
+          "error",
+        );
+        return;
+      }
+
+      flash("Contact saved.");
+    } catch (error) {
+      flash(
+        error instanceof Error
+          ? error.message
+          : "Contact was not saved to the database.",
+        "error",
+      );
+    }
   }
 
   useEffect(() => {
@@ -1440,30 +1476,78 @@ export function UsersPage({ adminId }: { adminId: string }) {
         setContactHistory(JSON.parse(stored) as Record<string, string[]>);
     } catch {}
     fetch("/api/admin/contact-history", { cache: "no-store" })
-      .then((r) => r.json())
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error || "Could not load persisted contact history.",
+          );
+        }
+
+        return data;
+      })
       .then((data: any) => {
-        if (data?.history) {
-          setContactHistory((prev) => {
-            const merged: Record<string, string[]> = { ...prev };
-            Object.entries(data.history as Record<string, string[]>).forEach(
-              ([k, dates]) => {
-                const existing = merged[k] ?? [];
-                merged[k] = Array.from(new Set([...existing, ...dates]))
-                  .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-                  .slice(0, 20);
-              },
-            );
-            try {
-              window.localStorage.setItem(
-                "proscafe_users_contact_history",
-                JSON.stringify(merged),
-              );
-            } catch {}
-            return merged;
+        const serverHistory: Record<string, string[]> = {
+          ...(data?.history ?? {}),
+        };
+
+        if (Array.isArray(data?.rows)) {
+          data.rows.forEach((row: any) => {
+            const key = String(row?.contact_key ?? "").trim();
+            const date = String(
+              row?.contacted_at ?? row?.created_at ?? "",
+            ).trim();
+
+            if (!key || !date) return;
+
+            serverHistory[key] = Array.from(
+              new Set([...(serverHistory[key] ?? []), date]),
+            )
+              .sort(
+                (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+              )
+              .slice(0, 20);
+
+            const sourceId = String(row?.source_id ?? "").trim();
+            if (sourceId) {
+              const clientKey = `contact-client-${sourceId}`;
+              serverHistory[clientKey] = Array.from(
+                new Set([...(serverHistory[clientKey] ?? []), date]),
+              )
+                .sort(
+                  (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+                )
+                .slice(0, 20);
+            }
           });
         }
+
+        setContactHistory((prev) => {
+          const merged: Record<string, string[]> = { ...prev };
+
+          Object.entries(serverHistory).forEach(([key, dates]) => {
+            const existing = merged[key] ?? [];
+            merged[key] = Array.from(new Set([...existing, ...dates]))
+              .sort(
+                (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+              )
+              .slice(0, 20);
+          });
+
+          try {
+            window.localStorage.setItem(
+              "proscafe_users_contact_history",
+              JSON.stringify(merged),
+            );
+          } catch {}
+
+          return merged;
+        });
       })
-      .catch(() => {});
+      .catch((error) => {
+        console.error("[UsersPage] contact history error:", error);
+      });
   }, []);
 
   // ── Data loading — uses Supabase client directly, same as AdminDashboard ────
@@ -2823,11 +2907,13 @@ export function UsersPage({ adminId }: { adminId: string }) {
           a.user.phone,
           a.user.email,
           a.user.full_name || a.user.id,
+          a.user.id,
         );
         const bKeys = sharedContactKeys(
           b.user.phone,
           b.user.email,
           b.user.full_name || b.user.id,
+          b.user.id,
         );
         const aLastContacted = contactHistoryForKeys(aKeys)[0] ?? null;
         const bLastContacted = contactHistoryForKeys(bKeys)[0] ?? null;
@@ -2939,11 +3025,13 @@ export function UsersPage({ adminId }: { adminId: string }) {
           a.user.phone,
           a.user.email,
           a.user.full_name || a.user.id,
+          a.user.id,
         );
         const bKeys = sharedContactKeys(
           b.user.phone,
           b.user.email,
           b.user.full_name || b.user.id,
+          b.user.id,
         );
         const aLastContacted = contactHistoryForKeys(aKeys)[0] ?? null;
         const bLastContacted = contactHistoryForKeys(bKeys)[0] ?? null;
@@ -3605,6 +3693,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                         row.user.phone,
                         row.user.email,
                         row.user.full_name || row.user.id,
+                        row.user.id,
                       );
                       const lastContacted = contactHistoryForKeys(contactKeys)[0] ?? null;
                       const customerScore =
@@ -3713,7 +3802,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                markCustomerContacted(row.user);
+                                void markCustomerContacted(row.user);
                               }}
                               className="rounded-full bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.1em] text-[#365665]"
                             >
@@ -3726,6 +3815,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                                 row.user.phone,
                                 row.user.email,
                                 row.user.full_name || row.user.id,
+                                row.user.id,
                               );
                               const dates = contactHistoryForKeys(keys).slice(
                                 0,
