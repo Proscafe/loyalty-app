@@ -48,7 +48,10 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as RemoveStampBody;
   } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid request body." },
+      { status: 400 },
+    );
   }
 
   const clientId = String(body.client_id ?? "").trim();
@@ -98,7 +101,10 @@ export async function POST(request: Request) {
     .eq("stamp_count", currentCount);
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: updateError.message },
+      { status: 500 },
+    );
   }
 
   const { data: transaction, error: transactionError } = await supabase
@@ -107,19 +113,26 @@ export async function POST(request: Request) {
       client_id: clientId,
       profile_id: clientId,
       category_id: categoryId,
+
+      // Keep the exact action so the app knows this was a removal.
       action: "remove_stamp",
-      action_type: "remove_stamp",
+
+      // Database CHECK constraint allows:
+      // add_stamp, reward_earned, reward_redeemed, manual_adjustment
+      action_type: "manual_adjustment",
+
       amount: -1,
       stamp_count_before: currentCount,
       stamp_count_after: nextCount,
       staff_id: user.id,
+      note: "Stamp removed manually by admin/staff",
       created_at: now,
     })
     .select("*")
     .single();
 
   if (transactionError) {
-    // Restore the original count when the audit row cannot be saved.
+    // Restore the original count if the audit transaction cannot be saved.
     await supabase
       .from("client_stamps")
       .update({
@@ -130,7 +143,9 @@ export async function POST(request: Request) {
       .eq("category_id", categoryId);
 
     return NextResponse.json(
-      { error: `Stamp removal was rolled back: ${transactionError.message}` },
+      {
+        error: `Stamp removal was rolled back: ${transactionError.message}`,
+      },
       { status: 500 },
     );
   }
