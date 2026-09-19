@@ -2174,6 +2174,33 @@ export function UsersPage({ adminId }: { adminId: string }) {
     await openUserProfile(selectedUser);
   }
 
+  // ── Customer behavior segment rules ─────────────────────────────────────────
+
+  function isNewCustomer(row: { user: AdminUser; totalVisits: number }) {
+    const createdAt = (row.user as any).created_at as string | null | undefined;
+    if (!createdAt) return false;
+    const createdMs = new Date(createdAt).getTime();
+    if (!Number.isFinite(createdMs)) return false;
+    const ageDays = Math.floor((Date.now() - createdMs) / 86400000);
+    return ageDays >= 0 && ageDays <= 7 && row.totalVisits <= 1;
+  }
+
+  function isOneTimeCustomer(row: { user: AdminUser; totalVisits: number }) {
+    return row.totalVisits === 1 && !isNewCustomer(row);
+  }
+
+  function isInactive30To59(row: { daysSinceLastVisit: number | null }) {
+    return (
+      row.daysSinceLastVisit !== null &&
+      row.daysSinceLastVisit >= 30 &&
+      row.daysSinceLastVisit < 60
+    );
+  }
+
+  function isLostCustomer(row: { daysSinceLastVisit: number | null }) {
+    return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 60;
+  }
+
   // ── Filtering & sorting ──────────────────────────────────────────────────────
 
   const customerReportRows = useMemo(() => {
@@ -2420,20 +2447,20 @@ export function UsersPage({ adminId }: { adminId: string }) {
           return false;
         if (smartSegment === "from_games" && !fromGamesUserIds.has(user.id))
           return false;
-        if (smartSegment === "new" && row.totalVisits > 1) return false;
+        if (smartSegment === "new" && !isNewCustomer(row)) return false;
         if (smartSegment === "returning" && row.totalVisits <= 1) return false;
-        if (smartSegment === "one_time" && row.totalVisits !== 1) return false;
+        if (smartSegment === "one_time" && !isOneTimeCustomer(row)) return false;
         if (smartSegment === "high_spenders" && row.lifetimeValue < 100)
           return false;
         if (
           smartSegment === "inactive_30" &&
-          (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 30)
+          !isInactive30To59(row)
         )
           return false;
         if (smartSegment === "at_risk" && !row.isAtRisk) return false;
         if (
           smartSegment === "lost" &&
-          (row.daysSinceLastVisit === null || row.daysSinceLastVisit < 60)
+          !isLostCustomer(row)
         )
           return false;
       }
@@ -2443,8 +2470,17 @@ export function UsersPage({ adminId }: { adminId: string }) {
       if (isClient) {
         const created = (user as any).created_at;
         if (
-          smartSegment !== "from_games" &&
+          (smartSegment === "all" || smartSegment === "new") &&
           !isWithinDesktopTimeRange(created, timeRange, rangeStart, rangeEnd)
+        )
+          return false;
+
+        if (
+          smartSegment !== "all" &&
+          smartSegment !== "new" &&
+          smartSegment !== "from_games" &&
+          timeRange !== "all" &&
+          !isWithinDesktopTimeRange(row.lastVisit, timeRange, rangeStart, rangeEnd)
         )
           return false;
         if (
@@ -2685,7 +2721,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
       );
     }
 
-    return dateScopedCustomerRows;
+    if (smartSegment === "all" || smartSegment === "new") {
+      return dateScopedCustomerRows;
+    }
+
+    return timeRange === "all" ? customerReportRows : activityScopedCustomerRows;
   }, [
     activityScopedCustomerRows,
     customerReportRows,
@@ -2702,15 +2742,14 @@ export function UsersPage({ adminId }: { adminId: string }) {
         smartSegment === "from_games"
       )
         return true;
-      if (smartSegment === "new") return row.totalVisits <= 1;
+      if (smartSegment === "new") return isNewCustomer(row);
       if (smartSegment === "returning") return row.totalVisits > 1;
-      if (smartSegment === "one_time") return row.totalVisits === 1;
+      if (smartSegment === "one_time") return isOneTimeCustomer(row);
       if (smartSegment === "high_spenders") return row.lifetimeValue >= 100;
       if (smartSegment === "inactive_30")
-        return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 30;
+        return isInactive30To59(row);
       if (smartSegment === "at_risk") return row.isAtRisk;
-      if (smartSegment === "lost")
-        return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 60;
+      if (smartSegment === "lost") return isLostCustomer(row);
       return true;
     });
   }, [baseSegmentRows, smartSegment]);
@@ -2740,6 +2779,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
       : "0";
 
   const segmentBaseRows = dateScopedCustomerRows;
+  const behaviorSegmentRows =
+    timeRange === "all" ? customerReportRows : activityScopedCustomerRows;
   const activeSegmentCount = activityScopedCustomerRows.filter(
     (r) => r.lastVisit && !r.inactive,
   ).length;
@@ -2753,41 +2794,37 @@ export function UsersPage({ adminId }: { adminId: string }) {
     {
       key: "new" as const,
       label: "New customers",
-      count: segmentBaseRows.filter((r) => r.totalVisits <= 1).length,
+      count: segmentBaseRows.filter((r) => isNewCustomer(r)).length,
     },
     {
       key: "returning" as const,
       label: "Returning customers",
-      count: segmentBaseRows.filter((r) => r.totalVisits > 1).length,
+      count: behaviorSegmentRows.filter((r) => r.totalVisits > 1).length,
     },
     {
       key: "one_time" as const,
       label: "One-time visitors",
-      count: segmentBaseRows.filter((r) => r.totalVisits === 1).length,
+      count: behaviorSegmentRows.filter((r) => isOneTimeCustomer(r)).length,
     },
     {
       key: "high_spenders" as const,
       label: "High spenders",
-      count: segmentBaseRows.filter((r) => r.lifetimeValue >= 100).length,
+      count: behaviorSegmentRows.filter((r) => r.lifetimeValue >= 100).length,
     },
     {
       key: "inactive_30" as const,
-      label: "Inactive 30+ days",
-      count: segmentBaseRows.filter(
-        (r) => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 30,
-      ).length,
+      label: "Inactive 30–59 days",
+      count: behaviorSegmentRows.filter((r) => isInactive30To59(r)).length,
     },
     {
       key: "at_risk" as const,
       label: "At risk",
-      count: segmentBaseRows.filter((r) => r.isAtRisk).length,
+      count: behaviorSegmentRows.filter((r) => r.isAtRisk).length,
     },
     {
       key: "lost" as const,
       label: "Lost customers",
-      count: segmentBaseRows.filter(
-        (r) => r.daysSinceLastVisit !== null && r.daysSinceLastVisit >= 60,
-      ).length,
+      count: behaviorSegmentRows.filter((r) => isLostCustomer(r)).length,
     },
     { key: "from_games" as const, label: "From games", count: fromGamesCount },
   ];
