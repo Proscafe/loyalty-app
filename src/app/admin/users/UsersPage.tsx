@@ -2323,14 +2323,130 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   // ── Filtering & sorting ──────────────────────────────────────────────────────
 
+  const scopedActivityByUser = useMemo(() => {
+    const visitDaysByUser = new Map<string, Set<string>>();
+    const spendByUser = new Map<string, number>();
+    const giftsByUser = new Map<string, number>();
+    const priceByCategory = new Map<string, number>();
+
+    categories.forEach((category) => {
+      priceByCategory.set(
+        category.id,
+        parseMoneyValue(category.average_price),
+      );
+    });
+
+    activityTxns.forEach((txn: any) => {
+      if (!txn.client_id) return;
+
+      if (
+        !isWithinDesktopTimeRange(
+          txn.created_at,
+          timeRange,
+          rangeStart,
+          rangeEnd,
+        )
+      ) {
+        return;
+      }
+
+      const actionType = String(txn.action_type ?? "").toLowerCase();
+      const action = String(txn.action ?? "").toLowerCase();
+      const amount = Number(txn.amount ?? txn.stamp_count ?? 0);
+      const isAddedStamp =
+        actionType === "add_stamp" || action === "add_stamp";
+      const isRemovedStamp =
+        actionType === "remove_stamp" ||
+        action === "remove_stamp" ||
+        (actionType === "manual_adjustment" && amount < 0);
+
+      if (isAddedStamp) {
+        const key = desktopVisitDayKey(txn.created_at);
+
+        if (key) {
+          if (!visitDaysByUser.has(txn.client_id)) {
+            visitDaysByUser.set(txn.client_id, new Set());
+          }
+          visitDaysByUser.get(txn.client_id)!.add(key);
+        }
+      }
+
+      const price = priceByCategory.get(txn.category_id ?? "") ?? 0;
+      const currentSpend = spendByUser.get(txn.client_id) ?? 0;
+
+      if (isAddedStamp) {
+        spendByUser.set(txn.client_id, currentSpend + price);
+      } else if (isRemovedStamp) {
+        spendByUser.set(txn.client_id, Math.max(0, currentSpend - price));
+      }
+    });
+
+    rewardRows.forEach((reward: any) => {
+      if (!reward.client_id) return;
+
+      const rewardDate =
+        reward.earned_at ??
+        reward.created_at ??
+        reward.redeemed_at ??
+        null;
+
+      if (
+        !isWithinDesktopTimeRange(
+          rewardDate,
+          timeRange,
+          rangeStart,
+          rangeEnd,
+        )
+      ) {
+        return;
+      }
+
+      giftsByUser.set(
+        reward.client_id,
+        (giftsByUser.get(reward.client_id) ?? 0) + 1,
+      );
+    });
+
+    return {
+      visitsFor(clientId: string) {
+        return visitDaysByUser.get(clientId)?.size ?? 0;
+      },
+      spendFor(clientId: string) {
+        return spendByUser.get(clientId) ?? 0;
+      },
+      giftsFor(clientId: string) {
+        return giftsByUser.get(clientId) ?? 0;
+      },
+    };
+  }, [
+    activityTxns,
+    categories,
+    rewardRows,
+    timeRange,
+    rangeStart,
+    rangeEnd,
+  ]);
+
   const customerReportRows = useMemo(() => {
     return users
       .filter((u) => u.role === "client")
       .map((user) => {
         // Use server-enriched fields from /api/admin/users
         const totalVisits = user.totalVisits ?? 0;
+        const scopedVisits =
+          timeRange === "all"
+            ? totalVisits
+            : scopedActivityByUser.visitsFor(user.id);
+        const scopedSpend =
+          timeRange === "all"
+            ? user.lifetimeValue ?? 0
+            : scopedActivityByUser.spendFor(user.id);
         const lastVisit = user.lastVisit ?? null;
         const giftsCount = user.giftsCount ?? 0;
+        const scopedGifts =
+          timeRange === "all"
+            ? giftsCount
+            : scopedActivityByUser.giftsFor(user.id);
         const lifetimeValue = user.lifetimeValue ?? 0;
         const age = getAgeFromBirthday(getBirthdayValue(user));
 
@@ -2369,7 +2485,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
           lastVisit,
           daysSinceLastVisit,
           totalVisits,
+          scopedVisits,
+          scopedSpend,
           giftsCount,
+          scopedGifts,
           lifetimeValue,
           value: lifetimeValue,
           age,
@@ -2379,13 +2498,25 @@ export function UsersPage({ adminId }: { adminId: string }) {
           isInactive: inactive,
         };
       });
-  }, [users]);
+  }, [users, scopedActivityByUser, timeRange]);
 
   const allProfileReportRows = useMemo(() => {
     return users.map((user) => {
       const totalVisits = user.totalVisits ?? 0;
+      const scopedVisits =
+        timeRange === "all"
+          ? totalVisits
+          : scopedActivityByUser.visitsFor(user.id);
+      const scopedSpend =
+        timeRange === "all"
+          ? user.lifetimeValue ?? 0
+          : scopedActivityByUser.spendFor(user.id);
       const lastVisit = user.lastVisit ?? null;
       const giftsCount = user.giftsCount ?? 0;
+      const scopedGifts =
+        timeRange === "all"
+          ? giftsCount
+          : scopedActivityByUser.giftsFor(user.id);
       const lifetimeValue = user.lifetimeValue ?? 0;
       const age = getAgeFromBirthday(getBirthdayValue(user));
 
@@ -2423,7 +2554,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
         lastVisit,
         daysSinceLastVisit,
         totalVisits,
+        scopedVisits,
+        scopedSpend,
         giftsCount,
+        scopedGifts,
         lifetimeValue,
         value: lifetimeValue,
         age,
@@ -2433,7 +2567,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
         isInactive: inactive,
       };
     });
-  }, [users]);
+  }, [users, scopedActivityByUser, timeRange]);
 
   const fromGamesUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2723,16 +2857,16 @@ export function UsersPage({ adminId }: { adminId: string }) {
           dir
         );
       if (customerSort.key === "visits")
-        return (a.totalVisits - b.totalVisits) * dir;
+        return (a.scopedVisits - b.scopedVisits) * dir;
       if (customerSort.key === "avgSpent") {
-        const aAvg = a.totalVisits > 0 ? a.lifetimeValue / a.totalVisits : 0;
-        const bAvg = b.totalVisits > 0 ? b.lifetimeValue / b.totalVisits : 0;
+        const aAvg = a.scopedVisits > 0 ? a.scopedSpend / a.scopedVisits : 0;
+        const bAvg = b.scopedVisits > 0 ? b.scopedSpend / b.scopedVisits : 0;
         return (aAvg - bAvg) * dir;
       }
       if (customerSort.key === "lifetime")
         return (a.lifetimeValue - b.lifetimeValue) * dir;
       if (customerSort.key === "gifts")
-        return (a.giftsCount - b.giftsCount) * dir;
+        return (a.scopedGifts - b.scopedGifts) * dir;
       if (customerSort.key === "status")
         return (Number(a.isInactive) - Number(b.isInactive)) * dir;
       return 0;
@@ -2834,16 +2968,16 @@ export function UsersPage({ adminId }: { adminId: string }) {
           dir
         );
       if (customerSort.key === "visits")
-        return (a.totalVisits - b.totalVisits) * dir;
+        return (a.scopedVisits - b.scopedVisits) * dir;
       if (customerSort.key === "avgSpent") {
-        const aAvg = a.totalVisits > 0 ? a.lifetimeValue / a.totalVisits : 0;
-        const bAvg = b.totalVisits > 0 ? b.lifetimeValue / b.totalVisits : 0;
+        const aAvg = a.scopedVisits > 0 ? a.scopedSpend / a.scopedVisits : 0;
+        const bAvg = b.scopedVisits > 0 ? b.scopedSpend / b.scopedVisits : 0;
         return (aAvg - bAvg) * dir;
       }
       if (customerSort.key === "lifetime")
         return (a.lifetimeValue - b.lifetimeValue) * dir;
       if (customerSort.key === "gifts")
-        return (a.giftsCount - b.giftsCount) * dir;
+        return (a.scopedGifts - b.scopedGifts) * dir;
       if (customerSort.key === "status")
         return (Number(a.isInactive) - Number(b.isInactive)) * dir;
       return 0;
@@ -3033,12 +3167,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
           desktopRoleLabel(r.user.role),
           r.lastVisit ? new Date(r.lastVisit).toLocaleDateString() : "",
           r.daysSinceLastVisit ?? "",
-          r.totalVisits,
+          r.scopedVisits,
           desktopFormatMoney(
-            r.totalVisits > 0 ? r.lifetimeValue / r.totalVisits : 0,
+            r.scopedVisits > 0 ? r.scopedSpend / r.scopedVisits : 0,
           ),
           desktopFormatMoney(r.lifetimeValue),
-          r.giftsCount,
+          r.scopedGifts,
           daysAgoStatusLabel(r.daysSinceLastVisit),
         ].join(","),
       )
@@ -3378,7 +3512,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             {desktopFormatDateOnly(row.lastVisit)}
                           </div>
                           <div className="font-black text-white">
-                            {row.totalVisits}
+                            {row.scopedVisits}
                           </div>
                           <div>
                             <span
@@ -3523,12 +3657,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             </span>
                           </div>
                           <div className="font-black text-white">
-                            {row.totalVisits}
+                            {row.scopedVisits}
                           </div>
                           <div className="font-black text-white">
                             {desktopFormatMoney(
-                              row.totalVisits > 0
-                                ? row.lifetimeValue / row.totalVisits
+                              row.scopedVisits > 0
+                                ? row.scopedSpend / row.scopedVisits
                                 : 0,
                             )}
                           </div>
@@ -3536,7 +3670,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             {desktopFormatMoney(row.lifetimeValue)}
                           </div>
                           <div className="font-black text-white">
-                            {row.giftsCount}
+                            {row.scopedGifts}
                           </div>
                           <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
                             {row.user.role === "client" &&
