@@ -6,14 +6,17 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-const HEAR_OPTIONS = [
-  "Social Media",
-  "Friend or Family",
-  "Google",
-  "Other",
-] as const;
+type HearOption = string;
 
-type HearOption = "" | (typeof HEAR_OPTIONS)[number];
+type CommentCardQuestion = {
+  id: string;
+  question_key: string;
+  question_text: string;
+  question_type: string;
+  choices: string[] | string | null;
+  is_active: boolean | null;
+  sort_order: number | null;
+};
 
 type Ratings = {
   experience: number;
@@ -151,6 +154,10 @@ export function CommentCardForm() {
   const [birthMonth, setBirthMonth] = useState("");
   const [birthYear, setBirthYear] = useState("");
   const [hearAboutUs, setHearAboutUs] = useState<HearOption>("");
+  const [hearOptions, setHearOptions] = useState<string[]>([]);
+  const [hearQuestionText, setHearQuestionText] = useState(
+    "How did you hear about us?",
+  );
   const [comments, setComments] = useState("");
   const dayOptions = Array.from({ length: 31 }, (_, index) =>
     String(index + 1).padStart(2, "0"),
@@ -195,6 +202,48 @@ export function CommentCardForm() {
   function updateRating(key: keyof Ratings, value: number) {
     setRatings((current) => ({ ...current, [key]: value }));
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHearAboutUsQuestion() {
+      const { data, error: questionError } = await supabase
+        .from("comment_card_questions")
+        .select(
+          "id, question_key, question_text, question_type, choices, is_active, sort_order",
+        )
+        .eq("question_key", "heard_about_us")
+        .eq("is_active", true)
+        .maybeSingle<CommentCardQuestion>();
+
+      if (cancelled || questionError || !data) return;
+
+      const rawChoices = data.choices;
+      const choices = Array.isArray(rawChoices)
+        ? rawChoices
+        : typeof rawChoices === "string"
+          ? rawChoices
+              .split(/\\r?\\n/)
+              .map((choice) => choice.trim())
+              .filter(Boolean)
+          : [];
+
+      setHearQuestionText(
+        String(data.question_text || "How did you hear about us?").trim(),
+      );
+      setHearOptions(
+        choices
+          .map((choice) => String(choice).trim())
+          .filter(Boolean),
+      );
+    }
+
+    void loadHearAboutUsQuestion();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   useEffect(() => {
     if (!hearSheetOpen) return;
@@ -402,7 +451,7 @@ export function CommentCardForm() {
 
         <div>
           <label className={labelClass} htmlFor="heard_about_us_button">
-            How did you hear about us?
+            {hearQuestionText}
           </label>
 
           <button
@@ -460,7 +509,7 @@ export function CommentCardForm() {
           onClick={() => setHearSheetOpen(false)}
           role="dialog"
           aria-modal="true"
-          aria-label="Choose how you heard about us"
+          aria-label={hearQuestionText}
         >
           <div
             className="w-full rounded-[28px] bg-white p-4 pb-5 text-[#182f38] shadow-[0_-18px_70px_rgba(0,0,0,0.24)]"
@@ -470,7 +519,7 @@ export function CommentCardForm() {
 
             <div className="mb-3 flex items-center justify-between px-1">
               <h2 className="font-raleway text-[18px] font-black tracking-[-0.03em] text-[#182f38]">
-                How did you hear about us?
+                {hearQuestionText}
               </h2>
               <button
                 type="button"
@@ -483,7 +532,7 @@ export function CommentCardForm() {
             </div>
 
             <div className="space-y-2">
-              {HEAR_OPTIONS.map((option) => {
+              {hearOptions.map((option) => {
                 const selected = hearAboutUs === option;
 
                 return (
