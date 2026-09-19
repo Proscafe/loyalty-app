@@ -14,6 +14,7 @@ type CommentCardQuestion = {
   question_text: string;
   question_type: string;
   options: string[] | string | null;
+  is_required: boolean | null;
   is_active: boolean | null;
   sort_order: number | null;
 };
@@ -158,6 +159,8 @@ export function CommentCardForm() {
   const [hearQuestionText, setHearQuestionText] = useState(
     "How did you hear about us?",
   );
+  const [hearQuestionActive, setHearQuestionActive] = useState(false);
+  const [hearQuestionRequired, setHearQuestionRequired] = useState(false);
   const [comments, setComments] = useState("");
   const dayOptions = Array.from({ length: 31 }, (_, index) =>
     String(index + 1).padStart(2, "0"),
@@ -210,51 +213,45 @@ export function CommentCardForm() {
       const { data, error: questionError } = await supabase
         .from("comment_card_questions")
         .select(
-          "id, question_key, question_text, question_type, options, is_active, sort_order",
+          "id, question_key, question_text, question_type, options, is_active, is_required, sort_order",
         )
         .eq("question_key", "heard_about_us")
-        .eq("is_active", true)
         .maybeSingle<CommentCardQuestion>();
 
-      if (cancelled || questionError || !data) return;
+      if (cancelled) return;
+
+      if (questionError || !data) {
+        setHearQuestionActive(false);
+        setHearQuestionRequired(false);
+        setHearOptions([]);
+        setHearAboutUs("");
+        return;
+      }
 
       const rawOptions = data.options;
-
       const choices = Array.isArray(rawOptions)
         ? rawOptions.map((option) => String(option).trim()).filter(Boolean)
         : typeof rawOptions === "string"
-          ? (() => {
-              const value = rawOptions.trim();
-
-              if (!value) return [];
-
-              try {
-                const parsed = JSON.parse(value);
-
-                if (Array.isArray(parsed)) {
-                  return parsed
-                    .map((option) => String(option).trim())
-                    .filter(Boolean);
-                }
-              } catch {
-                // If it is plain text, fall back to one option per line.
-              }
-
-              return value
-                .split(/\r?\n/)
-                .map((option) => option.trim())
-                .filter(Boolean);
-            })()
+          ? rawOptions
+              .split(/\r?\n/)
+              .map((option) => option.trim())
+              .filter(Boolean)
           : [];
 
       setHearQuestionText(
         String(data.question_text || "How did you hear about us?").trim(),
       );
+      setHearQuestionActive(data.is_active === true);
+      setHearQuestionRequired(data.is_required === true);
       setHearOptions(
         choices
           .map((choice) => String(choice).trim())
           .filter(Boolean),
       );
+
+      if (data.is_active !== true) {
+        setHearAboutUs("");
+      }
     }
 
     void loadHearAboutUsQuestion();
@@ -309,8 +306,8 @@ export function CommentCardForm() {
       return;
     }
 
-    if (!hearAboutUs) {
-      setError("Please choose how you heard about us.");
+    if (hearQuestionActive && hearQuestionRequired && !hearAboutUs) {
+      setError(`Please answer "${hearQuestionText}".`);
       return;
     }
 
@@ -468,25 +465,28 @@ export function CommentCardForm() {
           onChange={(value) => updateRating("visitAgain", value)}
         />
 
-        <div>
-          <label className={labelClass} htmlFor="heard_about_us_button">
-            {hearQuestionText}
-          </label>
+        {hearQuestionActive ? (
+          <div>
+            <label className={labelClass} htmlFor="heard_about_us_button">
+              {hearQuestionText}
+              {hearQuestionRequired ? "*" : ""}
+            </label>
 
-          <button
-            id="heard_about_us_button"
-            type="button"
-            className={`${inputClass} flex items-center justify-between text-left ${
-              hearAboutUs ? "text-[#182f38]" : "text-[#182f38]/35"
-            }`}
-            onClick={() => setHearSheetOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={hearSheetOpen}
-          >
-            <span>{hearAboutUs || "Select one"}</span>
-            <span className="text-[16px] leading-none text-[#182f38]">⌄</span>
-          </button>
-        </div>
+            <button
+              id="heard_about_us_button"
+              type="button"
+              className={`${inputClass} flex items-center justify-between text-left ${
+                hearAboutUs ? "text-[#182f38]" : "text-[#182f38]/35"
+              }`}
+              onClick={() => setHearSheetOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={hearSheetOpen}
+            >
+              <span>{hearAboutUs || "Select one"}</span>
+              <span className="text-[16px] leading-none text-[#182f38]">⌄</span>
+            </button>
+          </div>
+        ) : null}
 
         <div>
           <label className={labelClass} htmlFor="comments">
@@ -522,7 +522,7 @@ export function CommentCardForm() {
         </button>
       </form>
 
-      {hearSheetOpen ? (
+      {hearSheetOpen && hearQuestionActive ? (
         <div
           className="fixed inset-0 z-50 flex items-end bg-black/45 px-4 pb-4 pt-10 backdrop-blur-sm"
           onClick={() => setHearSheetOpen(false)}
