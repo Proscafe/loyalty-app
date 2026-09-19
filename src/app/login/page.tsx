@@ -53,6 +53,18 @@ export default async function LoginPage() {
           </div>
 
           <LoginForm />
+
+          <div className="mt-6 text-center text-[11px] font-semibold text-[#18212b]/65">
+            © Powered by{" "}
+            <a
+              href="https://wissamdesigns.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-black text-[#18212b] underline decoration-[#c85b58]/60 underline-offset-2 transition hover:text-[#c85b58]"
+            >
+              wissamdesigns.com
+            </a>
+          </div>
         </div>
       </section>
     </main>
