@@ -296,6 +296,79 @@ function cleanLebaneseWhatsAppPhone(value?: string | null) {
   return phone;
 }
 
+
+type CustomerScoreLabel = "MVP" | "Strong" | "Follow Up" | "At Risk" | "Lost / New";
+
+function customerScoreLabel(score: number): CustomerScoreLabel {
+  if (score >= 80) return "MVP";
+  if (score >= 60) return "Strong";
+  if (score >= 40) return "Follow Up";
+  if (score >= 20) return "At Risk";
+  return "Lost / New";
+}
+
+function scoreRecency(days: number | null) {
+  if (days === null) return 0;
+  if (days <= 7) return 30;
+  if (days <= 14) return 24;
+  if (days <= 30) return 16;
+  if (days <= 60) return 8;
+  return 0;
+}
+
+function scoreVisits(visits: number) {
+  if (visits >= 10) return 25;
+  if (visits >= 6) return 20;
+  if (visits >= 3) return 14;
+  if (visits === 2) return 8;
+  if (visits === 1) return 4;
+  return 0;
+}
+
+function scoreSpend(spend: number) {
+  if (spend >= 300) return 20;
+  if (spend >= 150) return 15;
+  if (spend >= 75) return 10;
+  if (spend >= 1) return 5;
+  return 0;
+}
+
+function scoreGifts(gifts: number) {
+  if (gifts >= 5) return 15;
+  if (gifts >= 3) return 11;
+  if (gifts >= 1) return 6;
+  return 0;
+}
+
+function scoreContact(daysSinceLastVisit: number | null, lastContacted: string | null) {
+  if (!lastContacted) {
+    // Both "not contacted and inactive 14+ days" and
+    // "recent customer, no contact needed" receive 10 points.
+    return 10;
+  }
+
+  const contactedMs = new Date(lastContacted).getTime();
+  if (!Number.isFinite(contactedMs)) return 10;
+
+  const daysSinceContact = Math.max(
+    0,
+    Math.floor((Date.now() - contactedMs) / 86400000),
+  );
+
+  if (daysSinceContact >= 14) return 6;
+  // The supplied matrix does not define days 8–13, so keep the
+  // "recently contacted" value until day 14.
+  return 2;
+}
+
+function recommendedWhatsAppTemplate(score: number): WhatsAppTemplate {
+  const label = customerScoreLabel(score);
+  if (label === "MVP") return "vip_comeback";
+  if (label === "Strong") return "friendly_reminder";
+  if (label === "Follow Up") return "we_miss_you";
+  return "needs_attention";
+}
+
 function whatsappTemplateMessage(
   template: WhatsAppTemplate,
   user: AdminUser,
@@ -581,12 +654,19 @@ function DesktopClientProfilePanel({
     const record = txn as unknown as Record<string, unknown>;
     const categoryId =
       typeof record.category_id === "string" ? record.category_id : "";
-    const actionType = String(record.action_type ?? "");
+    const actionType = String(record.action_type ?? "").toLowerCase();
+    const action = String(record.action ?? "").toLowerCase();
+    const amount = Number(record.amount ?? record.stamp_count ?? 0);
 
     const price = priceByCategoryId.get(categoryId) ?? 0;
 
-    if (actionType.includes("remove")) return -price;
-    if (!actionType.includes("add")) return 0;
+    if (
+      actionType === "remove_stamp" ||
+      action === "remove_stamp" ||
+      (actionType === "manual_adjustment" && amount < 0)
+    )
+      return -price;
+    if (actionType !== "add_stamp" && action !== "add_stamp") return 0;
 
     return price;
   };
@@ -1231,10 +1311,15 @@ export function UsersPage({ adminId }: { adminId: string }) {
     Record<string, string[]>
   >({});
 
-  function openWhatsAppComposer(user: AdminUser) {
+  function openWhatsAppComposer(user: AdminUser, score?: number) {
+    const template =
+      typeof score === "number"
+        ? recommendedWhatsAppTemplate(score)
+        : "we_miss_you";
+
     setWhatsAppTargetUser(user);
-    setWhatsAppTemplate("we_miss_you");
-    setWhatsAppMessage(whatsappTemplateMessage("we_miss_you", user));
+    setWhatsAppTemplate(template);
+    setWhatsAppMessage(whatsappTemplateMessage(template, user));
     setIncludeLoyaltyLink(false);
   }
 
@@ -1399,7 +1484,6 @@ export function UsersPage({ adminId }: { adminId: string }) {
           supabase
             .from("stamp_transactions")
             .select("*")
-            .neq("action_type", "manual_adjustment")
             .order("created_at", { ascending: false })
             .limit(1000),
 
@@ -1498,7 +1582,13 @@ export function UsersPage({ adminId }: { adminId: string }) {
           if (!txn.client_id) return;
 
           const actionType = String(txn.action_type ?? "").toLowerCase();
-          const isAddedStamp = actionType === "add_stamp";
+          const action = String(txn.action ?? "").toLowerCase();
+          const amount = Number(txn.amount ?? txn.stamp_count ?? 0);
+          const isAddedStamp = actionType === "add_stamp" || action === "add_stamp";
+          const isRemovedStamp =
+            actionType === "remove_stamp" ||
+            action === "remove_stamp" ||
+            (actionType === "manual_adjustment" && amount < 0);
 
           // Only a real added stamp counts as a visit and updates Last Visit.
           // Manual removals stay in the audit history without creating activity.
@@ -1522,9 +1612,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
           const price = priceByCategory.get(txn.category_id ?? "") ?? 0;
           const currentLifetime = lifetimeByUser.get(txn.client_id) ?? 0;
 
-          if (actionType === "add_stamp") {
+          if (isAddedStamp) {
             lifetimeByUser.set(txn.client_id, currentLifetime + price);
-          } else if (actionType === "remove_stamp") {
+          } else if (isRemovedStamp) {
             lifetimeByUser.set(
               txn.client_id,
               Math.max(0, currentLifetime - price),
@@ -2197,8 +2287,16 @@ export function UsersPage({ adminId }: { adminId: string }) {
     );
   }
 
+  function isAtRiskCustomer(row: { daysSinceLastVisit: number | null }) {
+    return (
+      row.daysSinceLastVisit !== null &&
+      row.daysSinceLastVisit >= 60 &&
+      row.daysSinceLastVisit < 90
+    );
+  }
+
   function isLostCustomer(row: { daysSinceLastVisit: number | null }) {
-    return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 60;
+    return row.daysSinceLastVisit !== null && row.daysSinceLastVisit >= 90;
   }
 
   // ── Filtering & sorting ──────────────────────────────────────────────────────
@@ -2229,8 +2327,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
         const isAtRisk =
           daysSinceLastVisit !== null &&
-          daysSinceLastVisit >= 30 &&
-          daysSinceLastVisit <= 60;
+          daysSinceLastVisit >= 60 &&
+          daysSinceLastVisit < 90;
 
         const isVip = lifetimeValue >= 200 || totalVisits >= 10;
 
@@ -2283,8 +2381,8 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
       const isAtRisk =
         daysSinceLastVisit !== null &&
-        daysSinceLastVisit >= 30 &&
-        daysSinceLastVisit <= 60;
+        daysSinceLastVisit >= 60 &&
+        daysSinceLastVisit < 90;
 
       const isVip = lifetimeValue >= 200 || totalVisits >= 10;
 
@@ -2470,15 +2568,17 @@ export function UsersPage({ adminId }: { adminId: string }) {
       if (isClient) {
         const created = (user as any).created_at;
         if (
-          (smartSegment === "all" || smartSegment === "new") &&
+          smartSegment === "new" &&
           !isWithinDesktopTimeRange(created, timeRange, rangeStart, rangeEnd)
         )
           return false;
 
         if (
-          smartSegment !== "all" &&
           smartSegment !== "new" &&
           smartSegment !== "from_games" &&
+          smartSegment !== "inactive_30" &&
+          smartSegment !== "at_risk" &&
+          smartSegment !== "lost" &&
           timeRange !== "all" &&
           !isWithinDesktopTimeRange(row.lastVisit, timeRange, rangeStart, rangeEnd)
         )
@@ -2562,12 +2662,33 @@ export function UsersPage({ adminId }: { adminId: string }) {
         return (
           (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir
         );
-      if (customerSort.key === "contact")
-        return (
-          (a.user.phone || a.user.email || "").localeCompare(
-            b.user.phone || b.user.email || "",
-          ) * dir
+      if (customerSort.key === "score") {
+        const aKeys = sharedContactKeys(
+          a.user.phone,
+          a.user.email,
+          a.user.full_name || a.user.id,
         );
+        const bKeys = sharedContactKeys(
+          b.user.phone,
+          b.user.email,
+          b.user.full_name || b.user.id,
+        );
+        const aLastContacted = contactHistoryForKeys(aKeys)[0] ?? null;
+        const bLastContacted = contactHistoryForKeys(bKeys)[0] ?? null;
+        const aScore =
+          scoreRecency(a.daysSinceLastVisit) +
+          scoreVisits(a.totalVisits) +
+          scoreSpend(a.lifetimeValue) +
+          scoreGifts(a.giftsCount) +
+          scoreContact(a.daysSinceLastVisit, aLastContacted);
+        const bScore =
+          scoreRecency(b.daysSinceLastVisit) +
+          scoreVisits(b.totalVisits) +
+          scoreSpend(b.lifetimeValue) +
+          scoreGifts(b.giftsCount) +
+          scoreContact(b.daysSinceLastVisit, bLastContacted);
+        return (aScore - bScore) * dir;
+      }
       if (customerSort.key === "lastVisit")
         return (
           ((new Date(a.lastVisit || 0).getTime() || 0) -
@@ -2589,7 +2710,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
         return (Number(a.isInactive) - Number(b.isInactive)) * dir;
       return 0;
     });
-  }, [customerSort, filteredCustomerReportRows]);
+  }, [customerSort, filteredCustomerReportRows, contactHistory]);
 
   const mobileFilteredCustomerRows = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -2652,12 +2773,33 @@ export function UsersPage({ adminId }: { adminId: string }) {
         return (
           (a.user.full_name || "").localeCompare(b.user.full_name || "") * dir
         );
-      if (customerSort.key === "contact")
-        return (
-          (a.user.phone || a.user.email || "").localeCompare(
-            b.user.phone || b.user.email || "",
-          ) * dir
+      if (customerSort.key === "score") {
+        const aKeys = sharedContactKeys(
+          a.user.phone,
+          a.user.email,
+          a.user.full_name || a.user.id,
         );
+        const bKeys = sharedContactKeys(
+          b.user.phone,
+          b.user.email,
+          b.user.full_name || b.user.id,
+        );
+        const aLastContacted = contactHistoryForKeys(aKeys)[0] ?? null;
+        const bLastContacted = contactHistoryForKeys(bKeys)[0] ?? null;
+        const aScore =
+          scoreRecency(a.daysSinceLastVisit) +
+          scoreVisits(a.totalVisits) +
+          scoreSpend(a.lifetimeValue) +
+          scoreGifts(a.giftsCount) +
+          scoreContact(a.daysSinceLastVisit, aLastContacted);
+        const bScore =
+          scoreRecency(b.daysSinceLastVisit) +
+          scoreVisits(b.totalVisits) +
+          scoreSpend(b.lifetimeValue) +
+          scoreGifts(b.giftsCount) +
+          scoreContact(b.daysSinceLastVisit, bLastContacted);
+        return (aScore - bScore) * dir;
+      }
       if (customerSort.key === "lastVisit")
         return (
           ((new Date(a.lastVisit || 0).getTime() || 0) -
@@ -2721,8 +2863,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
       );
     }
 
-    if (smartSegment === "all" || smartSegment === "new") {
+    if (smartSegment === "new") {
       return dateScopedCustomerRows;
+    }
+
+    if (smartSegment === "all") {
+      return timeRange === "all" ? customerReportRows : activityScopedCustomerRows;
     }
 
     return timeRange === "all" ? customerReportRows : activityScopedCustomerRows;
@@ -2908,9 +3054,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
               stamps={selectedStamps}
               rewards={selectedRewards}
               activities={activityTxns.filter(
-                (t) =>
-                  t.client_id === selectedUser.id &&
-                  t.action_type !== "manual_adjustment",
+                (t) => t.client_id === selectedUser.id,
               )}
               loading={selectedLoading}
               onBack={() => setSelectedUser(null)}
@@ -3244,7 +3388,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                 >
                   {[
                     ["name", "Names"],
-                    ["contact", "Contact"],
+                    ["score", "Score"],
                     ["lastVisit", "Last Visit"],
                   ].map(([k, l]) => (
                     <button
@@ -3287,6 +3431,19 @@ export function UsersPage({ adminId }: { adminId: string }) {
                     .slice(0, visibleUserCount)
                     .map((row) => {
                       const whatsappPhone = cleanLebaneseWhatsAppPhone(row.user.phone);
+                      const contactKeys = sharedContactKeys(
+                        row.user.phone,
+                        row.user.email,
+                        row.user.full_name || row.user.id,
+                      );
+                      const lastContacted = contactHistoryForKeys(contactKeys)[0] ?? null;
+                      const customerScore =
+                        scoreRecency(row.daysSinceLastVisit) +
+                        scoreVisits(row.totalVisits) +
+                        scoreSpend(row.lifetimeValue) +
+                        scoreGifts(row.giftsCount) +
+                        scoreContact(row.daysSinceLastVisit, lastContacted);
+                      const scoreLabel = customerScoreLabel(customerScore);
 
                       return (
                         <div
@@ -3307,8 +3464,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             </div>
                           </button>
                           <div className="min-w-0">
-                            <div className="truncate">
-                              {row.user.phone || "—"}
+                            <div className="font-black text-[#ffd66b]">
+                              {customerScore}
+                            </div>
+                            <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-[0.1em] text-white/64">
+                              {scoreLabel}
                             </div>
                           </div>
                           <div>{desktopFormatDateOnly(row.lastVisit)}</div>
@@ -3362,7 +3522,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openWhatsAppComposer(row.user);
+                                  openWhatsAppComposer(row.user, customerScore);
                                 }}
                                 className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
                               >
