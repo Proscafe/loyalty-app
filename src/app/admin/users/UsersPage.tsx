@@ -43,7 +43,7 @@ type AdminClientStamp = {
 const PAGE_BG =
   "bg-[radial-gradient(circle_at_top_left,rgba(255,214,107,0.24),transparent_28%),linear-gradient(135deg,#365665_0%,#263f49_48%,#798673_100%)]";
 const CUSTOMER_TABLE_GRID =
-  "minmax(130px,1fr) minmax(90px,0.6fr) minmax(78px,0.5fr) minmax(62px,0.38fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(178px,0.95fr) minmax(118px,0.7fr)";
+  "minmax(180px,1.25fr) minmax(74px,0.42fr) minmax(92px,0.55fr) minmax(62px,0.38fr) minmax(52px,0.32fr) minmax(76px,0.48fr) minmax(76px,0.48fr) minmax(52px,0.32fr) minmax(196px,1.05fr) minmax(138px,0.78fr)";
 
 const LOYALTY_LINK = "https://proscafe.net";
 
@@ -305,6 +305,14 @@ function customerScoreLabel(score: number): CustomerScoreLabel {
   if (score >= 40) return "Follow Up";
   if (score >= 20) return "At Risk";
   return "Lost / New";
+}
+
+function customerScoreClass(score: number) {
+  if (score >= 80) return "text-emerald-300";
+  if (score >= 60) return "text-[#ffd66b]";
+  if (score >= 40) return "text-orange-300";
+  if (score >= 20) return "text-red-300";
+  return "text-white/45";
 }
 
 function scoreRecency(days: number | null) {
@@ -1466,6 +1474,27 @@ export function UsersPage({ adminId }: { adminId: string }) {
     async function loadData() {
       setLoading(true);
       try {
+        async function loadAllRows(table: "stamp_transactions" | "rewards") {
+          const pageSize = 1000;
+          const allRows: any[] = [];
+
+          for (let from = 0; ; from += pageSize) {
+            const { data, error } = await supabase
+              .from(table)
+              .select("*")
+              .order("created_at", { ascending: false })
+              .range(from, from + pageSize - 1);
+
+            if (error) return { data: allRows, error };
+
+            const rows = data ?? [];
+            allRows.push(...rows);
+
+            if (rows.length < pageSize) break;
+          }
+
+          return { data: allRows, error: null };
+        }
         const [
           profilesRes,
           txnsRes,
@@ -1481,17 +1510,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
             )
             .order("created_at", { ascending: false }),
 
-          supabase
-            .from("stamp_transactions")
-            .select("*")
-            .order("created_at", { ascending: false })
-            .limit(1000),
+          loadAllRows("stamp_transactions"),
 
-          supabase
-            .from("rewards")
-            .select("*")
-            .order("created_at", { ascending: false })
-            .limit(1000),
+          loadAllRows("rewards"),
 
           supabase
             .from("loyalty_categories")
@@ -2702,6 +2723,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
         );
       if (customerSort.key === "visits")
         return (a.totalVisits - b.totalVisits) * dir;
+      if (customerSort.key === "avgSpent") {
+        const aAvg = a.totalVisits > 0 ? a.lifetimeValue / a.totalVisits : 0;
+        const bAvg = b.totalVisits > 0 ? b.lifetimeValue / b.totalVisits : 0;
+        return (aAvg - bAvg) * dir;
+      }
       if (customerSort.key === "lifetime")
         return (a.lifetimeValue - b.lifetimeValue) * dir;
       if (customerSort.key === "gifts")
@@ -2808,6 +2834,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
         );
       if (customerSort.key === "visits")
         return (a.totalVisits - b.totalVisits) * dir;
+      if (customerSort.key === "avgSpent") {
+        const aAvg = a.totalVisits > 0 ? a.lifetimeValue / a.totalVisits : 0;
+        const bAvg = b.totalVisits > 0 ? b.lifetimeValue / b.totalVisits : 0;
+        return (aAvg - bAvg) * dir;
+      }
       if (customerSort.key === "lifetime")
         return (a.lifetimeValue - b.lifetimeValue) * dir;
       if (customerSort.key === "gifts")
@@ -2986,6 +3017,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
       "Last Visit",
       "Days Ago",
       "Total Visits",
+      "Avg. Spent",
       "Lifetime $",
       "Gifts",
       "Status",
@@ -3001,6 +3033,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
           r.lastVisit ? new Date(r.lastVisit).toLocaleDateString() : "",
           r.daysSinceLastVisit ?? "",
           r.totalVisits,
+          desktopFormatMoney(
+            r.totalVisits > 0 ? r.lifetimeValue / r.totalVisits : 0,
+          ),
           desktopFormatMoney(r.lifetimeValue),
           r.giftsCount,
           daysAgoStatusLabel(r.daysSinceLastVisit),
@@ -3409,9 +3444,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
                   </button>
                   {[
                     ["visits", "Visits"],
+                    ["avgSpent", "Avg. Spent"],
                     ["lifetime", "Lifetime $"],
                     ["gifts", "Gifts"],
-                    ["status", "Status"],
                   ].map(([k, l]) => (
                     <button
                       key={k}
@@ -3459,16 +3494,23 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             onClick={() => void openUserProfile(row.user)}
                             className="min-w-0 text-left"
                           >
-                            <div className="truncate font-black text-white">
-                              {row.user.full_name || "Client"}
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div className="truncate font-black text-white">
+                                {row.user.full_name || "Client"}
+                              </div>
+                              <span
+                                className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${daysAgoClass(row.daysSinceLastVisit)}`}
+                              >
+                                {daysAgoStatusLabel(row.daysSinceLastVisit)}
+                              </span>
                             </div>
                           </button>
                           <div className="min-w-0">
-                            <div className="font-black text-[#ffd66b]">
+                            <div
+                              className={`font-black ${customerScoreClass(customerScore)}`}
+                              title={scoreLabel}
+                            >
                               {customerScore}
-                            </div>
-                            <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-[0.1em] text-white/64">
-                              {scoreLabel}
                             </div>
                           </div>
                           <div>{desktopFormatDateOnly(row.lastVisit)}</div>
@@ -3483,19 +3525,19 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             {row.totalVisits}
                           </div>
                           <div className="font-black text-white">
+                            {desktopFormatMoney(
+                              row.totalVisits > 0
+                                ? row.lifetimeValue / row.totalVisits
+                                : 0,
+                            )}
+                          </div>
+                          <div className="font-black text-white">
                             {desktopFormatMoney(row.lifetimeValue)}
                           </div>
                           <div className="font-black text-white">
                             {row.giftsCount}
                           </div>
-                          <div>
-                            <span
-                              className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${daysAgoClass(row.daysSinceLastVisit)}`}
-                            >
-                              {daysAgoStatusLabel(row.daysSinceLastVisit)}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5">
+                          <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
                             {row.user.role === "client" &&
                             !row.user.isGameOnly ? (
                               <button
@@ -3509,7 +3551,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                                   setDirectGiftNote("");
                                   setGiftTargetUser(row.user);
                                 }}
-                                className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
+                                className="rounded-full bg-[#ffd66b] px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.1em] text-[#365665]"
                               >
                                 Gift
                               </button>
@@ -3524,7 +3566,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                                   event.stopPropagation();
                                   openWhatsAppComposer(row.user, customerScore);
                                 }}
-                                className="rounded-full bg-[#25D366] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                                className="rounded-full bg-[#25D366] px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.1em] text-white"
                               >
                                 WA
                               </button>
@@ -3538,7 +3580,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                                 e.stopPropagation();
                                 markCustomerContacted(row.user);
                               }}
-                              className="rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#365665]"
+                              className="rounded-full bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.1em] text-[#365665]"
                             >
                               Contacted
                             </button>
