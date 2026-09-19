@@ -30,7 +30,7 @@ export default async function LoginPage() {
       />
       <div className="absolute inset-0 bg-black/25" />
 
-      <section className="relative z-10 flex min-h-screen items-center justify-center px-7 py-8 sm:px-8">
+      <section className="relative z-10 flex min-h-screen items-center justify-center px-7 py-8 pb-16 sm:px-8 sm:pb-16">
         <div className="w-full max-w-[315px] rounded-[24px] bg-white/50 px-5 py-7 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:max-w-[340px] sm:px-7 sm:py-8">
           <div className="mb-6 flex flex-col items-center text-center">
             <Image
@@ -53,20 +53,20 @@ export default async function LoginPage() {
           </div>
 
           <LoginForm />
-
-          <div className="mt-6 text-center text-[11px] font-semibold text-[#18212b]/65">
-            © Powered by{" "}
-            <a
-              href="https://wissamdesigns.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-black text-[#18212b] underline decoration-[#c85b58]/60 underline-offset-2 transition hover:text-[#c85b58]"
-            >
-              wissamdesigns.com
-            </a>
-          </div>
         </div>
       </section>
+
+      <footer className="absolute inset-x-0 bottom-5 z-20 text-center text-[11px] font-semibold text-[#f4c84a]">
+        © Powered by{" "}
+        <a
+          href="https://wissamdesigns.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-black text-[#f4c84a] underline decoration-[#f4c84a]/70 underline-offset-2 transition hover:text-[#ffe27a]"
+        >
+          wissamdesigns.com
+        </a>
+      </footer>
     </main>
   );
 }
