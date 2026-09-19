@@ -1808,7 +1808,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
   // Keep profile changes synchronized without reloading the whole page
   // every time the browser regains focus or becomes visible.
   useEffect(() => {
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshTimer: number | null = null;
 
     const scheduleRefresh = () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
