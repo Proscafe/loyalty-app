@@ -13,7 +13,7 @@ type CommentCardQuestion = {
   question_key: string;
   question_text: string;
   question_type: string;
-  choices: string[] | string | null;
+  options: string[] | string | null;
   is_active: boolean | null;
   sort_order: number | null;
 };
@@ -210,7 +210,7 @@ export function CommentCardForm() {
       const { data, error: questionError } = await supabase
         .from("comment_card_questions")
         .select(
-          "id, question_key, question_text, question_type, choices, is_active, sort_order",
+          "id, question_key, question_text, question_type, options, is_active, sort_order",
         )
         .eq("question_key", "heard_about_us")
         .eq("is_active", true)
@@ -218,40 +218,34 @@ export function CommentCardForm() {
 
       if (cancelled || questionError || !data) return;
 
-      const rawChoices = data.choices;
+      const rawOptions = data.options;
 
-      const choices = (() => {
-        if (Array.isArray(rawChoices)) {
-          return rawChoices.map((choice) => String(choice).trim()).filter(Boolean);
-        }
+      const choices = Array.isArray(rawOptions)
+        ? rawOptions.map((option) => String(option).trim()).filter(Boolean)
+        : typeof rawOptions === "string"
+          ? (() => {
+              const value = rawOptions.trim();
 
-        if (typeof rawChoices === "string") {
-          const value = rawChoices.trim();
+              if (!value) return [];
 
-          if (!value) return [];
+              try {
+                const parsed = JSON.parse(value);
 
-          // Support choices saved as a JSON array as well as one-choice-per-line text.
-          if (value.startsWith("[") && value.endsWith("]")) {
-            try {
-              const parsed = JSON.parse(value);
-              if (Array.isArray(parsed)) {
-                return parsed
-                  .map((choice) => String(choice).trim())
-                  .filter(Boolean);
+                if (Array.isArray(parsed)) {
+                  return parsed
+                    .map((option) => String(option).trim())
+                    .filter(Boolean);
+                }
+              } catch {
+                // If it is plain text, fall back to one option per line.
               }
-            } catch {
-              // Fall through to newline parsing.
-            }
-          }
 
-          return value
-            .split(/\r?\n/)
-            .map((choice) => choice.trim())
-            .filter(Boolean);
-        }
-
-        return [];
-      })();
+              return value
+                .split(/\r?\n/)
+                .map((option) => option.trim())
+                .filter(Boolean);
+            })()
+          : [];
 
       setHearQuestionText(
         String(data.question_text || "How did you hear about us?").trim(),
