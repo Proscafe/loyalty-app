@@ -1805,16 +1805,18 @@ export function UsersPage({ adminId }: { adminId: string }) {
     };
   }, [dataRefreshKey]);
 
-  // Keep Users synchronized with profile changes made anywhere in the app.
+  // Keep profile changes synchronized without reloading the whole page
+  // every time the browser regains focus or becomes visible.
   useEffect(() => {
-    const refresh = () => setDataRefreshKey((value) => value + 1);
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") refresh();
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+
+      refreshTimer = window.setTimeout(() => {
+        setDataRefreshKey((value) => value + 1);
+      }, 1200);
     };
-
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const profilesChannel = supabase
       .channel("admin-users-live-profiles")
@@ -1825,13 +1827,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
           schema: "public",
           table: "profiles",
         },
-        () => refresh(),
+        () => scheduleRefresh(),
       )
       .subscribe();
 
     return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(profilesChannel);
     };
   }, [supabase]);
