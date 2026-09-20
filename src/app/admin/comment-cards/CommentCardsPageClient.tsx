@@ -155,6 +155,16 @@ function categoryRating(value: unknown) {
   return Number.isFinite(number) && number > 0 ? `★ ${number.toFixed(1)}` : "—";
 }
 
+function ratingColorClass(value: unknown) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number) || number <= 0) return "text-white/45";
+  if (number >= 4.5) return "text-emerald-300";
+  if (number >= 4) return "text-[#ffd66b]";
+  if (number >= 3) return "text-orange-300";
+  return "text-red-300";
+}
+
 function csvEscape(value: unknown) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
@@ -905,11 +915,31 @@ export default function CommentCardsPageClient({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-[12px] font-bold">
-                  <DetailItem label="Experience" value={selectedRow.experienceRating} />
-                  <DetailItem label="Food" value={selectedRow.foodRating} />
-                  <DetailItem label="Service" value={selectedRow.serviceRating} />
-                  <DetailItem label="Cleanliness" value={selectedRow.cleanlinessRating} />
-                  <DetailItem label="Visit again" value={selectedRow.visitAgainRating} />
+                  <DetailItem
+                    label="Experience"
+                    value={selectedRow.experienceRating}
+                    valueClassName={ratingColorClass(selectedRow.raw?.experience_rating)}
+                  />
+                  <DetailItem
+                    label="Food"
+                    value={selectedRow.foodRating}
+                    valueClassName={ratingColorClass(selectedRow.raw?.food_rating)}
+                  />
+                  <DetailItem
+                    label="Service"
+                    value={selectedRow.serviceRating}
+                    valueClassName={ratingColorClass(selectedRow.raw?.service_rating)}
+                  />
+                  <DetailItem
+                    label="Cleanliness"
+                    value={selectedRow.cleanlinessRating}
+                    valueClassName={ratingColorClass(selectedRow.raw?.cleanliness_rating)}
+                  />
+                  <DetailItem
+                    label="Visit again"
+                    value={selectedRow.visitAgainRating}
+                    valueClassName={ratingColorClass(selectedRow.raw?.visit_again_rating)}
+                  />
                   <DetailItem label="Source" value={selectedRow.heardFrom} />
                   <DetailItem label="Submitted" value={selectedRow.submitted} />
                   <DetailItem label="Member" value={selectedRow.memberSince} />
@@ -1096,7 +1126,7 @@ function DesktopRow({
       <div>{row.name}</div>
       <div>{row.phone}</div>
       <div>{row.age}</div>
-      <div className="text-[#9cffc9]">
+      <div className={ratingColorClass(row.rating)}>
         ★ {row.rating ? row.rating.toFixed(1) : "—"}
       </div>
       <div>{row.heardFrom}</div>
@@ -1123,7 +1153,9 @@ function MobileRow({ row, onOpen }: { row: any; onOpen: () => void }) {
             {row.phone}
           </div>
         </div>
-        <div className="text-[13px] font-black text-[#9cffc9]">
+        <div
+          className={`text-[13px] font-black ${ratingColorClass(row.rating)}`}
+        >
           ★ {row.rating ? row.rating.toFixed(1) : "—"}
         </div>
       </div>
@@ -1142,16 +1174,20 @@ function MobileRow({ row, onOpen }: { row: any; onOpen: () => void }) {
 function DetailItem({
   label,
   value,
+  valueClassName = "text-white",
 }: {
   label: string;
   value: string | number;
+  valueClassName?: string;
 }) {
   return (
     <div className="rounded-[18px] bg-white/10 p-3">
       <div className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">
         {label}
       </div>
-      <div className="mt-1 break-words text-[12px] font-black text-white">
+      <div
+        className={`mt-1 break-words text-[12px] font-black ${valueClassName}`}
+      >
         {value}
       </div>
     </div>
