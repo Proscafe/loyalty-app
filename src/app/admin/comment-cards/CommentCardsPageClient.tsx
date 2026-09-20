@@ -188,6 +188,19 @@ export default function CommentCardsPageClient({
   const [giftRow, setGiftRow] = useState<any | null>(null);
   const [giftName, setGiftName] = useState("Free Sandwiches");
   const [giftNote, setGiftNote] = useState("");
+  const [tableSort, setTableSort] = useState<{
+    key:
+      | "name"
+      | "phone"
+      | "age"
+      | "rating"
+      | "heardFrom"
+      | "comment"
+      | "submitted"
+      | "memberSince"
+      | "lastContacted";
+    direction: "asc" | "desc";
+  }>({ key: "submitted", direction: "desc" });
 
 
 
@@ -298,6 +311,64 @@ export default function CommentCardsPageClient({
   const mobileVisibleRows = visibleRows.filter((row) =>
     isSameTimeFilter(row.submittedRaw, timeFilter, rangeStart, rangeEnd),
   );
+
+  function toggleTableSort(
+    key:
+      | "name"
+      | "phone"
+      | "age"
+      | "rating"
+      | "heardFrom"
+      | "comment"
+      | "submitted"
+      | "memberSince"
+      | "lastContacted",
+  ) {
+    setTableSort((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
+
+  function sortIndicator(key: typeof tableSort.key) {
+    if (tableSort.key !== key) return "";
+    return tableSort.direction === "asc" ? " ↑" : " ↓";
+  }
+
+  const sortedDesktopVisibleRows = useMemo(() => {
+    const direction = tableSort.direction === "asc" ? 1 : -1;
+
+    return desktopVisibleRows.slice().sort((a, b) => {
+      if (tableSort.key === "rating") {
+        return (Number(a.rating || 0) - Number(b.rating || 0)) * direction;
+      }
+
+      if (tableSort.key === "age") {
+        const aAge = Number(a.age);
+        const bAge = Number(b.age);
+        const aValue = Number.isFinite(aAge) ? aAge : -1;
+        const bValue = Number.isFinite(bAge) ? bAge : -1;
+        return (aValue - bValue) * direction;
+      }
+
+      if (tableSort.key === "submitted") {
+        const aTime = validDate(a.submittedRaw)?.getTime() ?? 0;
+        const bTime = validDate(b.submittedRaw)?.getTime() ?? 0;
+        return (aTime - bTime) * direction;
+      }
+
+      if (tableSort.key === "lastContacted") {
+        const aTime = validDate(a.raw?.last_contacted_at ?? a.raw?.contacted_at)?.getTime() ?? 0;
+        const bTime = validDate(b.raw?.last_contacted_at ?? b.raw?.contacted_at)?.getTime() ?? 0;
+        return (aTime - bTime) * direction;
+      }
+
+      const aText = String(a[tableSort.key] ?? "").toLowerCase();
+      const bText = String(b[tableSort.key] ?? "").toLowerCase();
+      return aText.localeCompare(bText) * direction;
+    });
+  }, [desktopVisibleRows, tableSort]);
 
   const mobileFilterLabel =
     TIME_FILTERS.find((item) => item.key === timeFilter)?.label ?? "Today";
@@ -783,21 +854,75 @@ export default function CommentCardsPageClient({
           >
             <div className="hidden lg:block">
               <div className="grid grid-cols-[1.35fr_1fr_0.45fr_0.7fr_1fr_1.25fr_1fr_1fr_1.35fr_1fr] border-b border-white/25 px-6 py-4 text-[11px] font-black uppercase tracking-[0.14em] text-white">
-                <div>Name</div>
-                <div>Phone</div>
-                <div>Age</div>
-                <div>Rating</div>
-                <div>Heard From</div>
-                <div>Comment</div>
-                <div>Submitted</div>
-                <div>Member Since</div>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("name")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Name{sortIndicator("name")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("phone")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Phone{sortIndicator("phone")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("age")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Age{sortIndicator("age")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("rating")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Rating{sortIndicator("rating")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("heardFrom")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Heard From{sortIndicator("heardFrom")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("comment")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Comment{sortIndicator("comment")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("submitted")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Submitted{sortIndicator("submitted")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("memberSince")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Member Since{sortIndicator("memberSince")}
+                </button>
                 <div>Actions</div>
-                <div>Last Contacted</div>
+                <button
+                  type="button"
+                  onClick={() => toggleTableSort("lastContacted")}
+                  className="text-left transition hover:text-[#ffd66b]"
+                >
+                  Last Contacted{sortIndicator("lastContacted")}
+                </button>
               </div>
-              {desktopVisibleRows.length === 0 ? (
+              {sortedDesktopVisibleRows.length === 0 ? (
                 <Empty />
               ) : (
-                desktopVisibleRows.map((row) => (
+                sortedDesktopVisibleRows.map((row) => (
                   <DesktopRow
                     key={row.id}
                     row={row}
