@@ -1,65 +1,104 @@
 import { NextResponse } from "next/server";
 
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import {
+  createAdminClient,
+  createClient,
+} from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const NO_CACHE_HEADERS = {
-  "Cache-Control": "no-store, no-cache, must-revalidate",
-};
+const ALLOWED_ROLES = new Set([
+  "master_admin",
+  "staff",
+  "supervisor",
+]);
 
-async function requireAdmin() {
-  const authSupabase = await createClient();
+function json(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    },
+  });
+}
+
+async function requireAuthorizedUser() {
+  const supabase = await createClient();
+
   const {
     data: { user },
-    error: authError,
-  } = await authSupabase.auth.getUser();
+    error: userError,
+  } = await supabase.auth.getUser();
 
-  if (authError || !user) {
-    return { error: "Unauthorized.", status: 401 as const };
+  if (userError || !user) {
+    return {
+      user: null,
+      admin: null,
+      error: json({ error: "Please sign in first." }, 401),
+    };
   }
 
-  const adminSupabase = createAdminClient();
+  const admin = createAdminClient();
 
-  const { data: profile, error: profileError } = await adminSupabase
+  const { data: profile, error: profileError } = await admin
     .from("profiles")
-    .select("id, role, is_active")
+    .select("id, role, full_name, email")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (
-    profileError ||
-    !profile ||
-    profile.is_active === false ||
-    !["master_admin", "staff", "supervisor"].includes(String(profile.role))
-  ) {
-    return { error: "Forbidden.", status: 403 as const };
+  if (profileError) {
+    return {
+      user: null,
+      admin: null,
+      error: json({ error: profileError.message }, 500),
+    };
   }
 
-  return { adminSupabase };
+  const role = String(profile?.role ?? "").trim();
+
+  if (!ALLOWED_ROLES.has(role)) {
+    return {
+      user: null,
+      admin: null,
+      error: json({ error: "Admin access required." }, 403),
+    };
+  }
+
+  return {
+    user,
+    admin,
+    profile,
+    error: null,
+  };
 }
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireAuthorizedUser();
 
-  if ("error" in auth) {
-    return NextResponse.json(
-      { error: auth.error },
-      { status: auth.status, headers: NO_CACHE_HEADERS },
-    );
+  if (auth.error || !auth.admin) {
+    return auth.error;
   }
 
-  const { data, error } = await auth.adminSupabase
+  const { data, error } = await auth.admin
     .from("contact_history")
-    .select("id, contact_key, contacted_at, source, source_id, created_at")
+    .select(
+      "id, contact_key, contacted_at, source, source_id, contacted_by, contacted_by_name, created_at",
+    )
     .order("contacted_at", { ascending: false })
     .limit(5000);
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message || "Could not load contact history." },
-      { status: 500, headers: NO_CACHE_HEADERS },
+    return json(
+      {
+        error:
+          error.message ||
+          "Could not load persisted contact history.",
+      },
+      500,
     );
   }
 
@@ -68,114 +107,131 @@ export async function GET() {
 
   for (const row of rows) {
     const key = String(row.contact_key ?? "").trim();
-    const date = String(row.contacted_at ?? row.created_at ?? "").trim();
+    const contactedAt = String(
+      row.contacted_at ?? row.created_at ?? "",
+    ).trim();
 
-    if (key && date) {
-      history[key] = Array.from(
-        new Set([...(history[key] ?? []), date]),
+    if (!key || !contactedAt) continue;
+
+    history[key] = Array.from(
+      new Set([...(history[key] ?? []), contactedAt]),
+    )
+      .sort(
+        (a, b) =>
+          new Date(b).getTime() - new Date(a).getTime(),
       )
-        .sort(
-          (a, b) => new Date(b).getTime() - new Date(a).getTime(),
-        )
-        .slice(0, 20);
-    }
+      .slice(0, 20);
 
     const sourceId = String(row.source_id ?? "").trim();
-    if (sourceId && date) {
-      const clientKey = `contact-client-${sourceId}`;
-      history[clientKey] = Array.from(
-        new Set([...(history[clientKey] ?? []), date]),
+
+    if (sourceId) {
+      const stableClientKey = `contact-client-${sourceId}`;
+
+      history[stableClientKey] = Array.from(
+        new Set([
+          ...(history[stableClientKey] ?? []),
+          contactedAt,
+        ]),
       )
         .sort(
-          (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+          (a, b) =>
+            new Date(b).getTime() - new Date(a).getTime(),
         )
         .slice(0, 20);
     }
   }
 
-  return NextResponse.json(
-    { history, rows },
-    { headers: NO_CACHE_HEADERS },
-  );
+  return json({
+    history,
+    rows,
+  });
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdmin();
+  const auth = await requireAuthorizedUser();
 
-  if ("error" in auth) {
-    return NextResponse.json(
-      { error: auth.error },
-      { status: auth.status, headers: NO_CACHE_HEADERS },
-    );
+  if (auth.error || !auth.admin) {
+    return auth.error;
   }
 
-  let body: Record<string, unknown>;
+  let body: any;
 
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    body = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid request body." },
-      { status: 400, headers: NO_CACHE_HEADERS },
-    );
+    return json({ error: "Invalid request body." }, 400);
   }
 
-  const sourceId =
-    typeof body.source_id === "string" ? body.source_id.trim() : "";
-  const source =
-    typeof body.source === "string" && body.source.trim()
-      ? body.source.trim()
-      : "Customer behavior";
+  const contactedAt = String(
+    body?.contacted_at ?? new Date().toISOString(),
+  ).trim();
 
-  const contactedAt =
-    typeof body.contacted_at === "string" &&
-    !Number.isNaN(new Date(body.contacted_at).getTime())
-      ? new Date(body.contacted_at).toISOString()
-      : new Date().toISOString();
+  const source = String(
+    body?.source ?? "Customer behavior",
+  ).trim();
 
-  const rawKeys = Array.isArray(body.keys) ? body.keys : [];
-  const keys = Array.from(
-    new Set(
-      rawKeys
-        .map((key) => String(key ?? "").trim())
-        .filter(Boolean),
-    ),
-  );
+  const sourceId = String(
+    body?.source_id ?? "",
+  ).trim();
+
+  const incomingKeys = Array.isArray(body?.keys)
+    ? body.keys
+    : body?.contact_key
+      ? [body.contact_key]
+      : [];
+
+  const keys = incomingKeys
+    .map((value: unknown) => String(value ?? "").trim())
+    .filter(Boolean);
 
   if (sourceId) {
-    keys.unshift(`contact-client-${sourceId}`);
+    keys.push(`contact-client-${sourceId}`);
   }
 
   const uniqueKeys = Array.from(new Set(keys));
 
-  if (!sourceId || uniqueKeys.length === 0) {
-    return NextResponse.json(
-      { error: "source_id and at least one contact key are required." },
-      { status: 400, headers: NO_CACHE_HEADERS },
+  if (uniqueKeys.length === 0) {
+    return json(
+      { error: "At least one contact key is required." },
+      400,
     );
   }
 
-  const rows = uniqueKeys.map((contactKey) => ({
+  const staffName =
+    String(auth.profile?.full_name ?? "").trim() ||
+    String(auth.profile?.email ?? "").trim() ||
+    String(auth.user?.email ?? "").trim() ||
+    "Staff user";
+
+  const rowsToInsert = uniqueKeys.map((contactKey) => ({
     contact_key: contactKey,
     contacted_at: contactedAt,
-    source,
-    source_id: sourceId,
+    source: source || "Customer behavior",
+    source_id: sourceId || null,
+    contacted_by: auth.user?.id ?? null,
+    contacted_by_name: staffName,
   }));
 
-  const { data, error } = await auth.adminSupabase
+  const { data, error } = await auth.admin
     .from("contact_history")
-    .insert(rows)
-    .select("id, contact_key, contacted_at, source, source_id, created_at");
+    .insert(rowsToInsert)
+    .select(
+      "id, contact_key, contacted_at, source, source_id, contacted_by, contacted_by_name, created_at",
+    );
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message || "Could not save contact history." },
-      { status: 500, headers: NO_CACHE_HEADERS },
+    return json(
+      {
+        error:
+          error.message ||
+          "Could not save contact history.",
+      },
+      500,
     );
   }
 
-  return NextResponse.json(
-    { ok: true, rows: data ?? [] },
-    { headers: NO_CACHE_HEADERS },
-  );
+  return json({
+    ok: true,
+    rows: data ?? [],
+  });
 }

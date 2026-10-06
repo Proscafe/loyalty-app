@@ -14,6 +14,7 @@ type ProfileRow = {
 };
 type CategoryRow = { id: string; name?: string | null };
 type Filter = "today" | "week" | "month" | "custom" | "all";
+type QuickFilter = "all" | "stamps" | "gifts" | "redeemed";
 
 const PAGE_BG = "#0F2A2D";
 const GLASS_PANEL = "rgba(255,255,255,0.10)";
@@ -274,6 +275,7 @@ export default function ActivityPageClient({
   const [dateTo, setDateTo] = useState("");
   const [desktopFilterOpen, setDesktopFilterOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const desktopFilterRef = useRef<HTMLDivElement | null>(null);
 
   const profileById = useMemo(
@@ -364,8 +366,15 @@ export default function ActivityPageClient({
         `${activity} ${clientName} ${type} ${itemLabel} ${categoryName} ${staffName}`
           .toLowerCase()
           .includes(term);
+      const matchesQuickFilter =
+        quickFilter === "all" ||
+        (quickFilter === "stamps" && type === "Stamp") ||
+        (quickFilter === "gifts" && type === "Gift") ||
+        (quickFilter === "redeemed" && type === "Redeemed");
+
       return (
         matchesSearch &&
+        matchesQuickFilter &&
         (filter === "custom"
           ? isInsideCustomRange(row.created_at, dateFrom, dateTo)
           : isSamePeriod(row.created_at, filter))
@@ -544,6 +553,28 @@ export default function ActivityPageClient({
                 <h1 className="text-[24px] font-black tracking-[-0.04em] text-white lg:text-[34px]">
                   Activity
                 </h1>
+
+                <div className="mt-4 hidden items-center gap-2 lg:flex">
+                  {([
+                    ["all", "ALL"],
+                    ["stamps", "STAMPS"],
+                    ["gifts", "GIFTS"],
+                    ["redeemed", "REDEEMED"],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setQuickFilter(key)}
+                      className={`h-9 rounded-full px-4 text-[11px] font-black uppercase tracking-[0.08em] transition ${
+                        quickFilter === key
+                          ? "bg-[#ffd66b] text-[#365665]"
+                          : "bg-white/12 text-white hover:bg-white/18"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

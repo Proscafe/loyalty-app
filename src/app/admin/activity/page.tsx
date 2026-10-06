@@ -25,6 +25,17 @@ function profileLabel(row?: AnyRow | null) {
   return row.full_name || row.email || row.client_code || null;
 }
 
+function clientIdFromRow(row: AnyRow) {
+  return String(
+    row.client_id ??
+      row.profile_id ??
+      row.customer_id ??
+      row.user_id ??
+      row.source_id ??
+      "",
+  ).trim();
+}
+
 function rewardLabel(row: AnyRow) {
   return String(
     row.reward_label ??
@@ -127,12 +138,71 @@ export default async function AdminActivityPage() {
       .limit(1000),
   ]);
 
-  const profileRows = profiles ?? [];
+  let profileRows = profiles ?? [];
   const categoryRows = categories ?? [];
+
+  const referencedProfileIds = new Set<string>();
+
+  for (const rawStamp of stamps ?? []) {
+    const row = rawStamp as AnyRow;
+    const clientId = clientIdFromRow(row);
+    if (clientId) referencedProfileIds.add(clientId);
+
+    for (const value of [row.staff_id, row.created_by]) {
+      const id = String(value ?? "").trim();
+      if (id) referencedProfileIds.add(id);
+    }
+  }
+
+  for (const rawReward of rewards ?? []) {
+    const row = rawReward as AnyRow;
+    const clientId = clientIdFromRow(row);
+    if (clientId) referencedProfileIds.add(clientId);
+
+    for (const value of [
+      row.redeemed_by,
+      row.staff_id,
+      row.issued_by,
+      row.created_by,
+      row.issuer_id,
+    ]) {
+      const id = String(value ?? "").trim();
+      if (id) referencedProfileIds.add(id);
+    }
+  }
+
+  for (const rawContact of contacts ?? []) {
+    const row = rawContact as AnyRow;
+    const clientId = clientIdFromRow(row);
+    if (clientId) referencedProfileIds.add(clientId);
+
+    const contactedBy = String(row.contacted_by ?? "").trim();
+    if (contactedBy) referencedProfileIds.add(contactedBy);
+  }
+
+  if (referencedProfileIds.size > 0) {
+    const { data: referencedProfiles } = await supabase
+      .from("profiles")
+      .select("*")
+      .in("id", Array.from(referencedProfileIds));
+
+    const merged = new Map<string, AnyRow>();
+
+    for (const profile of profileRows as AnyRow[]) {
+      merged.set(String(profile.id), profile);
+    }
+
+    for (const profile of referencedProfiles ?? []) {
+      merged.set(String((profile as AnyRow).id), profile as AnyRow);
+    }
+
+    profileRows = Array.from(merged.values());
+  }
 
   const profileById = new Map(
     profileRows.map((profile: AnyRow) => [String(profile.id), profile]),
   );
+
   const categoryById = new Map(
     categoryRows.map((category: AnyRow) => [String(category.id), category]),
   );
@@ -158,20 +228,16 @@ export default async function AdminActivityPage() {
     }
   }
 
-  let staffById = new Map<string, AnyRow>();
+  for (const rawContact of contacts ?? []) {
+    const row = rawContact as AnyRow;
+    if (row.contacted_by) staffIds.add(String(row.contacted_by));
+  }
 
-  if (staffIds.size > 0) {
-    const { data: staffProfiles } = await supabase
-      .from("profiles")
-      .select("id, full_name, email, client_code")
-      .in("id", Array.from(staffIds));
+  const staffById = new Map<string, AnyRow>();
 
-    staffById = new Map(
-      (staffProfiles ?? []).map((profile: AnyRow) => [
-        String(profile.id),
-        profile,
-      ]),
-    );
+  for (const staffId of staffIds) {
+    const profile = profileById.get(staffId);
+    if (profile) staffById.set(staffId, profile);
   }
 
   const stampByRewardId = new Map<string, AnyRow>();
@@ -202,7 +268,7 @@ export default async function AdminActivityPage() {
       if (!earnedAt) return null;
 
       return {
-        clientId: String(reward.client_id ?? ""),
+        clientId: clientIdFromRow(reward),
         categoryId: String(reward.category_id ?? ""),
         time: earnedAt.getTime(),
         rewardId: String(reward.id ?? ""),
@@ -226,7 +292,7 @@ export default async function AdminActivityPage() {
       return true;
     }
 
-    const clientId = String(row.client_id ?? "");
+    const clientId = clientIdFromRow(row);
     const categoryId = String(row.category_id ?? "");
     const stampTime = safeDate(row.created_at)?.getTime();
 
@@ -242,6 +308,43 @@ export default async function AdminActivityPage() {
     );
   }
 
+  function nearestStaffForReward(row: AnyRow) {
+    const clientId = clientIdFromRow(row);
+    const redemptionTime = safeDate(
+      row.redeemed_at ?? row.updated_at ?? row.claimed_at,
+    )?.getTime();
+
+    if (!clientId || !redemptionTime) return null;
+
+    let bestStaff: AnyRow | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const rawStamp of stamps ?? []) {
+      const stamp = rawStamp as AnyRow;
+
+      if (clientIdFromRow(stamp) !== clientId) continue;
+
+      const stampTime = safeDate(stamp.created_at)?.getTime();
+      if (!stampTime) continue;
+
+      const distance = Math.abs(stampTime - redemptionTime);
+
+      // Only infer from a stamp action essentially happening at the same time.
+      if (distance > 120000 || distance >= bestDistance) continue;
+
+      const staff =
+        staffById.get(String(stamp.staff_id ?? "")) ??
+        staffById.get(String(stamp.created_by ?? ""));
+
+      if (!staff) continue;
+
+      bestStaff = staff;
+      bestDistance = distance;
+    }
+
+    return bestStaff;
+  }
+
   for (const rawStamp of stamps ?? []) {
     const row = rawStamp as AnyRow;
     const delta = stampDelta(row);
@@ -249,7 +352,7 @@ export default async function AdminActivityPage() {
     if (delta === 0) continue;
     if (stampBelongsToReward(row)) continue;
 
-    const client = profileById.get(String(row.client_id ?? ""));
+    const client = profileById.get(clientIdFromRow(row));
     const category = categoryById.get(String(row.category_id ?? ""));
     const staff =
       staffById.get(String(row.staff_id ?? "")) ??
@@ -264,14 +367,19 @@ export default async function AdminActivityPage() {
       category_name: category?.name ?? null,
       issued_by_name:
         profileLabel(staff) ||
-        String(row.staff_name ?? row.issued_by_name ?? "Staff user").trim(),
+        String(
+          row.staff_name ??
+            row.issued_by_name ??
+            row.created_by_name ??
+            "System",
+        ).trim(),
       created_at: row.created_at,
     });
   }
 
   for (const rawReward of rewards ?? []) {
     const row = rawReward as AnyRow;
-    const client = profileById.get(String(row.client_id ?? ""));
+    const client = profileById.get(clientIdFromRow(row));
     const birthday = isBirthdayReward(row);
     const systemReward = isSystemReward(row);
     const clientName = profileLabel(client) ?? "Client";
@@ -326,6 +434,7 @@ export default async function AdminActivityPage() {
 
     if (isRedeemed) {
       const redeemedStaff = staffById.get(String(row.redeemed_by ?? ""));
+      const nearbyStaff = nearestStaffForReward(row);
 
       activities.push({
         ...row,
@@ -336,7 +445,15 @@ export default async function AdminActivityPage() {
         client_name: clientName,
         issued_by_name:
           profileLabel(redeemedStaff) ||
-          String(row.redeemed_by_name ?? row.staff_name ?? "Staff user"),
+          profileLabel(nearbyStaff) ||
+          profileLabel(linkedStaff) ||
+          profileLabel(directStaff) ||
+          String(
+            row.redeemed_by_name ??
+              row.staff_name ??
+              row.issued_by_name ??
+              "Unknown staff",
+          ).trim(),
         is_birthday: birthday,
         birthday_reward: birthday,
         created_at:
@@ -350,23 +467,27 @@ export default async function AdminActivityPage() {
 
   for (const rawContact of contacts ?? []) {
     const row = rawContact as AnyRow;
-    const client =
-      profileById.get(String(row.client_id ?? row.profile_id ?? "")) ?? null;
+    const clientId = clientIdFromRow(row);
+    const client = profileById.get(clientId) ?? null;
+    const contactedById = String(row.contacted_by ?? "").trim();
+    const contactedBy =
+      (contactedById ? staffById.get(contactedById) : null) ?? null;
 
     activities.push({
       ...row,
       activity_source: "contact",
       action_type: "contacted",
-      client_id: row.client_id ?? row.profile_id ?? row.source_id ?? null,
+      client_id: clientId || null,
       client_name:
         profileLabel(client) ??
         String(row.client_name ?? row.contact_key ?? "Client"),
       issued_by_name:
+        profileLabel(contactedBy) ||
         String(
-          row.staff_name ??
+          row.contacted_by_name ??
+            row.staff_name ??
             row.issued_by_name ??
-            row.contacted_by_name ??
-            "Staff user",
+            "System",
         ).trim(),
       created_at: row.contacted_at ?? row.created_at,
     });

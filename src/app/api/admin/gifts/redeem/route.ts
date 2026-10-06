@@ -1,67 +1,185 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+const ALLOWED_ROLES = new Set([
+  "master_admin",
+  "staff",
+  "supervisor",
+]);
+
+function json(
+  body: Record<string, unknown>,
+  status = 200,
+) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    },
+  });
 }
 
-function getAdminSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+async function requireAuthorizedUser() {
+  const supabase = await createClient();
 
-  if (!url || !serviceKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      user: null,
+      admin: null,
+      profile: null,
+      error: json({ error: "Please sign in first." }, 401),
+    };
   }
 
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const admin = createAdminClient();
+
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("id, role, full_name, email, client_code")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return {
+      user: null,
+      admin: null,
+      profile: null,
+      error: json({ error: profileError.message }, 500),
+    };
+  }
+
+  const role = String(profile?.role ?? "").trim();
+
+  if (!ALLOWED_ROLES.has(role)) {
+    return {
+      user: null,
+      admin: null,
+      profile: null,
+      error: json({ error: "Admin access required." }, 403),
+    };
+  }
+
+  return {
+    user,
+    admin,
+    profile,
+    error: null,
+  };
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const giftId = String(body?.giftId ?? body?.id ?? "").trim();
-    const redeemedById = String(body?.redeemedById ?? "").trim();
+    const auth = await requireAuthorizedUser();
 
-    if (!giftId) {
-      return NextResponse.json({ error: "Missing giftId." }, { status: 400 });
+    if (auth.error || !auth.admin || !auth.user) {
+      return auth.error;
     }
 
-    const supabase = getAdminSupabase();
+    const body = await request.json().catch(() => ({}));
+    const giftId = String(body?.giftId ?? body?.id ?? "").trim();
+
+    if (!giftId) {
+      return json({ error: "Missing giftId." }, 400);
+    }
+
     const redeemedAt = new Date().toISOString();
 
-    const redeemedByPayload = isUuid(redeemedById) ? { redeemed_by: redeemedById } : {};
+    const staffName =
+      String(auth.profile?.full_name ?? "").trim() ||
+      String(auth.profile?.email ?? "").trim() ||
+      String(auth.profile?.client_code ?? "").trim() ||
+      String(auth.user.email ?? "").trim() ||
+      "Staff user";
 
     const attempts: Array<Record<string, unknown>> = [
-      { redeemed_at: redeemedAt, status: "redeemed", reward_status: "redeemed", ...redeemedByPayload },
-      { redeemed_at: redeemedAt, status: "redeemed", ...redeemedByPayload },
-      { redeemed_at: redeemedAt, reward_status: "redeemed", ...redeemedByPayload },
-      { redeemed_at: redeemedAt, status: "redeemed" },
-      { redeemed_at: redeemedAt, reward_status: "redeemed" },
-      { status: "redeemed" },
-      { reward_status: "redeemed" },
+      {
+        redeemed_at: redeemedAt,
+        status: "redeemed",
+        reward_status: "redeemed",
+        redeemed_by: auth.user.id,
+        redeemed_by_name: staffName,
+      },
+      {
+        redeemed_at: redeemedAt,
+        status: "redeemed",
+        redeemed_by: auth.user.id,
+        redeemed_by_name: staffName,
+      },
+      {
+        redeemed_at: redeemedAt,
+        reward_status: "redeemed",
+        redeemed_by: auth.user.id,
+        redeemed_by_name: staffName,
+      },
+      {
+        redeemed_at: redeemedAt,
+        status: "redeemed",
+        redeemed_by: auth.user.id,
+      },
+      {
+        redeemed_at: redeemedAt,
+        reward_status: "redeemed",
+        redeemed_by: auth.user.id,
+      },
+      {
+        redeemed_at: redeemedAt,
+        status: "redeemed",
+      },
+      {
+        redeemed_at: redeemedAt,
+        reward_status: "redeemed",
+      },
     ];
 
-    let lastError: unknown = null;
+    let lastError: any = null;
 
     for (const payload of attempts) {
-      const { data, error } = await supabase.from("rewards").update(payload).eq("id", giftId).select("*").single();
+      const { data, error } = await auth.admin
+        .from("rewards")
+        .update(payload)
+        .eq("id", giftId)
+        .select("*")
+        .single();
 
       if (!error) {
-        return NextResponse.json({ ok: true, redeemed_at: redeemedAt, reward: data });
+        return json({
+          ok: true,
+          redeemed_at: redeemedAt,
+          redeemed_by: auth.user.id,
+          redeemed_by_name: staffName,
+          reward: data,
+        });
       }
 
       lastError = error;
     }
 
-    throw lastError instanceof Error ? lastError : new Error("Could not redeem gift.");
+    return json(
+      {
+        error:
+          lastError?.message ||
+          "Could not redeem gift.",
+      },
+      500,
+    );
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not redeem gift." },
-      { status: 500 },
+    return json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not redeem gift.",
+      },
+      500,
     );
   }
 }
