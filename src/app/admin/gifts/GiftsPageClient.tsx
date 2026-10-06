@@ -488,19 +488,43 @@ export default function GiftsPageClient({
     [giftRows, profileById],
   );
 
-  const visibleRows = useMemo(() => {
-    const filtered = rows.filter((row) => {
-      const term = query.trim().toLowerCase();
+  const scopedRows = useMemo(() => {
+    const term = query.trim().toLowerCase();
+
+    return rows.filter((row) => {
       const matchesSearch =
         !term ||
         `${row.clientName} ${row.phone} ${row.label} ${row.giftType} ${row.status} ${row.source}`
           .toLowerCase()
           .includes(term);
+
+      const dateSource =
+        row.raw.created_at ??
+        row.raw.issued_at ??
+        row.expiresAt ??
+        row.memberSince;
+
+      const matchesDate = isInsideDateRange(
+        dateSource,
+        dateRange,
+        dateFrom,
+        dateTo,
+      );
+
+      return matchesSearch && matchesDate;
+    });
+  }, [dateFrom, dateRange, dateTo, query, rows]);
+
+  const visibleRows = useMemo(() => {
+    const filtered = scopedRows.filter((row) => {
       const status = row.status.toLowerCase();
       const left = daysLeft(row.expiresAt);
       const soon = /^([1-7])d$|^Today$/.test(left);
-      const matchesSegment =
-        (segment === "all" && status !== "redeemed") ||
+
+      return (
+        // "Available" must mean available only. Previously this included
+        // expired/bounced gifts because it only excluded redeemed rows.
+        (segment === "all" && status === "available") ||
         (segment === "loyalty" && row.giftType === "Loyalty Card") ||
         (segment === "birthday" && row.giftType === "Birthday") ||
         (segment === "sent" &&
@@ -512,19 +536,8 @@ export default function GiftsPageClient({
         (segment === "redeemed" && status === "redeemed") ||
         (segment === "expired" && status === "expired") ||
         (segment === "expiring" && status === "available" && soon) ||
-        (segment === "pending" && row.clientName === "Client");
-      const dateSource =
-        row.raw.created_at ??
-        row.raw.issued_at ??
-        row.expiresAt ??
-        row.memberSince;
-      const matchesDate = isInsideDateRange(
-        dateSource,
-        dateRange,
-        dateFrom,
-        dateTo,
+        (segment === "pending" && row.clientName === "Client")
       );
-      return matchesSearch && matchesSegment && matchesDate;
     });
 
     return [...filtered].sort((a, b) => {
@@ -536,16 +549,7 @@ export default function GiftsPageClient({
           : String(aValue).localeCompare(String(bValue));
       return sortDirection === "asc" ? result : -result;
     });
-  }, [
-    dateFrom,
-    dateRange,
-    dateTo,
-    query,
-    rows,
-    segment,
-    sortDirection,
-    sortKey,
-  ]);
+  }, [scopedRows, segment, sortDirection, sortKey]);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -575,13 +579,22 @@ export default function GiftsPageClient({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmRedeemRow]);
 
-  const redeemed = rows.filter((row) => row.status === "Redeemed").length;
-  const expired = rows.filter((row) => row.status === "Expired").length;
-  const available = rows.filter((row) => row.status === "Available").length;
-  const expiring = rows.filter(
+  const redeemed = scopedRows.filter(
+    (row) => row.status === "Redeemed",
+  ).length;
+  const expired = scopedRows.filter(
+    (row) => row.status === "Expired",
+  ).length;
+  const available = scopedRows.filter(
+    (row) => row.status === "Available",
+  ).length;
+  const expiring = scopedRows.filter(
     (row) =>
       row.status === "Available" &&
       /^([1-7])d$|^Today$/.test(daysLeft(row.expiresAt)),
+  ).length;
+  const pending = scopedRows.filter(
+    (row) => row.clientName === "Client",
   ).length;
 
   function toggleSort(key: SortKey) {
@@ -870,16 +883,16 @@ export default function GiftsPageClient({
           </header>
 
           <section className="mb-4 hidden gap-3 lg:grid lg:grid-cols-7">
-            <SummaryCard label="Gifts Sent" value={rows.length} />
+            <SummaryCard label="Gifts Sent" value={scopedRows.length} />
             <SummaryCard label="Gifts Redeemed" value={redeemed} />
-            <SummaryCard label="Total Gift Value" value={desktopFormatGiftValue(rows)} />
+            <SummaryCard
+              label="Total Gift Value"
+              value={desktopFormatGiftValue(scopedRows)}
+            />
             <SummaryCard label="Expired Gifts" value={expired} />
             <SummaryCard label="Available Gifts" value={available} />
             <SummaryCard label="Expiring Soon" value={expiring} />
-            <SummaryCard
-              label="Pending Gifts"
-              value={rows.filter((row) => row.clientName === "Client").length}
-            />
+            <SummaryCard label="Pending Gifts" value={pending} />
           </section>
 
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
