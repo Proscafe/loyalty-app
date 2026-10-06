@@ -211,7 +211,10 @@ function activitySentence(
       return `${clientName} received ${item}`;
     return `${clientName} earned ${item}`;
   }
-  if (type === "Redeemed") return `${clientName} redeemed ${item}`;
+  if (type === "Redeemed") {
+    const redeemedItem = item.startsWith("✅") ? item : `✅ ${item}`;
+    return `${clientName} redeemed ${redeemedItem}`;
+  }
   if (type === "Expired") return `${clientName} gift expired`;
   if (type === "Contact") return `${clientName} was marked as contacted`;
   if (/bounced|returned/.test(action)) return `${clientName} gift was returned`;
