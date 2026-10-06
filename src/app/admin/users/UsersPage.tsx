@@ -424,6 +424,20 @@ function getGameRowName(row: any) {
   ).trim();
 }
 
+function getGameRowUsername(row: any) {
+  return String(
+    row?.username ??
+      row?.user_name ??
+      row?.player_username ??
+      row?.telegram_username ??
+      row?.instagram_username ??
+      row?.handle ??
+      "",
+  )
+    .trim()
+    .replace(/^@/, "");
+}
+
 function getGameRowPhone(row: any) {
   return String(
     row?.phone ??
@@ -1236,6 +1250,234 @@ function DesktopClientProfilePanel({
   );
 }
 
+function GameOnlyCustomerPanel({
+  user,
+  categories,
+  gamePlayerRows,
+  gamePredictionRows,
+  onBack,
+}: {
+  user: AdminUser;
+  categories: AdminCategory[];
+  gamePlayerRows: any[];
+  gamePredictionRows: any[];
+  onBack: () => void;
+}) {
+  const userPhone = normalizePhoneForMatch(user.phone);
+  const userName = String(user.full_name ?? "").trim().toLowerCase();
+  const userPlayerId = String(user.gamePlayerId ?? "").trim();
+
+  const matchesGameUser = (row: any) => {
+    const rowPhone = normalizePhoneForMatch(getGameRowPhone(row));
+    const rowName = getGameRowName(row).trim().toLowerCase();
+    const rowPlayerId = getGameRowPlayerId(row);
+
+    return Boolean(
+      (userPlayerId && rowPlayerId === userPlayerId) ||
+        (userPhone && rowPhone && userPhone === rowPhone) ||
+        (userName && rowName && userName === rowName),
+    );
+  };
+
+  const matchingPlayerRows = gamePlayerRows.filter(matchesGameUser);
+  const predictionRows = gamePredictionRows.filter(matchesGameUser);
+  const username =
+    matchingPlayerRows.map(getGameRowUsername).find(Boolean) ||
+    predictionRows.map(getGameRowUsername).find(Boolean) ||
+    String(user.client_code ?? "").replace(/^@/, "");
+  const resolvedPhone =
+    matchingPlayerRows.map(getGameRowPhone).find(Boolean) ||
+    predictionRows.map(getGameRowPhone).find(Boolean) ||
+    user.phone ||
+    "";
+
+  const allGameRows = [
+    ...matchingPlayerRows,
+    ...predictionRows,
+  ].sort((a, b) => {
+    const aTime = new Date(getGameRowDate(a) || 0).getTime() || 0;
+    const bTime = new Date(getGameRowDate(b) || 0).getTime() || 0;
+    return bTime - aTime;
+  });
+
+  const lastPlayed =
+    user.lastVisit ??
+    allGameRows.map(getGameRowDate).find(Boolean) ??
+    null;
+
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="px-0 py-2 text-[12px] font-black text-white transition hover:text-[#ffd66b]"
+      >
+        ← Back to users
+      </button>
+
+      <Panel>
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">
+              Customer Profile
+            </div>
+
+            <h2 className="mt-2 text-[30px] font-black leading-none tracking-[-0.05em] text-white lg:text-[38px]">
+              {user.full_name || "Client"}
+            </h2>
+
+            <div className="mt-3 text-[13px] font-bold leading-6 text-white/76">
+              {resolvedPhone || "No phone"}
+              {username ? (
+                <span className="text-white/55">
+                  {" "}
+                  · @{username}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            <span className="rounded-full bg-white px-5 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665]">
+              Client
+            </span>
+          </div>
+        </div>
+
+        <div
+          className="mt-5 grid w-full gap-2"
+          style={{ gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}
+        >
+          <DesktopProfileMetric
+            label="Total visits"
+            value={user.totalVisits ?? 0}
+          />
+          <DesktopProfileMetric label="Lifetime spend" value="$0" />
+          <DesktopProfileMetric label="Gifts sent" value={0} />
+          <DesktopProfileMetric label="Gifts redeemed" value={0} />
+          <DesktopProfileMetric label="Active gifts" value={0} />
+          <DesktopProfileMetric label="Gift value" value="$0" />
+          <DesktopProfileMetric
+            label="Last visit"
+            value={desktopFormatDateOnly(lastPlayed)}
+          />
+          <DesktopProfileMetric label="Last contacted" value="—" />
+        </div>
+      </Panel>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <Panel>
+          <h2 className="text-[20px] font-black text-white">Stamps</h2>
+
+          <div className="mt-4 space-y-3">
+            {categories.map((category) => (
+              <div
+                key={category.id}
+                className="rounded-[16px] bg-white/10 p-4"
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[15px] font-black text-white">
+                      {category.name === "Desserts 2" ? "Hooka" : category.name}
+                    </div>
+                    <div className="mt-1 text-[11px] font-bold text-white/70">
+                      0/5 stamps
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled
+                      className="rounded-full bg-white px-4 py-2 text-[11px] font-black text-[#365665] opacity-40"
+                    >
+                      Remove
+                    </button>
+                    <button
+                      type="button"
+                      disabled
+                      className="rounded-full bg-[#ffd66b] px-4 py-2 text-[11px] font-black text-[#365665] opacity-40"
+                    >
+                      Stamp
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="h-2 rounded-full bg-white/25"
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <div className="space-y-4">
+          <Panel>
+            <h2 className="text-[20px] font-black text-white">Notes</h2>
+            <textarea
+              disabled
+              rows={4}
+              placeholder="Add note..."
+              className="mt-4 w-full resize-none rounded-[18px] border-0 bg-white px-4 py-3 text-[13px] font-semibold text-[#365665] outline-none placeholder:text-[#365665]/45 disabled:opacity-70"
+            />
+            <div className="mt-4 text-[11px] font-bold text-white/50">
+              No notes yet.
+            </div>
+          </Panel>
+
+          <Panel>
+            <h2 className="text-[20px] font-black text-white">
+              Full activity timeline
+            </h2>
+
+            <div className="mt-4 space-y-2">
+              {allGameRows.length === 0 ? (
+                <div className="rounded-[14px] bg-white/10 px-4 py-3 text-[12px] font-bold text-white/60">
+                  No game activity found.
+                </div>
+              ) : (
+                allGameRows.slice(0, 20).map((row, index) => {
+                  const date = getGameRowDate(row);
+                  return (
+                    <div
+                      key={`${getGameRowPlayerId(row) || row?.id || "game"}-${index}`}
+                      className="rounded-[14px] bg-white/10 px-4 py-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-[0.14em] text-[#ffd66b]">
+                            Game
+                          </div>
+                          <div className="mt-2 text-[12px] font-black text-white">
+                            {row?.prediction_matches?.match_label ||
+                              (row?.prediction_matches?.home_team &&
+                              row?.prediction_matches?.away_team
+                                ? `${row.prediction_matches.home_team} vs ${row.prediction_matches.away_team}`
+                                : "Game activity")}
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 text-[10px] font-black text-white/55">
+                          {date ? desktopFormatDateTime(date) : "—"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main UsersPage Component ─────────────────────────────────────────────────
 
 export function UsersPage({ adminId }: { adminId: string }) {
@@ -1748,6 +1990,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
             lastPlayed: string | null;
             name: string;
             phone: string;
+            username: string;
             clientId: string;
             playerId: string;
           }
@@ -1758,10 +2001,12 @@ export function UsersPage({ adminId }: { adminId: string }) {
           const phone = getGameRowPhone(row);
           const normalizedPhone = normalizePhoneForMatch(phone);
           const name = getGameRowName(row);
+          const username = getGameRowUsername(row);
           const playerId = getGameRowPlayerId(row);
           const key =
             clientId ||
             (normalizedPhone ? `phone:${normalizedPhone}` : "") ||
+            (username ? `username:${username.toLowerCase()}` : "") ||
             (name ? `name:${name.toLowerCase()}` : "") ||
             (playerId ? `player:${playerId}` : "");
 
@@ -1773,6 +2018,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
             lastPlayed: null,
             name,
             phone,
+            username,
             clientId,
             playerId,
           };
@@ -1780,6 +2026,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
           existing.rows += 1;
           if (!existing.name && name) existing.name = name;
           if (!existing.phone && phone) existing.phone = phone;
+          if (!existing.username && username) existing.username = username;
           if (!existing.clientId && clientId) existing.clientId = clientId;
           if (!existing.playerId && playerId) existing.playerId = playerId;
           if (
@@ -1801,30 +2048,167 @@ export function UsersPage({ adminId }: { adminId: string }) {
           const profileName = String(p.full_name ?? "")
             .trim()
             .toLowerCase();
-          const matchingGameKey =
-            (gameStatsByKey.has(p.id) ? p.id : "") ||
-            (profilePhone && gameStatsByKey.has(`phone:${profilePhone}`)
-              ? `phone:${profilePhone}`
-              : "") ||
-            (profileName && gameStatsByKey.has(`name:${profileName}`)
-              ? `name:${profileName}`
-              : "");
+          const profileEmail = String(p.email ?? "")
+            .trim()
+            .toLowerCase();
+          const profileUsername = String(p.client_code ?? "")
+            .trim()
+            .replace(/^@/, "")
+            .toLowerCase();
 
-          const gameStats = matchingGameKey
-            ? gameStatsByKey.get(matchingGameKey)
-            : null;
-          if (matchingGameKey) usedGameKeys.add(matchingGameKey);
+          // IMPORTANT:
+          // A game player can be stored under player:<uuid>, username:<name>,
+          // phone:<number>, name:<name>, or a real client id. Do not only look
+          // up one calculated key; scan every game aggregate and match it to
+          // the real loyalty profile.
+          const matchingGameEntries = Array.from(gameStatsByKey.entries()).filter(
+            ([key, stats]) => {
+              const statsPhone = normalizePhoneForMatch(stats.phone);
+              const statsName = String(stats.name ?? "")
+                .trim()
+                .toLowerCase();
+              const statsUsername = String(stats.username ?? "")
+                .trim()
+                .replace(/^@/, "")
+                .toLowerCase();
+
+              return Boolean(
+                key === p.id ||
+                  stats.clientId === p.id ||
+                  (profilePhone &&
+                    statsPhone &&
+                    profilePhone === statsPhone) ||
+                  (profileName &&
+                    statsName &&
+                    profileName === statsName) ||
+                  (profileUsername &&
+                    statsUsername &&
+                    profileUsername === statsUsername) ||
+                  (profileName &&
+                    statsUsername &&
+                    profileName === statsUsername) ||
+                  (profileEmail &&
+                    statsUsername &&
+                    profileEmail.split("@")[0] === statsUsername),
+              );
+            },
+          );
+
+          // Mark every aggregate that belongs to the same game player as used.
+          // A player can appear more than once under different keys
+          // (phone:, username:, name:, player:). If only one key is marked,
+          // a duplicate synthetic "game-..." customer can still be created.
+          const matchedPlayerIds = new Set(
+            matchingGameEntries
+              .map(([, stats]) => String(stats.playerId ?? "").trim())
+              .filter(Boolean),
+          );
+          const matchedPhones = new Set(
+            matchingGameEntries
+              .map(([, stats]) => normalizePhoneForMatch(stats.phone))
+              .filter(Boolean),
+          );
+          const matchedUsernames = new Set(
+            matchingGameEntries
+              .map(([, stats]) =>
+                String(stats.username ?? "")
+                  .trim()
+                  .replace(/^@/, "")
+                  .toLowerCase(),
+              )
+              .filter(Boolean),
+          );
+          const matchedNames = new Set(
+            matchingGameEntries
+              .map(([, stats]) =>
+                String(stats.name ?? "")
+                  .trim()
+                  .toLowerCase(),
+              )
+              .filter(Boolean),
+          );
+
+          for (const [gameKey, stats] of gameStatsByKey.entries()) {
+            const statsPlayerId = String(stats.playerId ?? "").trim();
+            const statsPhone = normalizePhoneForMatch(stats.phone);
+            const statsUsername = String(stats.username ?? "")
+              .trim()
+              .replace(/^@/, "")
+              .toLowerCase();
+            const statsName = String(stats.name ?? "")
+              .trim()
+              .toLowerCase();
+
+            if (
+              matchingGameEntries.some(([matchedKey]) => matchedKey === gameKey) ||
+              (statsPlayerId && matchedPlayerIds.has(statsPlayerId)) ||
+              (statsPhone && matchedPhones.has(statsPhone)) ||
+              (statsUsername && matchedUsernames.has(statsUsername)) ||
+              (statsName && matchedNames.has(statsName))
+            ) {
+              usedGameKeys.add(gameKey);
+            }
+          }
+
+          const gameStats =
+            matchingGameEntries.length > 0
+              ? matchingGameEntries.reduce(
+                  (combined, [, stats]) => {
+                    combined.rows += Number(stats.rows ?? 0);
+
+                    if (
+                      stats.lastPlayed &&
+                      (!combined.lastPlayed ||
+                        new Date(stats.lastPlayed).getTime() >
+                          new Date(combined.lastPlayed).getTime())
+                    ) {
+                      combined.lastPlayed = stats.lastPlayed;
+                    }
+
+                    if (!combined.name && stats.name) combined.name = stats.name;
+                    if (!combined.phone && stats.phone) combined.phone = stats.phone;
+                    if (!combined.username && stats.username)
+                      combined.username = stats.username;
+                    if (!combined.clientId && stats.clientId)
+                      combined.clientId = stats.clientId;
+                    if (!combined.playerId && stats.playerId)
+                      combined.playerId = stats.playerId;
+
+                    return combined;
+                  },
+                  {
+                    rows: 0,
+                    lastPlayed: null as string | null,
+                    name: "",
+                    phone: "",
+                    username: "",
+                    clientId: "",
+                    playerId: "",
+                  },
+                )
+              : null;
+
+          const loyaltyLastVisit = lastVisitByUser.get(p.id) ?? null;
+          const gameLastVisit = gameStats?.lastPlayed ?? null;
+          const combinedLastVisit =
+            loyaltyLastVisit && gameLastVisit
+              ? new Date(loyaltyLastVisit).getTime() >=
+                new Date(gameLastVisit).getTime()
+                ? loyaltyLastVisit
+                : gameLastVisit
+              : loyaltyLastVisit || gameLastVisit;
 
           return {
             ...p,
             playedFromGames: Boolean(gameStats),
             gamePlayerId: gameStats?.playerId ?? null,
+            // Keep the real loyalty visits for scoring; game visits remain
+            // available through playedFromGames/gamePlayerId.
             totalVisits: visitDaysByUser.get(p.id)?.size ?? 0,
-            lastVisit: lastVisitByUser.get(p.id) ?? null,
-            daysSinceLastVisit: lastVisitByUser.get(p.id)
+            lastVisit: combinedLastVisit,
+            daysSinceLastVisit: combinedLastVisit
               ? Math.floor(
-                  (Date.now() -
-                    new Date(lastVisitByUser.get(p.id)!).getTime()) /
+                  (Date.now() - new Date(combinedLastVisit).getTime()) /
                     86400000,
                 )
               : null,
@@ -1833,8 +2217,50 @@ export function UsersPage({ adminId }: { adminId: string }) {
           };
         });
 
+        const realProfiles = (profilesRes.data ?? []) as any[];
+
         const gameOnlyUsers = Array.from(gameStatsByKey.entries())
-          .filter(([key]) => !usedGameKeys.has(key))
+          .filter(([key, gameStats]) => {
+            if (usedGameKeys.has(key)) return false;
+
+            const gamePhone = normalizePhoneForMatch(gameStats.phone);
+            const gameName = String(gameStats.name ?? "")
+              .trim()
+              .toLowerCase();
+            const gameUsername = String(gameStats.username ?? "")
+              .trim()
+              .replace(/^@/, "")
+              .toLowerCase();
+
+            const matchesRealProfile = realProfiles.some((profile) => {
+              const profilePhone = normalizePhoneForMatch(profile.phone);
+              const profileName = String(profile.full_name ?? "")
+                .trim()
+                .toLowerCase();
+              const profileEmailUser = String(profile.email ?? "")
+                .trim()
+                .toLowerCase()
+                .split("@")[0];
+
+              return Boolean(
+                gameStats.clientId === profile.id ||
+                  (gamePhone &&
+                    profilePhone &&
+                    gamePhone === profilePhone) ||
+                  (gameName &&
+                    profileName &&
+                    gameName === profileName) ||
+                  (gameUsername &&
+                    profileName &&
+                    gameUsername === profileName) ||
+                  (gameUsername &&
+                    profileEmailUser &&
+                    gameUsername === profileEmailUser),
+              );
+            });
+
+            return !matchesRealProfile;
+          })
           .map(([key, gameStats]) => {
             const lastPlayed = gameStats.lastPlayed ?? null;
             const safeId = key.replace(/[^a-zA-Z0-9_-]+/g, "-");
@@ -1844,9 +2270,9 @@ export function UsersPage({ adminId }: { adminId: string }) {
               full_name: gameStats.name || "Game Player",
               email: null,
               phone: gameStats.phone || null,
-              client_code: gameStats.playerId
-                ? `GAME-${gameStats.playerId.slice(-6).toUpperCase()}`
-                : "GAME PLAYER",
+              client_code: gameStats.username
+                ? `@${gameStats.username}`
+                : gameStats.name || "Game Player",
               role: "client" as UserRole,
               is_active: true,
               gender: null,
@@ -1957,11 +2383,61 @@ export function UsersPage({ adminId }: { adminId: string }) {
   // ── User profile ─────────────────────────────────────────────────────────────
 
   async function openUserProfile(user: AdminUser, openGift = false) {
+    if (user.isGameOnly || String(user.id).startsWith("game-")) {
+      const gamePhone = normalizePhoneForMatch(user.phone);
+      const gameName = String(user.full_name ?? "")
+        .trim()
+        .toLowerCase();
+
+      const gamePlayerId = String(user.gamePlayerId ?? "").trim();
+
+      const matchedProfile = users.find((candidate) => {
+        if (candidate.isGameOnly || String(candidate.id).startsWith("game-")) {
+          return false;
+        }
+
+        const candidatePhone = normalizePhoneForMatch(candidate.phone);
+        const candidateName = String(candidate.full_name ?? "")
+          .trim()
+          .toLowerCase();
+        const candidateGamePlayerId = String(
+          candidate.gamePlayerId ?? "",
+        ).trim();
+
+        return (
+          (gamePhone &&
+            candidatePhone &&
+            gamePhone === candidatePhone) ||
+          (gameName &&
+            candidateName &&
+            gameName === candidateName) ||
+          (gamePlayerId &&
+            candidateGamePlayerId &&
+            gamePlayerId === candidateGamePlayerId)
+        );
+      });
+
+      if (matchedProfile) {
+        router.push(`/admin/users/${matchedProfile.id}`);
+        return;
+      }
+
+      // Keep unlinked game customers visible inside Customer Behavior.
+      // Never send a synthetic "game-..." id to /admin/users/[id].
+      setSelectedUser(user);
+      setSelectedCategories([]);
+      setSelectedStamps([]);
+      setSelectedRewards([]);
+      setSelectedLoading(false);
+      return;
+    }
+
     if (openGift) {
       try {
         window.sessionStorage.setItem("proscafe_open_gift_popup", "1");
       } catch {}
     }
+
     router.push(`/admin/users/${user.id}`);
   }
 
@@ -3305,32 +3781,43 @@ export function UsersPage({ adminId }: { adminId: string }) {
               Loading users...
             </div>
           ) : selectedUser ? (
-            <DesktopClientProfilePanel
-              user={selectedUser}
-              currentUserId={adminId}
-              categories={selectedCategories}
-              stamps={selectedStamps}
-              rewards={selectedRewards}
-              activities={activityTxns.filter(
-                (t) => t.client_id === selectedUser.id,
-              )}
-              loading={selectedLoading}
-              onBack={() => setSelectedUser(null)}
-              onRoleChange={(role) => void setRole(selectedUser.id, role)}
-              onDeactivate={() => void deactivateUser(selectedUser.id)}
-              onReactivate={(role) =>
-                void reactivateUser(selectedUser.id, role)
-              }
-              onAddStamp={(categoryId) =>
-                void addStampToSelectedClient(categoryId)
-              }
-              onRemoveStamp={(categoryId) =>
-                void removeStampFromSelectedClient(categoryId)
-              }
-              onSendGift={(gift, desc) =>
-                void sendGiftToSelectedClient(gift, desc)
-              }
-            />
+            selectedUser.isGameOnly ||
+            String(selectedUser.id).startsWith("game-") ? (
+              <GameOnlyCustomerPanel
+                user={selectedUser}
+                categories={categories}
+                gamePlayerRows={gamePlayerRows}
+                gamePredictionRows={gamePredictionRows}
+                onBack={() => setSelectedUser(null)}
+              />
+            ) : (
+              <DesktopClientProfilePanel
+                user={selectedUser}
+                currentUserId={adminId}
+                categories={selectedCategories}
+                stamps={selectedStamps}
+                rewards={selectedRewards}
+                activities={activityTxns.filter(
+                  (t) => t.client_id === selectedUser.id,
+                )}
+                loading={selectedLoading}
+                onBack={() => setSelectedUser(null)}
+                onRoleChange={(role) => void setRole(selectedUser.id, role)}
+                onDeactivate={() => void deactivateUser(selectedUser.id)}
+                onReactivate={(role) =>
+                  void reactivateUser(selectedUser.id, role)
+                }
+                onAddStamp={(categoryId) =>
+                  void addStampToSelectedClient(categoryId)
+                }
+                onRemoveStamp={(categoryId) =>
+                  void removeStampFromSelectedClient(categoryId)
+                }
+                onSendGift={(gift, desc) =>
+                  void sendGiftToSelectedClient(gift, desc)
+                }
+              />
+            )
           ) : (
             <div className="min-h-[calc(100vh-88px)] w-full rounded-[28px] bg-white/10 p-4 shadow-[0_26px_70px_rgba(35,54,47,0.22)] backdrop-blur-2xl lg:min-h-[calc(100vh-120px)] lg:rounded-[30px] lg:p-5">
               {/* Search + filters */}

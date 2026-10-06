@@ -46,7 +46,7 @@ async function requireAuthorizedUser() {
 
   const { data: profile, error: profileError } = await admin
     .from("profiles")
-    .select("id, role, full_name, email")
+    .select("id, role")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -71,7 +71,6 @@ async function requireAuthorizedUser() {
   return {
     user,
     admin,
-    profile,
     error: null,
   };
 }
@@ -86,7 +85,7 @@ export async function GET() {
   const { data, error } = await auth.admin
     .from("contact_history")
     .select(
-      "id, contact_key, contacted_at, source, source_id, contacted_by, contacted_by_name, created_at",
+      "id, contact_key, contacted_at, source, source_id, created_at",
     )
     .order("contacted_at", { ascending: false })
     .limit(5000);
@@ -197,26 +196,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const staffName =
-    String(auth.profile?.full_name ?? "").trim() ||
-    String(auth.profile?.email ?? "").trim() ||
-    String(auth.user?.email ?? "").trim() ||
-    "Staff user";
-
   const rowsToInsert = uniqueKeys.map((contactKey) => ({
     contact_key: contactKey,
     contacted_at: contactedAt,
     source: source || "Customer behavior",
     source_id: sourceId || null,
-    contacted_by: auth.user?.id ?? null,
-    contacted_by_name: staffName,
   }));
 
   const { data, error } = await auth.admin
     .from("contact_history")
     .insert(rowsToInsert)
     .select(
-      "id, contact_key, contacted_at, source, source_id, contacted_by, contacted_by_name, created_at",
+      "id, contact_key, contacted_at, source, source_id, created_at",
     );
 
   if (error) {

@@ -7,9 +7,9 @@ import {
   createClient,
 } from "@/lib/supabase/server";
 import {
-  REPORT_TYPES,
+  REPORT_DEFINITIONS,
+  getReportDefinition,
   type ReportDefinition,
-  type ReportType,
 } from "@/lib/internal-reports";
 
 export const dynamic = "force-dynamic";
@@ -149,11 +149,11 @@ export async function POST(request: Request) {
   ]);
 
   const body = await request.json().catch(() => null);
-  const reportType = body?.report_type as ReportType;
+  const reportType = normalizeReportType(body?.report_type);
   const answers = body?.answers;
 
   if (
-    !REPORT_TYPES.includes(reportType) ||
+    !reportType ||
     !answers ||
     typeof answers !== "object" ||
     Array.isArray(answers)
@@ -168,28 +168,64 @@ export async function POST(request: Request) {
 
   const { data: formRow, error: formError } = await supabase
     .from("internal_report_forms")
-    .select("report_type,title,description,sections,is_active")
+    .select("report_type,title,description,sections,is_active,allowed_roles,is_deleted,form_kind")
     .eq("report_type", reportType)
     .maybeSingle();
 
-  if (formError || !formRow || formRow.is_active === false) {
+  if (formError) {
     return NextResponse.json(
-      {
-        error:
-          formError?.message ||
-          "This report form is unavailable.",
-      },
+      { error: formError.message },
+      { status: 500 },
+    );
+  }
+
+  const defaultDefinition = getReportDefinition(
+    reportType,
+    REPORT_DEFINITIONS,
+  );
+
+  const definition: ReportDefinition | null = formRow
+    ? {
+        type: formRow.report_type,
+        title: formRow.title,
+        description: formRow.description || "",
+        sections: formRow.sections || [],
+        is_active: formRow.is_active !== false,
+        allowed_roles: Array.isArray(formRow.allowed_roles)
+          ? formRow.allowed_roles
+          : ["staff", "supervisor", "master_admin"],
+        is_deleted: formRow.is_deleted === true,
+        form_kind:
+          formRow.form_kind === "report" ||
+          /\breport\b/i.test(String(formRow.title ?? "")) ||
+          String(formRow.report_type ?? "").endsWith("_report")
+            ? "report"
+            : "checklist",
+      }
+    : defaultDefinition ?? null;
+
+  if (
+    !definition ||
+    definition.is_active === false ||
+    definition.is_deleted === true
+  ) {
+    return NextResponse.json(
+      { error: "This report form is unavailable." },
       { status: 400 },
     );
   }
 
-  const definition: ReportDefinition = {
-    type: formRow.report_type,
-    title: formRow.title,
-    description: formRow.description || "",
-    sections: formRow.sections || [],
-    is_active: formRow.is_active !== false,
-  };
+  const allowedRoles =
+    Array.isArray(definition.allowed_roles) && definition.allowed_roles.length
+      ? definition.allowed_roles
+      : ["staff", "supervisor", "master_admin"];
+
+  if (!allowedRoles.includes(profile.role)) {
+    return NextResponse.json(
+      { error: "You do not have access to this report form." },
+      { status: 403 },
+    );
+  }
 
   for (const section of definition.sections) {
     for (const question of section.questions) {

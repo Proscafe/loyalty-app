@@ -7,9 +7,11 @@ import {
   REPORT_DEFINITIONS,
   REPORT_TYPES,
   getReportDefinition,
+  getReportFormKind,
   reportRoleLabel,
   reportTypeLabel,
   type ReportDefinition,
+  type ReportFormKind,
   type ReportQuestionKind,
 } from "@/lib/internal-reports";
 
@@ -18,6 +20,13 @@ type ReportRow = {
   submitted_by_name?: string | null; submitted_by_role?: string | null;
   submitted_by_phone?: string | null;
   answers?: Record<string,string> | null; created_at?: string | null;
+};
+type TeamUser = {
+  id: string;
+  full_name?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  is_active?: boolean | null;
 };
 type EmailRecipientRule = { email: string; report_types: string[] };
 type Settings = {
@@ -33,6 +42,11 @@ const KINDS:{value:ReportQuestionKind;label:string}[]=[
   {value:"yes_no",label:"Yes / No"},
   {value:"short",label:"Short Answer"},{value:"paragraph",label:"Paragraph"}
 ];
+const FORM_ROLES=[
+  {value:"staff",label:"Manager"},
+  {value:"supervisor",label:"Supervisor"},
+  {value:"master_admin",label:"Admin"},
+] as const;
 function dt(v?:string|null){if(!v)return"—";const d=new Date(v);return Number.isNaN(d.getTime())?"—":d.toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"});}
 function dateMatch(v:string|null|undefined,f:TimeFilter,a:string,b:string){if(f==="all")return true;if(!v)return false;const d=new Date(v),n=new Date(),today=new Date(n.getFullYear(),n.getMonth(),n.getDate());if(f==="week"){const s=new Date(today);s.setDate(s.getDate()-((s.getDay()+6)%7));return d>=s;}if(f==="month")return d>=new Date(n.getFullYear(),n.getMonth(),1);const s=a?new Date(a+"T00:00:00"):new Date(0),e=b?new Date(b+"T23:59:59"):new Date(8640000000000000);return d>=s&&d<=e;}
 function checklistMetrics(r:ReportRow,forms:ReportDefinition[]){
@@ -68,7 +82,9 @@ function checklistMetrics(r:ReportRow,forms:ReportDefinition[]){
   const eightySixItems=eightySixValue.length>0;
 
   const isChecklist=
-    r.report_type==="floor_checklist"||
+    r.report_type==="floor_am_checklist"||
+    r.report_type==="floor_pm_checklist"||
+    r.report_type==="hostess_checklist"||
     r.report_type==="kitchen_checklist";
 
   // Regular reports never receive a checklist score.
@@ -124,9 +140,14 @@ function whatsappUrl(phone?:string|null){
   return `https://wa.me/${digits}`;
 }
 
-export default function ReportsPageClient({reports,initialForms,initialSettings}:{reports:ReportRow[];initialForms:ReportDefinition[];initialSettings:Settings|null}) {
+export default function ReportsPageClient({reports,teamUsers,initialForms,initialSettings}:{reports:ReportRow[];teamUsers:TeamUser[];initialForms:ReportDefinition[];initialSettings:Settings|null}) {
   const [tab,setTab]=useState<"reports"|"settings">("reports");
-  const [forms,setForms]=useState<ReportDefinition[]>(initialForms.length?initialForms:REPORT_DEFINITIONS);
+  const [forms,setForms]=useState<ReportDefinition[]>(()=>{
+    const merged=new Map<string,ReportDefinition>();
+    REPORT_DEFINITIONS.forEach(form=>merged.set(form.type,clone(form)));
+    initialForms.forEach(form=>merged.set(form.type,clone(form)));
+    return Array.from(merged.values());
+  });
   const [editing,setEditing]=useState<ReportDefinition|null>(null);
   const [settings,setSettings]=useState<Settings>(()=>{
     const base=initialSettings??{email_enabled:true,email_recipients:[],email_report_types:[...REPORT_TYPES]};
@@ -149,19 +170,34 @@ export default function ReportsPageClient({reports,initialForms,initialSettings}
   const [deletingId,setDeletingId]=useState<string|null>(null);
 
   const submitters=useMemo(()=>{
-    const map=new Map<string,string>();
-    reportRows.forEach(r=>{
-      if(!r.submitted_by)return;
-      map.set(r.submitted_by,(r.submitted_by_name||"Unknown").trim()||"Unknown");
-    });
-    return Array.from(map.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
-  },[reportRows]);
+    const activeRoles=new Set(["staff","supervisor","master_admin"]);
+
+    return teamUsers
+      .filter(user=>user.is_active===true)
+      .filter(user=>
+        activeRoles.has(
+          String(user.role??"")
+            .trim()
+            .toLowerCase()
+        )
+      )
+      .map(user=>[
+        String(user.id),
+        String(user.full_name??"").trim()||"Unnamed team member",
+      ] as [string,string])
+      .sort((a,b)=>a[1].localeCompare(b[1]));
+  },[teamUsers]);
 
   const visible=useMemo(()=>reportRows.filter(r=>{
     const departmentMatch=
       department==="all"||
       (department==="kitchen"&&(r.report_type==="kitchen_report"||r.report_type==="kitchen_checklist"))||
-      (department==="floor"&&(r.report_type==="floor_report"||r.report_type==="floor_checklist"));
+      (department==="floor"&&(
+        r.report_type==="floor_report"||
+        r.report_type==="floor_am_checklist"||
+        r.report_type==="floor_pm_checklist"||
+        r.report_type==="hostess_checklist"
+      ));
 
     return departmentMatch&&
       (type==="all"||r.report_type===type)&&
@@ -184,10 +220,68 @@ export default function ReportsPageClient({reports,initialForms,initialSettings}
 
   async function saveForm(){
     if(!editing)return; setSaving(true);setNotice(null);
-    const res=await fetch("/api/reports/forms",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({form:editing})});
+    const normalizedEditing:ReportDefinition={
+      ...editing,
+      form_kind:/\breport\b/i.test(editing.title)
+        ?"report"
+        :(editing.form_kind??getReportFormKind(editing)),
+    };
+    const res=await fetch("/api/reports/forms",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({form:normalizedEditing})});
     const data=await res.json().catch(()=>({}));setSaving(false);
     if(!res.ok){setNotice(data.error||"Could not save form.");return;}
-    setForms(c=>c.map(f=>f.type===editing.type?clone(editing):f));setNotice("Form saved. Staff will see the new questions immediately.");
+    const saved=(data?.form??editing) as ReportDefinition;
+    setEditing(clone(saved));
+    setForms(c=>{
+      const exists=c.some(f=>f.type===saved.type);
+      return exists?c.map(f=>f.type===saved.type?clone(saved):f):[...c,clone(saved)];
+    });
+    setNotice("Form saved. Staff will see it immediately.");
+  }
+  function addForm(kind:ReportFormKind){
+    const stamp=Date.now();
+    const typePrefix=kind==="report"?"report":"checklist";
+    const form:ReportDefinition={
+      type:`${typePrefix}_${stamp}`,
+      title:kind==="report"?"New Report":"New Checklist",
+      description:"",
+      form_kind:kind,
+      is_active:true,
+      allowed_roles:["staff","supervisor","master_admin"],
+      is_deleted:false,
+      sections:[{
+        title:kind==="report"?"Report":"Checklist",
+        questions:[{
+          key:`${typePrefix}_${stamp}_1`,
+          label:"New question",
+          kind:kind==="report"?"short":"yes_no",
+          required:true,
+        }],
+      }],
+    };
+    setForms(current=>[...current,form]);
+    setEditing(form);
+    setNotice(null);
+  }
+  async function deleteForm(form:ReportDefinition){
+    if(!window.confirm(`Delete ${form.title}? Existing submitted reports will stay in history.`))return;
+
+    setSaving(true);
+    setNotice(null);
+
+    const res=await fetch(`/api/reports/forms?type=${encodeURIComponent(form.type)}`,{
+      method:"DELETE",
+    });
+    const data=await res.json().catch(()=>({}));
+    setSaving(false);
+
+    if(!res.ok){
+      setNotice(data.error||"Could not delete form.");
+      return;
+    }
+
+    setForms(current=>current.filter(item=>item.type!==form.type));
+    setEditing(null);
+    setNotice("Form deleted.");
   }
   async function saveSettings(){
     setSaving(true);setNotice(null);
@@ -446,8 +540,14 @@ export default function ReportsPageClient({reports,initialForms,initialSettings}
       </>:<>
         {!editing?<>
           <section className="mb-5 rounded-[26px] border border-white/10 bg-white/10 p-5 text-white backdrop-blur-xl">
-            <h2 className="text-[20px] font-black">Edit Forms</h2><p className="mt-1 text-[12px] font-bold text-white/60">Edit questions, types, required fields, order, and active forms.</p>
-            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">{forms.map(f=><button key={f.type} onClick={()=>setEditing(clone(f))} className="rounded-[18px] bg-white/10 p-4 text-left"><div className="font-black">{f.title}</div><div className="mt-1 text-[11px] font-bold text-[#ffd66b]">Edit form →</div></button>)}</div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><h2 className="text-[20px] font-black">Edit Forms</h2><p className="mt-1 text-[12px] font-bold text-white/60">Create reports or checklists. Staff automatically sees each form in the correct section.</p></div>
+              <div className="flex gap-2">
+                <button type="button" onClick={()=>addForm("report")} className="h-11 rounded-[14px] bg-white px-5 text-[10px] font-black uppercase tracking-[.1em] text-[#365665]">+ Add Report</button>
+                <button type="button" onClick={()=>addForm("checklist")} className="h-11 rounded-[14px] bg-[#ffd66b] px-5 text-[10px] font-black uppercase tracking-[.1em] text-[#365665]">+ Add Checklist</button>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">{forms.map(f=>{const kind=getReportFormKind(f);return <button key={f.type} onClick={()=>setEditing(clone(f))} className="rounded-[18px] bg-white/10 p-4 text-left"><div className="mb-2 text-[9px] font-black uppercase tracking-[.12em] text-[#ffd66b]">{kind}</div><div className="font-black">{f.title}</div><div className="mt-1 text-[11px] font-bold text-[#ffd66b]">Edit form →</div></button>})}</div>
           </section>
           <section className="rounded-[26px] border border-white/10 bg-white/10 text-white backdrop-blur-xl">
             <button
@@ -493,21 +593,77 @@ export default function ReportsPageClient({reports,initialForms,initialSettings}
             </div>
             </div>:null}
           </section>
-        </>:<FormEditor form={editing} setForm={setEditing} onBack={()=>setEditing(null)} onSave={saveForm} saving={saving}/>}
+        </>:<FormEditor form={editing} setForm={setEditing} onBack={()=>setEditing(null)} onSave={saveForm} onDelete={()=>void deleteForm(editing)} saving={saving}/>}
       </>}
 
       {selected?<ReportModal row={selected} forms={forms} onClose={()=>setSelected(null)}/>:null}
     </div>
   </AdminPageShell>;
 }
-function FormEditor({form,setForm,onBack,onSave,saving}:{form:ReportDefinition;setForm:(f:ReportDefinition)=>void;onBack:()=>void;onSave:()=>void;saving:boolean}){
+function FormEditor({form,setForm,onBack,onSave,onDelete,saving}:{form:ReportDefinition;setForm:(f:ReportDefinition)=>void;onBack:()=>void;onSave:()=>void;onDelete:()=>void;saving:boolean}){
   function updateSection(si:number,patch:any){const n=clone(form);n.sections[si]={...n.sections[si],...patch};setForm(n)}
   function updateQ(si:number,qi:number,patch:any){const n=clone(form);n.sections[si].questions[qi]={...n.sections[si].questions[qi],...patch};setForm(n)}
   function move(si:number,qi:number,d:number){const n=clone(form),a=n.sections[si].questions,j=qi+d;if(j<0||j>=a.length)return;[a[qi],a[j]]=[a[j],a[qi]];setForm(n)}
   function remove(si:number,qi:number){const n=clone(form);n.sections[si].questions.splice(qi,1);setForm(n)}
   function add(si:number){const n=clone(form);n.sections[si].questions.push({key:`${form.type}_${Date.now()}`,label:"New question",kind:"yes_no",required:true});setForm(n)}
+  function addSection(afterIndex:number){
+    const n=clone(form);
+    n.sections.splice(afterIndex+1,0,{
+      title:"New Section",
+      questions:[{
+        key:`${form.type}_${Date.now()}_1`,
+        label:"New question",
+        kind:"yes_no",
+        required:true,
+      }],
+    });
+    setForm(n);
+  }
   return <section className="rounded-[26px] border border-white/10 bg-white/10 p-5 text-white">
-    <div className="mb-5 flex items-center justify-between"><div><button onClick={onBack} className="mb-2 text-[11px] font-black text-[#ffd66b]">← SETTINGS</button><h2 className="text-[24px] font-black">{form.title}</h2></div><button onClick={()=>setForm({...form,is_active:form.is_active===false})} className={`rounded-full px-4 py-2 text-[10px] font-black ${form.is_active===false?"bg-white/10":"bg-[#9cffc9] text-[#365665]"}`}>{form.is_active===false?"INACTIVE":"ACTIVE"}</button></div>
+    <div className="mb-5 flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><button onClick={onBack} className="mb-2 text-[11px] font-black text-[#ffd66b]">← SETTINGS</button><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} className="h-12 w-full rounded-[14px] bg-white px-4 text-[18px] font-black text-[#365665] outline-none" placeholder="Checklist title"/></div><button onClick={()=>setForm({...form,is_active:form.is_active===false})} className={`mt-7 rounded-full px-4 py-2 text-[10px] font-black ${form.is_active===false?"bg-white/10":"bg-[#9cffc9] text-[#365665]"}`}>{form.is_active===false?"INACTIVE":"ACTIVE"}</button></div>
+    <div className="mb-5 rounded-[18px] bg-white/[0.08] p-4">
+      <div className="mb-3 text-[10px] font-black uppercase tracking-[.14em] text-white/60">Form type</div>
+      <div className="grid grid-cols-2 gap-2">
+        {(["report","checklist"] as const).map(kind=>{
+          const selected=getReportFormKind(form)===kind;
+          return <button
+            key={kind}
+            type="button"
+            onClick={()=>setForm({...form,form_kind:kind})}
+            className={`h-11 rounded-[12px] text-[10px] font-black uppercase tracking-[.08em] ${selected?"bg-[#ffd66b] text-[#365665]":"bg-white/10 text-white"}`}
+          >
+            {selected?"✓ ":""}{kind}
+          </button>
+        })}
+      </div>
+      <p className="mt-2 text-[10px] font-bold text-white/45">A title containing “Report” is automatically treated as a report.</p>
+    </div>
+    <div className="mb-5 rounded-[18px] bg-white/[0.08] p-4">
+      <div className="mb-3 text-[10px] font-black uppercase tracking-[.14em] text-white/60">Visible to role / department</div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {FORM_ROLES.map(role=>{
+          const selected=(form.allowed_roles??["staff","supervisor","master_admin"]).includes(role.value);
+          return <button
+            key={role.value}
+            type="button"
+            onClick={()=>{
+              const current=form.allowed_roles??["staff","supervisor","master_admin"];
+              const next=selected
+                ? current.filter(value=>value!==role.value)
+                : [...current,role.value];
+              setForm({...form,allowed_roles:next});
+            }}
+            className={`h-11 rounded-[12px] text-[10px] font-black uppercase tracking-[.08em] ${selected?"bg-[#ffd66b] text-[#365665]":"bg-white/10 text-white"}`}
+          >
+            {selected?"✓ ":""}{role.label}
+          </button>
+        })}
+      </div>
+      <p className="mt-2 text-[10px] font-bold text-white/45">Only selected roles will see this form on the staff frontend.</p>
+    </div>
+    <div className="mb-5 flex justify-end">
+      <button type="button" disabled={saving} onClick={onDelete} className="rounded-[12px] bg-[#7b3434] px-4 py-2.5 text-[10px] font-black uppercase tracking-[.08em] text-white disabled:opacity-50">Delete Form</button>
+    </div>
     {form.sections.map((s,si)=><div key={si} className="mb-5 rounded-[20px] bg-white/8 p-4">
       <input value={s.title} onChange={e=>updateSection(si,{title:e.target.value})} className="mb-3 h-11 w-full rounded-[12px] bg-white px-4 text-[13px] font-black text-[#365665]"/>
       <div className="space-y-3">{s.questions.map((q,qi)=><div key={q.key} className="rounded-[16px] bg-black/10 p-3">
@@ -515,7 +671,10 @@ function FormEditor({form,setForm,onBack,onSave,saving}:{form:ReportDefinition;s
         <div className="mt-2 grid grid-cols-2 gap-2"><select value={q.kind} onChange={e=>updateQ(si,qi,{kind:e.target.value as ReportQuestionKind})} className="h-10 rounded-[10px] bg-white px-2 text-[11px] font-black text-[#365665]">{KINDS.map(k=><option key={k.value} value={k.value}>{k.label}</option>)}</select><button onClick={()=>updateQ(si,qi,{required:!q.required})} className={`rounded-[10px] text-[10px] font-black ${q.required?"bg-[#ffd66b] text-[#365665]":"bg-white/10"}`}>{q.required?"REQUIRED":"OPTIONAL"}</button></div>
         <div className="mt-2 flex gap-2"><button onClick={()=>move(si,qi,-1)} className="rounded-full bg-white/10 px-3 py-2 text-[10px] font-black">↑</button><button onClick={()=>move(si,qi,1)} className="rounded-full bg-white/10 px-3 py-2 text-[10px] font-black">↓</button><button onClick={()=>remove(si,qi)} className="ml-auto rounded-full bg-[#7b3434] px-3 py-2 text-[10px] font-black">DELETE</button></div>
       </div>)}</div>
-      <button onClick={()=>add(si)} className="mt-3 h-10 w-full rounded-[12px] border border-dashed border-white/30 text-[10px] font-black">+ ADD QUESTION</button>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button onClick={()=>add(si)} className="h-10 w-full rounded-[12px] border border-dashed border-white/30 text-[10px] font-black">+ ADD QUESTION</button>
+        <button onClick={()=>addSection(si)} className="h-10 w-full rounded-[12px] border border-dashed border-[#ffd66b]/50 bg-[#ffd66b]/10 text-[10px] font-black text-[#ffd66b]">+ ADD SECTION</button>
+      </div>
     </div>)}
     <button disabled={saving} onClick={onSave} className="h-12 w-full rounded-[14px] bg-[#ffd66b] text-[11px] font-black uppercase tracking-[.1em] text-[#365665]">{saving?"Saving...":"Save Form"}</button>
   </section>

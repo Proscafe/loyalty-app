@@ -21,32 +21,11 @@ type StaffActivityRow = {
 const PAGE_BG =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
-function dayLabel(value: string) {
-  const date = new Date(value);
-  const now = new Date();
-
-  const today = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
-
-  const activityDay = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  );
-
-  const diffDays = Math.round(
-    (today.getTime() - activityDay.getTime()) / 86400000,
-  );
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-
-  return date.toLocaleDateString("en-US", {
+function dateLabel(value: string) {
+  return new Date(value).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    year: "numeric",
   });
 }
 
@@ -80,7 +59,7 @@ function activityText(row: StaffActivityRow) {
       <>
         {row.client_name} redeemed{" "}
         <span className="text-[#ffd66b]">
-          {row.reward_label || "Gift"}
+          ✅ {row.reward_label || "Gift"}
         </span>
       </>
     );
@@ -106,7 +85,7 @@ function activityText(row: StaffActivityRow) {
     <>
       {row.client_name} received{" "}
       <span className="text-[#ffd66b]">
-        {row.reward_label || "Gift"}
+        🎁 {row.reward_label || "Gift"}
       </span>
     </>
   );
@@ -150,6 +129,12 @@ export function StaffActivityClient() {
     void load();
   }, [load]);
 
+  const visibleRows = rows.filter((row) => {
+    if (row.activity_source !== "stamp") return true;
+    const delta = Math.abs(Number(row.stamp_delta ?? 1));
+    return !Number.isFinite(delta) || delta <= 1;
+  });
+
   return (
     <main
       className="min-h-screen px-4 pb-32 pt-2 font-raleway text-white"
@@ -164,9 +149,15 @@ export function StaffActivityClient() {
           className="mt-1"
         />
 
-        <div className="mt-4">
-{loading ? (
+        <section className="mb-4 mt-4 rounded-[22px] bg-white/[0.10] px-5 py-5 shadow-[0_18px_50px_rgba(35,54,47,0.14)] backdrop-blur-2xl">
+          <h1 className="text-[30px] font-black tracking-[-0.05em] text-white">
+            Activity
+          </h1>
 
+          <div className="mt-2 text-[11px] font-bold text-white/62">  </div>
+        </section>
+
+        {loading ? (
           <div className="rounded-[20px] bg-white/[0.08] px-4 py-7 text-center text-[12px] font-bold text-white/65 backdrop-blur-xl">
             Loading activity...
           </div>
@@ -174,13 +165,13 @@ export function StaffActivityClient() {
           <div className="rounded-[20px] bg-white/[0.08] px-4 py-6 text-center text-[12px] font-bold text-white/70 backdrop-blur-xl">
             {error}
           </div>
-        ) : rows.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <div className="rounded-[20px] bg-white/[0.08] px-4 py-7 text-center text-[12px] font-bold text-white/60 backdrop-blur-xl">
             No activity in the last 3 days.
           </div>
         ) : (
           <section className="overflow-hidden rounded-[22px] bg-white/[0.08] shadow-[0_12px_30px_rgba(31,45,36,0.10),inset_0_0_0_1px_rgba(255,255,255,0.08)] backdrop-blur-2xl">
-            {rows.map((row) => (
+            {visibleRows.map((row) => (
               <div
                 key={row.id}
                 className="border-b border-white/10 px-4 py-3 last:border-b-0"
@@ -189,20 +180,13 @@ export function StaffActivityClient() {
                   {activityText(row)}
                 </div>
 
-                <div className="mt-1 flex items-center justify-between gap-3 text-[10px] font-black text-white/58">
-                  <span className="min-w-0 truncate">
-                    {row.staff_name}
-                  </span>
-
-                  <span className="shrink-0">
-                    {dayLabel(row.created_at)} · {timeLabel(row.created_at)}
-                  </span>
+                <div className="mt-1 text-[10px] font-black text-white/58">
+                  {row.staff_name} - {dateLabel(row.created_at)} - {timeLabel(row.created_at)}
                 </div>
               </div>
             ))}
           </section>
         )}
-        </div>
       </div>
 
       <StaffBottomNav active="activity" />

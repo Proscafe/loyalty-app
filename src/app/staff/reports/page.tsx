@@ -14,6 +14,45 @@ type HistoryRow = {
   created_at: string | null;
 };
 
+function mergeDefinitions(
+  databaseForms: any[] | null | undefined,
+): ReportDefinition[] {
+  const merged = new Map<string, ReportDefinition>();
+
+  for (const definition of REPORT_DEFINITIONS) {
+    merged.set(definition.type, definition);
+  }
+
+  for (const row of databaseForms ?? []) {
+    const type = String(row.report_type);
+
+    if (row.is_deleted === true) {
+      merged.delete(type);
+      continue;
+    }
+
+    merged.set(type, {
+      type,
+      title: row.title,
+      description: row.description || "",
+      sections: row.sections || [],
+      is_active: row.is_active !== false,
+      allowed_roles: Array.isArray(row.allowed_roles)
+        ? row.allowed_roles
+        : ["staff", "supervisor", "master_admin"],
+      is_deleted: false,
+      form_kind:
+        row.form_kind === "report" ||
+        /\breport\b/i.test(String(row.title ?? "")) ||
+        type.endsWith("_report")
+          ? "report"
+          : "checklist",
+    });
+  }
+
+  return Array.from(merged.values());
+}
+
 export default async function StaffReportsPage() {
   const profile = await requireRole([
     "staff",
@@ -30,8 +69,7 @@ export default async function StaffReportsPage() {
   const [formsResult, historyResult] = await Promise.all([
     supabase
       .from("internal_report_forms")
-      .select("report_type,title,description,sections,is_active")
-      .eq("is_active", true),
+      .select("report_type,title,description,sections,is_active,allowed_roles,is_deleted,form_kind"),
     supabase
       .from("internal_reports")
       .select("id,report_type,created_at")
@@ -41,20 +79,17 @@ export default async function StaffReportsPage() {
       .limit(100),
   ]);
 
-  const definitions: ReportDefinition[] = formsResult.data?.length
-    ? formsResult.data.map((row: any) => ({
-        type: row.report_type,
-        title: row.title,
-        description: row.description || "",
-        sections: row.sections || [],
-        is_active: row.is_active !== false,
-      }))
-    : REPORT_DEFINITIONS;
-
   return (
     <ReportsClient
       profile={profile}
-      definitions={definitions}
+      definitions={mergeDefinitions(formsResult.data).filter((definition) => {
+        const roles =
+          Array.isArray(definition.allowed_roles) && definition.allowed_roles.length
+            ? definition.allowed_roles
+            : ["staff", "supervisor", "master_admin"];
+
+        return definition.is_active !== false && roles.includes(profile.role);
+      })}
       history={(historyResult.data ?? []) as HistoryRow[]}
     />
   );

@@ -10,12 +10,15 @@ import type {
   ReportQuestion,
   ReportType,
 } from "@/lib/internal-reports";
+import { getReportFormKind } from "@/lib/internal-reports";
 
 const PAGE_BG =
   "linear-gradient(135deg, #798673 0%, #687468 45%, #586256 100%)";
 
-const FORM_ORDER: ReportType[] = [
-  "floor_checklist",
+const FORM_ORDER: string[] = [
+  "floor_am_checklist",
+  "floor_pm_checklist",
+  "hostess_checklist",
   "floor_report",
   "kitchen_checklist",
   "kitchen_report",
@@ -56,6 +59,22 @@ export default function ReportsClient({
         return aIndex - bIndex;
       });
   }, [definitions]);
+
+  const reportDefinitions = useMemo(
+    () =>
+      orderedDefinitions.filter(
+        (form) => getReportFormKind(form) === "report",
+      ),
+    [orderedDefinitions],
+  );
+
+  const checklistDefinitions = useMemo(
+    () =>
+      orderedDefinitions.filter(
+        (form) => getReportFormKind(form) === "checklist",
+      ),
+    [orderedDefinitions],
+  );
 
   const visibleHistory = useMemo(() => {
     const now = new Date();
@@ -179,50 +198,64 @@ export default function ReportsClient({
 
         {!selected ? (
           <>
-            <section className="mt-4 grid grid-cols-2 gap-3">
-              {orderedDefinitions.map((form) => {
-                const isKitchen =
-                  form.type === "kitchen_checklist" ||
-                  form.type === "kitchen_report";
-                const isSupervisorFloorDisabled =
-                  profile.role === "supervisor" &&
-                  (form.type === "floor_checklist" ||
-                    form.type === "floor_report");
-
-                return (
-                  <button
-                    key={form.type}
-                    type="button"
-                    onClick={() => {
-                      if (!isSupervisorFloorDisabled) openForm(form);
-                    }}
-                    disabled={isSupervisorFloorDisabled}
-                    aria-disabled={isSupervisorFloorDisabled}
-                    className={`group relative h-[122px] overflow-hidden rounded-[24px] p-4 text-left backdrop-blur-2xl transition duration-200 hover:-translate-y-0.5 active:scale-[0.985] ${
-                      isSupervisorFloorDisabled
-                        ? "cursor-not-allowed bg-[#4f5650]/80 text-white/45 shadow-[0_18px_42px_rgba(30,35,31,0.16),inset_0_0_0_1px_rgba(255,255,255,0.08)] opacity-55"
-                        : isKitchen
-                          ? "bg-[#d6bf72]/[0.18] shadow-[0_18px_42px_rgba(45,48,28,0.20),inset_0_0_0_1px_rgba(255,231,151,0.24)] hover:bg-[#d6bf72]/[0.23]"
-                          : "bg-white/[0.10] shadow-[0_18px_42px_rgba(34,49,39,0.20),inset_0_0_0_1px_rgba(255,255,255,0.18)] hover:bg-white/[0.14]"
-                    }`}
-                  >
-                    <div className="relative z-10 flex h-full items-center">
-                      <h2 className="max-w-[105px] text-[19px] font-black leading-[1.02] tracking-[-0.04em] text-white">
-                        {form.title}
-                      </h2>
-                    </div>
-
-                    <div
-                      className={`pointer-events-none absolute -right-1 top-1/2 -translate-y-1/2 ${
-                        isKitchen ? "text-[#ffe39a]/20" : "text-white/[0.13]"
-                      }`}
+            {reportDefinitions.length ? (
+              <section className="mt-4">
+                <div className="space-y-3">
+                  {reportDefinitions.map((form) => (
+                    <button
+                      key={form.type}
+                      type="button"
+                      onClick={() => openForm(form)}
+                      className="group relative w-full overflow-hidden rounded-[20px] bg-[#d4b22f] px-5 py-3.5 text-left shadow-[0_12px_24px_rgba(34,49,39,0.16)] transition hover:-translate-y-0.5 hover:brightness-[1.03] active:scale-[0.99]"
                     >
-                      <ReportIcon type={form.type} />
-                    </div>
-                  </button>
-                );
-              })}
-            </section>
+                      <div className="pr-16">
+                        <div className="min-w-0">
+                          <h3 className="text-[20px] font-black leading-[1.02] tracking-[-0.04em] text-white">
+                            {form.title}
+                          </h3>
+                          <p className="mt-1 text-[11px] font-semibold leading-snug text-white/88">
+                            {form.description || `Submit today’s ${form.title.toLowerCase()}.`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="absolute right-4 inset-y-0 my-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-[23px] font-light text-[#6d6728] shadow-[0_7px_16px_rgba(0,0,0,0.10)]">
+                        →
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {checklistDefinitions.length ? (
+              <section className="mt-8">
+                <h2 className="mb-4 text-[22px] font-black tracking-[-0.04em] text-white">
+                  Checklists
+                </h2>
+
+                <div className="space-y-3">
+                  {checklistDefinitions.map((form) => (
+                    <button
+                      key={form.type}
+                      type="button"
+                      onClick={() => openForm(form)}
+                      className="group relative min-h-[72px] w-full overflow-hidden rounded-[18px] bg-white/[0.09] px-5 py-3.5 text-left shadow-[0_12px_30px_rgba(34,49,39,0.10),inset_0_0_0_1px_rgba(255,255,255,0.11)] backdrop-blur-2xl transition duration-200 hover:-translate-y-0.5 hover:bg-white/[0.12] active:scale-[0.99]"
+                    >
+                      <div className="flex min-h-[44px] items-center pr-10">
+                        <h3 className="text-[17px] font-black leading-tight tracking-[-0.025em] text-white">
+                          {form.title}
+                        </h3>
+                      </div>
+
+                      <div className="absolute right-5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-[27px] font-light leading-none text-[#ffd66b]">
+                        ›
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             <section className="mt-7">
               <div className="mb-3 flex items-end justify-between">
@@ -378,15 +411,20 @@ export default function ReportsClient({
 }
 
 
-function ReportIcon({ type }: { type: ReportType }) {
-  const iconClass = "h-[86px] w-[86px] fill-none stroke-current";
+function ReportIcon({ type, kind }: { type: string; kind?: "report" | "checklist" }) {
+  const iconClass = kind === "report" ? "h-[54px] w-[54px] fill-none stroke-current" : "h-[44px] w-[44px] fill-none stroke-current";
   const common = {
     strokeWidth: 1.45,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
 
-  if (type === "floor_checklist") {
+  if (
+    kind === "checklist" ||
+    type === "floor_am_checklist" ||
+    type === "floor_pm_checklist" ||
+    type === "hostess_checklist"
+  ) {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true" className={iconClass}>
         <path {...common} d="M9 5.5h6M10 3.5h4a1.5 1.5 0 0 1 1.5 1.5v.5h2A1.5 1.5 0 0 1 19 7v12a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V7a1.5 1.5 0 0 1 1.5-1.5h2V5A1.5 1.5 0 0 1 10 3.5Z" />
