@@ -14,7 +14,6 @@ type ProfileRow = {
 };
 type CategoryRow = { id: string; name?: string | null };
 type Filter = "today" | "week" | "month" | "custom" | "all";
-type QuickFilter = "all" | "stamps" | "gifts" | "redeemed";
 
 const PAGE_BG = "#0F2A2D";
 const GLASS_PANEL = "rgba(255,255,255,0.10)";
@@ -211,10 +210,7 @@ function activitySentence(
       return `${clientName} received ${item}`;
     return `${clientName} earned ${item}`;
   }
-  if (type === "Redeemed") {
-    const redeemedItem = item.startsWith("✅") ? item : `✅ ${item}`;
-    return `${clientName} redeemed ${redeemedItem}`;
-  }
+  if (type === "Redeemed") return `${clientName} redeemed ${item}`;
   if (type === "Expired") return `${clientName} gift expired`;
   if (type === "Contact") return `${clientName} was marked as contacted`;
   if (/bounced|returned/.test(action)) return `${clientName} gift was returned`;
@@ -278,13 +274,29 @@ export default function ActivityPageClient({
   const [dateTo, setDateTo] = useState("");
   const [desktopFilterOpen, setDesktopFilterOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const desktopFilterRef = useRef<HTMLDivElement | null>(null);
 
   const profileById = useMemo(
     () => new Map(profiles.map((profile) => [profile.id, profile])),
     [profiles],
   );
+
+  const profileByName = useMemo(() => {
+    const map = new Map<string, ProfileRow>();
+
+    for (const profile of profiles) {
+      const key = String(profile.full_name ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+      if (key && !map.has(key)) {
+        map.set(key, profile);
+      }
+    }
+
+    return map;
+  }, [profiles]);
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
     [categories],
@@ -309,13 +321,26 @@ export default function ActivityPageClient({
   const enriched = useMemo(
     () =>
       activities.map((row) => {
-        const profile = profileById.get(
-          String(row.client_id ?? row.profile_id ?? ""),
-        );
+        const rawClientId = String(
+          row.client_id ?? row.profile_id ?? "",
+        ).trim();
+        const rawClientName = cleanText(row.client_name ?? "");
+        const normalizedClientName = rawClientName
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+
+        const profile =
+          profileById.get(rawClientId) ??
+          (normalizedClientName
+            ? profileByName.get(normalizedClientName)
+            : undefined);
+
+        const clientId = String(profile?.id ?? rawClientId).trim();
         const category = categoryById.get(String(row.category_id ?? ""));
         const clientName = cleanText(
-          row.client_name ??
-            profile?.full_name ??
+          profile?.full_name ??
+            rawClientName ??
             profile?.client_code ??
             "Client",
         );
@@ -336,6 +361,7 @@ export default function ActivityPageClient({
 
         return {
           row,
+          clientId,
           clientName,
           categoryName,
           type,
@@ -344,7 +370,7 @@ export default function ActivityPageClient({
           staffName,
         };
       }),
-    [activities, profileById, categoryById],
+    [activities, profileById, profileByName, categoryById],
   );
 
 
@@ -369,15 +395,8 @@ export default function ActivityPageClient({
         `${activity} ${clientName} ${type} ${itemLabel} ${categoryName} ${staffName}`
           .toLowerCase()
           .includes(term);
-      const matchesQuickFilter =
-        quickFilter === "all" ||
-        (quickFilter === "stamps" && type === "Stamp") ||
-        (quickFilter === "gifts" && type === "Gift") ||
-        (quickFilter === "redeemed" && type === "Redeemed");
-
       return (
         matchesSearch &&
-        matchesQuickFilter &&
         (filter === "custom"
           ? isInsideCustomRange(row.created_at, dateFrom, dateTo)
           : isSamePeriod(row.created_at, filter))
@@ -397,6 +416,16 @@ export default function ActivityPageClient({
   function openClientCard(clientId: unknown) {
     const id = String(clientId ?? "").trim();
     if (!id) return;
+
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        id,
+      );
+
+    if (isUuid) {
+      window.location.href = `/admin/users/${encodeURIComponent(id)}`;
+      return;
+    }
 
     try {
       window.sessionStorage.setItem("proscafe_open_client_id", id);
@@ -556,28 +585,6 @@ export default function ActivityPageClient({
                 <h1 className="text-[24px] font-black tracking-[-0.04em] text-white lg:text-[34px]">
                   Activity
                 </h1>
-
-                <div className="mt-4 hidden items-center gap-2 lg:flex">
-                  {([
-                    ["all", "ALL"],
-                    ["stamps", "STAMPS"],
-                    ["gifts", "GIFTS"],
-                    ["redeemed", "REDEEMED"],
-                  ] as const).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setQuickFilter(key)}
-                      className={`h-9 rounded-full px-4 text-[11px] font-black uppercase tracking-[0.08em] transition ${
-                        quickFilter === key
-                          ? "bg-[#ffd66b] text-[#365665]"
-                          : "bg-white/12 text-white hover:bg-white/18"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -689,6 +696,7 @@ export default function ActivityPageClient({
                   visibleRows.map(
                     ({
                       row,
+                      clientId,
                       activity,
                       staffName,
                       type,
@@ -699,7 +707,7 @@ export default function ActivityPageClient({
                         key={`${String(row.activity_source ?? "activity")}-${String(row.id)}`}
                         type="button"
                         onClick={() =>
-                          openClientCard(row.client_id ?? row.profile_id)
+                          openClientCard(clientId)
                         }
                         className="flex w-full cursor-pointer items-center justify-between gap-6 border-b border-white/10 px-7 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0"
                       >
@@ -730,6 +738,7 @@ export default function ActivityPageClient({
                   visibleRows.map(
                     ({
                       row,
+                      clientId,
                       activity,
                       staffName,
                       type,
@@ -740,7 +749,7 @@ export default function ActivityPageClient({
                         key={`${String(row.activity_source ?? "activity")}-${String(row.id)}`}
                         type="button"
                         onClick={() =>
-                          openClientCard(row.client_id ?? row.profile_id)
+                          openClientCard(clientId)
                         }
                         className="flex w-full cursor-pointer flex-col gap-1 border-b border-white/10 px-5 py-3 text-left text-[12px] font-black text-white transition hover:bg-white/10 last:border-b-0"
                       >

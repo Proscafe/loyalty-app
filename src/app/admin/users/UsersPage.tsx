@@ -1328,10 +1328,12 @@ function GameOnlyCustomerPanel({
 
             <div className="mt-3 text-[13px] font-bold leading-6 text-white/76">
               {resolvedPhone || "No phone"}
-              {username ? (
+              {user.client_code &&
+              !String(user.client_code).startsWith("@") &&
+              !String(user.client_code).toUpperCase().startsWith("GAME-") ? (
                 <span className="text-white/55">
                   {" "}
-                  · @{username}
+                  · {user.client_code}
                 </span>
               ) : null}
             </div>
@@ -1829,12 +1831,34 @@ export function UsersPage({ adminId }: { adminId: string }) {
           gamePredictionsRes,
           gamePlayersRes,
         ] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select(
-              "id, full_name, email, phone, client_code, role, is_active, gender, birthday, created_at",
-            )
-            .order("created_at", { ascending: false }),
+          fetch("/api/admin/users/profiles", { cache: "no-store" })
+            .then(async (response) => {
+              const json = await response.json().catch(() => ({}));
+
+              if (!response.ok) {
+                return {
+                  data: [],
+                  error: {
+                    message:
+                      json?.error || "Could not load customer profiles.",
+                  },
+                };
+              }
+
+              return {
+                data: json?.profiles ?? [],
+                error: null,
+              };
+            })
+            .catch((error) => ({
+              data: [],
+              error: {
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "Could not load customer profiles.",
+              },
+            })),
 
           loadAllRows("stamp_transactions"),
 
@@ -2293,7 +2317,33 @@ export function UsersPage({ adminId }: { adminId: string }) {
             };
           });
 
-        setUsers([...enriched, ...gameOnlyUsers] as AdminUser[]);
+        const normalizeIdentityName = (value: unknown) =>
+          String(value ?? "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "");
+
+        // Final de-duplication pass:
+        // if a synthetic game row has the same phone or same normalized full
+        // name as a real Supabase profile, keep ONLY the real profile. This
+        // prevents old game metrics (37 visits / $0, etc.) from appearing next
+        // to the customer's real loyalty metrics.
+        const filteredGameOnlyUsers = gameOnlyUsers.filter((gameUser) => {
+          const gamePhone = normalizePhoneForMatch(gameUser.phone);
+          const gameName = normalizeIdentityName(gameUser.full_name);
+
+          return !enriched.some((realUser: any) => {
+            const realPhone = normalizePhoneForMatch(realUser.phone);
+            const realName = normalizeIdentityName(realUser.full_name);
+
+            return Boolean(
+              (gamePhone && realPhone && gamePhone === realPhone) ||
+                (gameName && realName && gameName === realName),
+            );
+          });
+        });
+
+        setUsers([...enriched, ...filteredGameOnlyUsers] as AdminUser[]);
         setCategories(cats);
         setActivityTxns(txns);
         setRewardRows((rewards as any[]) ?? []);
@@ -2384,11 +2434,40 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   async function openUserProfile(user: AdminUser, openGift = false) {
     if (user.isGameOnly || String(user.id).startsWith("game-")) {
+      // Resolve through the server so RLS/browser visibility cannot prevent a
+      // real loyalty profile from being found.
+      try {
+        const response = await fetch("/api/admin/users/resolve-game-profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: user.phone ?? "",
+            full_name: user.full_name ?? "",
+            game_player_id: user.gamePlayerId ?? "",
+            synthetic_id: user.id,
+          }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data?.profile?.id) {
+          if (openGift) {
+            try {
+              window.sessionStorage.setItem("proscafe_open_gift_popup", "1");
+            } catch {}
+          }
+
+          router.push(`/admin/users/${data.profile.id}`);
+          return;
+        }
+      } catch {}
+
+      // Client-side fallback in case the resolver endpoint is temporarily
+      // unavailable.
       const gamePhone = normalizePhoneForMatch(user.phone);
       const gameName = String(user.full_name ?? "")
         .trim()
         .toLowerCase();
-
       const gamePlayerId = String(user.gamePlayerId ?? "").trim();
 
       const matchedProfile = users.find((candidate) => {
@@ -2418,12 +2497,17 @@ export function UsersPage({ adminId }: { adminId: string }) {
       });
 
       if (matchedProfile) {
+        if (openGift) {
+          try {
+            window.sessionStorage.setItem("proscafe_open_gift_popup", "1");
+          } catch {}
+        }
+
         router.push(`/admin/users/${matchedProfile.id}`);
         return;
       }
 
-      // Keep unlinked game customers visible inside Customer Behavior.
-      // Never send a synthetic "game-..." id to /admin/users/[id].
+      // Only use the inline fallback if no real profile exists at all.
       setSelectedUser(user);
       setSelectedCategories([]);
       setSelectedStamps([]);
