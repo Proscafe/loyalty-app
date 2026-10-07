@@ -14,6 +14,7 @@ type ProfileRow = {
 };
 type CategoryRow = { id: string; name?: string | null };
 type Filter = "today" | "week" | "month" | "custom" | "all";
+type DesktopQuickFilter = "all" | "stamps" | "gifts" | "redeemed";
 
 const PAGE_BG = "#0F2A2D";
 const GLASS_PANEL = "rgba(255,255,255,0.10)";
@@ -210,7 +211,7 @@ function activitySentence(
       return `${clientName} received ${item}`;
     return `${clientName} earned ${item}`;
   }
-  if (type === "Redeemed") return `${clientName} redeemed ${item}`;
+  if (type === "Redeemed") return `${clientName} redeemed ✅ ${item}`;
   if (type === "Expired") return `${clientName} gift expired`;
   if (type === "Contact") return `${clientName} was marked as contacted`;
   if (/bounced|returned/.test(action)) return `${clientName} gift was returned`;
@@ -274,6 +275,8 @@ export default function ActivityPageClient({
   const [dateTo, setDateTo] = useState("");
   const [desktopFilterOpen, setDesktopFilterOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [desktopQuickFilter, setDesktopQuickFilter] =
+    useState<DesktopQuickFilter>("all");
   const desktopFilterRef = useRef<HTMLDivElement | null>(null);
 
   const profileById = useMemo(
@@ -403,6 +406,14 @@ export default function ActivityPageClient({
       );
     },
   );
+
+  const desktopVisibleRows = visibleRows.filter(({ type }) => {
+    if (desktopQuickFilter === "all") return true;
+    if (desktopQuickFilter === "stamps") return type === "Stamp";
+    if (desktopQuickFilter === "gifts") return type === "Gift";
+    if (desktopQuickFilter === "redeemed") return type === "Redeemed";
+    return true;
+  });
 
   function chooseFilter(nextFilter: Filter) {
     setFilter(nextFilter);
@@ -683,17 +694,47 @@ export default function ActivityPageClient({
               </div>
             </header>
 
+            <div className="mb-5 hidden items-center gap-2 lg:flex">
+              {[
+                { key: "all", label: "ALL" },
+                { key: "stamps", label: "STAMPS" },
+                { key: "gifts", label: "GIFTS" },
+                { key: "redeemed", label: "REDEEMED" },
+              ].map((item) => {
+                const active = desktopQuickFilter === item.key;
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() =>
+                      setDesktopQuickFilter(
+                        item.key as DesktopQuickFilter,
+                      )
+                    }
+                    className={`h-9 shrink-0 rounded-full px-5 text-[11px] font-black uppercase tracking-[0.08em] transition ${
+                      active
+                        ? "bg-[#ffd66b] text-[#365665] shadow-[0_8px_24px_rgba(255,214,107,0.24)]"
+                        : "bg-transparent text-white hover:bg-white/10"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+
             <section
               className="overflow-hidden rounded-[28px] border border-white/10 shadow-[0_26px_70px_rgba(35,54,47,0.20)] backdrop-blur-2xl"
               style={{ background: GLASS_PANEL }}
             >
               <div className="hidden lg:block">
-                {visibleRows.length === 0 ? (
+                {desktopVisibleRows.length === 0 ? (
                   <div className="p-8 text-sm font-bold text-white/70">
                     No activity matches this filter.
                   </div>
                 ) : (
-                  visibleRows.map(
+                  desktopVisibleRows.map(
                     ({
                       row,
                       clientId,
