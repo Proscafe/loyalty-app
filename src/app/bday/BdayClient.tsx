@@ -7,56 +7,83 @@ const DEFAULT_NAME = "name";
 
 export default function BdayClient() {
   const [name, setName] = useState(DEFAULT_NAME);
-  const [draft, setDraft] = useState(DEFAULT_NAME);
-  const [editing, setEditing] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const editableRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY)?.trim();
-      if (saved) {
-        setName(saved);
-        setDraft(saved);
-      }
+      if (saved) setName(saved);
     } catch {}
   }, []);
 
   useEffect(() => {
-    if (!editing) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [editing]);
+    const video = videoRef.current;
+    if (!video) return;
 
-  function startEditing() {
-    setDraft(name);
-    setEditing(true);
-  }
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
 
-  function saveName() {
-    const next = draft.trim() || DEFAULT_NAME;
+    const play = () => {
+      video.play().catch(() => {});
+    };
+
+    play();
+
+    const events = ["loadedmetadata", "loadeddata", "canplay", "canplaythrough"];
+    events.forEach((event) => video.addEventListener(event, play));
+
+    const onVisibility = () => {
+      if (!document.hidden) play();
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      events.forEach((event) => video.removeEventListener(event, play));
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  function saveEditableName() {
+    const element = editableRef.current;
+    if (!element) return;
+
+    const next = element.innerText.trim() || DEFAULT_NAME;
+    element.innerText = next;
     setName(next);
-    setDraft(next);
-    setEditing(false);
 
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
     } catch {}
   }
 
-  function cancelEditing() {
-    setDraft(name);
-    setEditing(false);
+  function replayVideo() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      video.muted = true;
+      video.play().catch(() => {});
+    }
   }
 
   return (
-    <main className="relative min-h-[100svh] overflow-hidden bg-black text-white">
+    <main
+      className="relative min-h-[100svh] overflow-hidden bg-black text-white"
+      onPointerDown={replayVideo}
+    >
       <video
-        className="absolute inset-0 h-full w-full object-cover"
+        ref={videoRef}
+        className="fixed inset-0 z-0 h-[100svh] w-screen object-cover"
+        style={{ opacity: 0.7 }}
         autoPlay
         muted
         loop
         playsInline
         preload="auto"
+        controls={false}
+        poster=""
         aria-hidden="true"
       >
         <source
@@ -65,83 +92,91 @@ export default function BdayClient() {
         />
       </video>
 
-      <div className="absolute inset-0 bg-black/28" />
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(circle at center, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.24) 46%, rgba(0,0,0,0.48) 100%)",
-        }}
-      />
+      <div className="pointer-events-none fixed inset-0 z-[1] bg-black/[0.02]" />
 
-      <section className="relative z-10 flex min-h-[100svh] items-center justify-center px-5 py-12">
-        <div className="w-full max-w-[1220px] text-center">
-          <h1
-            className="select-none text-[clamp(42px,7.4vw,120px)] font-normal uppercase leading-[0.94] tracking-[0.015em] text-[#fff4e6]"
-            style={{
-              fontFamily:
-                '"Bodoni MT", Didot, "Times New Roman", Georgia, serif',
-              textShadow:
-                "0 0 10px rgba(255,219,176,.72), 0 0 30px rgba(255,130,50,.45)",
-            }}
-          >
-            Happy Birthday
-          </h1>
+      <section className="relative z-10 flex min-h-[100svh] items-center justify-center px-5 py-10">
+        <div className="w-full max-w-[1320px] text-center">
+          <div className="relative mx-auto w-full max-w-[1180px] py-10 sm:py-12">
+            <div
+              className="pointer-events-none absolute inset-0 -z-10"
+              style={{
+                background:
+                  "radial-gradient(ellipse at center, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.62) 42%, rgba(0,0,0,0.28) 68%, rgba(0,0,0,0) 88%)",
+              }}
+            />
 
-          <div className="mt-5 flex min-h-[112px] items-center justify-center sm:mt-6 sm:min-h-[150px]">
-            {editing ? (
-              <input
-                ref={inputRef}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onBlur={saveName}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") saveName();
-                  if (event.key === "Escape") cancelEditing();
-                }}
-                maxLength={34}
-                aria-label="Birthday name"
-                className="w-full max-w-[900px] border-0 border-b border-white/35 bg-transparent px-3 text-center text-[clamp(58px,10vw,150px)] font-normal leading-[0.9] text-[#fff5ea] outline-none"
+          <div className="select-none">
+            <div className="mb-1 flex items-center justify-center gap-4 sm:gap-6">
+              <span className="h-px w-[clamp(34px,5vw,88px)] bg-[#f6cf92]/80" />
+              <div
+                className="text-[clamp(20px,2.5vw,42px)] font-normal uppercase tracking-[0.55em]"
                 style={{
                   fontFamily:
-                    '"Snell Roundhand", "Segoe Script", "Brush Script MT", cursive',
+                    '"Bodoni MT", Didot, "Times New Roman", Georgia, serif',
+                  color: "#f8dcae",
+                  WebkitTextStroke: "0.4px rgba(255,243,220,0.75)",
                   textShadow:
-                    "0 0 10px rgba(255,225,190,.85), 0 0 34px rgba(255,140,70,.48)",
-                }}
-              />
-            ) : (
-              <button
-                type="button"
-                onDoubleClick={startEditing}
-                title="Double-click to edit the name"
-                className="cursor-default border-0 bg-transparent px-3 text-[clamp(58px,10vw,150px)] font-normal leading-[0.9] text-[#fff5ea] outline-none"
-                style={{
-                  fontFamily:
-                    '"Snell Roundhand", "Segoe Script", "Brush Script MT", cursive',
-                  textShadow:
-                    "0 0 10px rgba(255,225,190,.85), 0 0 34px rgba(255,140,70,.48)",
+                    "0 1px 0 rgba(92,35,10,.9), 0 0 7px rgba(255,211,150,.65), 0 0 16px rgba(255,111,24,.28)",
                 }}
               >
-                {name}
-              </button>
-            )}
+                Happy
+              </div>
+              <span className="h-px w-[clamp(34px,5vw,88px)] bg-[#f6cf92]/80" />
+            </div>
+
+            <div
+              className="mx-auto mt-1 text-[clamp(68px,10vw,156px)] font-normal uppercase leading-[0.82] tracking-[-0.035em]"
+              style={{
+                fontFamily:
+                  '"Bodoni MT", Didot, "Times New Roman", Georgia, serif',
+                background:
+                  "linear-gradient(180deg, #fffdf8 0%, #fff1d2 18%, #f6c97f 44%, #fff3d9 60%, #d98a32 82%, #8f3f12 100%)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+                WebkitTextStroke: "1px rgba(255,238,205,0.9)",
+                filter:
+                  "drop-shadow(0 2px 0 rgba(77,29,7,.95))",
+              }}
+            >
+              Birthday
+            </div>
           </div>
 
-          <p
-            className="mt-3 text-[clamp(18px,2vw,34px)] tracking-[0.28em] text-[#fff5ea]"
-            style={{
-              fontFamily:
-                '"Bodoni MT", Didot, "Times New Roman", Georgia, serif',
-              textShadow: "0 0 10px rgba(255,208,160,.4)",
-            }}
-          >
-            from Pro&apos;s Cafe
-          </p>
+          <div className="mt-4 flex min-h-[130px] items-center justify-center sm:mt-5 sm:min-h-[165px]">
+            <div
+              ref={editableRef}
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck={false}
+              onBlur={saveEditableName}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  (event.currentTarget as HTMLDivElement).blur();
+                }
+              }}
+              aria-label="Birthday name"
+              title="Click the name and type to edit"
+              className="inline-block min-w-[220px] cursor-text border-0 bg-transparent px-4 text-[clamp(72px,12vw,190px)] font-normal italic leading-[0.82] text-[#fff3df] outline-none rotate-[-4deg] origin-center"
+              style={{
+                fontFamily:
+                  '"Snell Roundhand", "Segoe Script", "Brush Script MT", "URW Chancery L", cursive',
+                color: "#fff6e8",
+                WebkitTextStroke: "0.7px rgba(255,223,176,0.88)",
+                textShadow:
+                  "0 1px 0 rgba(107,45,13,.95), 0 0 7px rgba(255,247,232,1), 0 0 18px rgba(255,190,105,.95), 0 0 36px rgba(255,111,27,.78), 0 0 58px rgba(255,72,8,.48)",
+              }}
+            >
+              {name}
+            </div>
+          </div>
+          </div>
 
           <img
             src="/bday-client/logo-white.png"
             alt="Pro's Cafe"
-            className="mx-auto mt-6 h-auto w-[clamp(105px,11vw,180px)] object-contain drop-shadow-[0_0_14px_rgba(255,255,255,0.32)]"
+            className="mx-auto mt-24 h-auto w-[clamp(90px,7.8vw,135px)] object-contain drop-shadow-[0_0_10px_rgba(255,255,255,0.22)] sm:mt-28"
             draggable={false}
           />
         </div>
