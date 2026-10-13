@@ -49,6 +49,12 @@ type RewardRow = AnyRow & {
   redeemed_at?: string | null;
   created_at?: string | null;
   expires_at?: string | null;
+  description?: string | null;
+  source?: string | null;
+  reward_source?: string | null;
+  is_birthday?: boolean | null;
+  birthday_reward?: boolean | null;
+  is_birthday_reward?: boolean | null;
 };
 
 type TransactionRow = AnyRow & {
@@ -174,6 +180,29 @@ function normalizeRewardText(value?: string | null) {
     .trim();
 }
 
+function isBirthdayRewardRow(reward: RewardRow) {
+  const sourceText = `${String(reward.source ?? "")} ${String(
+    reward.reward_source ?? "",
+  )} ${String(reward.description ?? "")}`.toLowerCase();
+
+  return Boolean(
+    reward.is_birthday ||
+      reward.birthday_reward ||
+      reward.is_birthday_reward ||
+      sourceText.includes("birthday"),
+  );
+}
+
+function rewardTimelineLabel(reward: RewardRow, clientName: string) {
+  const rewardName = normalizeRewardText(reward.reward_type);
+
+  if (isBirthdayRewardRow(reward)) {
+    return `${clientName} received Birthday Gift - ${rewardName}`;
+  }
+
+  return `${clientName} received ${rewardName}`;
+}
+
 function statusPillClass(status?: string | null) {
   const value = String(status ?? "").toLowerCase();
   if (value === "available") return "bg-[#ffd66b] text-[#365665]";
@@ -215,6 +244,15 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function getProfileStatus(profile: ProfileRow | null): "client" | "staff" | "admin" | "deactivated" {
+  if (!profile) return "client";
+  if (profile.is_active === false) return "deactivated";
+  const role = String(profile.role || "client").toLowerCase();
+  if (role === "admin") return "admin";
+  if (role === "staff") return "staff";
+  return "client";
+}
+
 export default function ClientProfilePage({
   adminId,
   profile,
@@ -242,6 +280,7 @@ export default function ClientProfilePage({
   const [visitsOpen, setVisitsOpen] = useState(false);
   const [giftsSectionOpen, setGiftsSectionOpen] = useState(false);
   const [timeRange, setTimeRange] = useState<"month" | "all">("month");
+  const [profileStatus, setProfileStatus] = useState<"client" | "staff" | "admin" | "deactivated">(() => getProfileStatus(profile));
   const [giftCategoryId, setGiftCategoryId] = useState(categories[0]?.id ?? "");
   const [giftNote, setGiftNote] = useState("");
   const [phoneDraft, setPhoneDraft] = useState(profile?.phone ?? "");
@@ -258,6 +297,10 @@ export default function ClientProfilePage({
     setToast(message);
     setTimeout(() => setToast(null), 2400);
   }
+
+  useEffect(() => {
+    setProfileStatus(getProfileStatus(profile));
+  }, [profile?.id, profile?.role, profile?.is_active]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -314,9 +357,17 @@ export default function ClientProfilePage({
 
   const visitRows = useMemo(() => {
     const byDay = new Map<string, string>();
+
     visibleTransactions.forEach((txn) => {
+      const action = String(txn.action_type ?? "").toLowerCase();
+
+      // Only a real earned stamp counts as a visit.
+      // Manual removals stay in the audit trail but do not create visits.
+      if (action !== "add_stamp") return;
+
       const key = dayKey(txn.created_at);
       if (!key || !txn.created_at) return;
+
       const existing = byDay.get(key);
       if (
         !existing ||
@@ -325,20 +376,27 @@ export default function ClientProfilePage({
         byDay.set(key, txn.created_at);
       }
     });
+
     return Array.from(byDay.entries())
       .map(([day, date]) => ({ day, date }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [visibleTransactions]);
 
   const lifetimeSpend = useMemo(() => {
-    return visibleTransactions.reduce((sum, txn) => {
+    const netValue = visibleTransactions.reduce((sum, txn) => {
       const action = String(txn.action_type ?? "").toLowerCase();
-      if (action.includes("remove")) return sum;
       const category = txn.category_id
         ? categoryById.get(txn.category_id)
         : null;
-      return sum + parseMoneyValue(category?.average_price);
+      const categoryValue = parseMoneyValue(category?.average_price);
+
+      if (action === "add_stamp") return sum + categoryValue;
+      if (action === "remove_stamp") return sum - categoryValue;
+
+      return sum;
     }, 0);
+
+    return Math.max(0, netValue);
   }, [categoryById, visibleTransactions]);
 
   const giftCounts = useMemo(() => {
@@ -367,34 +425,120 @@ export default function ClientProfilePage({
   const currentWhatsAppUrl = whatsappUrl(profile?.phone);
 
   const timeline = useMemo(() => {
-    const txnItems = visibleTransactions.map((txn) => {
+    const rewardEarnEvents = visibleRewards
+      .map((reward) => {
+        const date = reward.earned_at ?? reward.created_at;
+        if (!date) return null;
+        const time = new Date(date).getTime();
+        if (!Number.isFinite(time)) return null;
+
+        return {
+          id: String(reward.id ?? ""),
+          clientId: String(reward.client_id ?? profile?.id ?? ""),
+          categoryId: String(reward.category_id ?? ""),
+          time,
+        };
+      })
+      .filter(Boolean) as Array<{
+      id: string;
+      clientId: string;
+      categoryId: string;
+      time: number;
+    }>;
+
+    const txnItems = visibleTransactions.flatMap((txn) => {
+      const actionType = String(txn.action_type ?? "").toLowerCase();
+
+      // Only real manual stamp changes belong in the customer timeline.
+      // reward_earned/reward_redeemed and other bookkeeping transactions are
+      // internal rows and must not become customer-facing activity.
+      if (actionType !== "add_stamp" && actionType !== "remove_stamp") return [];
+
+      const txnTime = txn.created_at
+        ? new Date(txn.created_at).getTime()
+        : Number.NaN;
+
+      const isRewardBookkeeping =
+        actionType === "add_stamp" &&
+        Number.isFinite(txnTime) &&
+        rewardEarnEvents.some(
+          (event) =>
+            event.clientId === String(txn.client_id ?? profile?.id ?? "") &&
+            event.categoryId === String(txn.category_id ?? "") &&
+            Math.abs(event.time - txnTime) <= 120000,
+        );
+
+      // When the fifth stamp creates a reward, show the resulting gift once,
+      // not both the stamp bookkeeping row and the gift.
+      if (isRewardBookkeeping) return [];
+
       const category = txn.category_id
         ? categoryById.get(txn.category_id)
         : null;
       const categoryName = displayCategoryName(category?.name);
-      const action = String(txn.action_type ?? "activity").replace(/_/g, " ");
-      return {
-        id: `txn-${txn.id}`,
-        date: txn.created_at,
-        label: `${profile?.full_name || "Client"} ${action} ${categoryName}`,
-        badge: "Stamp",
-      };
+      const actionLabel =
+        actionType === "add_stamp" ? "added a" : "removed a";
+
+      return [
+        {
+          id: `txn-${txn.id}`,
+          date: txn.created_at,
+          label: `${profile?.full_name || "Client"} ${actionLabel} ${categoryName} stamp`,
+          badge: actionType === "remove_stamp" ? "Removed" : "Stamp",
+        },
+      ];
     });
-    const rewardItems = visibleRewards.map((reward) => ({
-      id: `reward-${reward.id}`,
-      date: reward.earned_at ?? reward.created_at,
-      label: `${profile?.full_name || "Client"} received ${normalizeRewardText(reward.reward_type)}`,
-      badge: "Gift",
-    }));
+
+    const rewardItems = visibleRewards.flatMap((reward) => {
+      const items: Array<{
+        id: string;
+        date: string | null | undefined;
+        label: string;
+        badge: string;
+      }> = [];
+
+      const earnedDate = reward.earned_at ?? reward.created_at;
+      if (earnedDate) {
+        items.push({
+          id: `reward-${reward.id}-earned`,
+          date: earnedDate,
+          label: rewardTimelineLabel(
+            reward,
+            profile?.full_name || "Client",
+          ),
+          badge: isBirthdayRewardRow(reward) ? "Birthday" : "Gift",
+        });
+      }
+
+      // A redemption is a second real event and must use the actual redeemed_at.
+      // Never derive it from reward status, created_at, or updated_at.
+      if (reward.redeemed_at) {
+        items.push({
+          id: `reward-${reward.id}-redeemed`,
+          date: reward.redeemed_at,
+          label: `${profile?.full_name || "Client"} redeemed ✅ ${normalizeRewardText(
+            reward.reward_type,
+          )}`,
+          badge: "Redeemed",
+        });
+      }
+
+      return items;
+    });
+
     const noteItems = notes.map((note) => ({
       id: `note-${note.id}`,
       date: note.updated_at ?? note.created_at,
       label: note.updated_at ? `${note.text} · edited` : note.text,
       badge: "Note",
     }));
+
     const contactItems = [
       ...((contactHistory ?? [])
-        .filter((contact) => String(contact.source_id ?? "") === String(profile?.id ?? ""))
+        .filter(
+          (contact) =>
+            String(contact.source_id ?? "") === String(profile?.id ?? ""),
+        )
         .map((contact, index) => ({
           id: `contact-${contact.id || index}-${contact.contacted_at || contact.created_at}`,
           date: contact.contacted_at ?? contact.created_at,
@@ -412,6 +556,7 @@ export default function ClientProfilePage({
           ]
         : []),
     ];
+
     return [...txnItems, ...rewardItems, ...noteItems, ...contactItems]
       .filter((item) => item.date)
       .filter(
@@ -517,6 +662,34 @@ export default function ClientProfilePage({
     flash("Note deleted.");
   }
 
+  async function updateProfileStatus(nextStatus: "client" | "staff" | "admin" | "deactivated") {
+    if (!profile?.id) return;
+
+    const previousStatus = profileStatus;
+    setProfileStatus(nextStatus);
+
+    const nextRole = nextStatus === "deactivated"
+      ? String(profile.role || "client").toLowerCase() || "client"
+      : nextStatus;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        role: nextRole,
+        is_active: nextStatus === "deactivated" ? false : true,
+      })
+      .eq("id", profile.id);
+
+    if (error) {
+      setProfileStatus(previousStatus);
+      flash(error.message, "error");
+      return;
+    }
+
+    flash(nextStatus === "deactivated" ? "Profile deactivated." : "Profile role updated.");
+    router.refresh();
+  }
+
   async function savePhone() {
     if (!profile?.id) return;
     const nextPhone = phoneDraft.trim();
@@ -589,42 +762,38 @@ export default function ClientProfilePage({
 
   async function updateStamp(categoryId: string, direction: 1 | -1) {
     if (!profile?.id) return;
-    const current = stampByCategory.get(categoryId);
-    const currentCount = Math.max(0, current?.stamp_count ?? 0);
-    const nextCount = Math.max(0, Math.min(5, currentCount + direction));
-    if (nextCount === currentCount) return;
 
-    const result = current
-      ? await supabase
-          .from("client_stamps")
-          .update({
-            stamp_count: nextCount,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("client_id", profile.id)
-          .eq("category_id", categoryId)
-      : await supabase.from("client_stamps").insert({
-          client_id: profile.id,
-          category_id: categoryId,
-          stamp_count: nextCount,
-          updated_at: new Date().toISOString(),
-        });
+    const categoryName = displayCategoryName(categoryById.get(categoryId)?.name);
 
-    if (result.error) {
-      flash(result.error.message, "error");
+    const response = await fetch("/api/profile-stamps/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: profile.id,
+        categoryId,
+        direction,
+        staffId: adminId,
+      }),
+    }).catch(() => null);
+
+    const payload = (await response?.json().catch(() => null)) as {
+      error?: string;
+      completed?: boolean;
+      reward_type?: string;
+      stamp_count?: number;
+    } | null;
+
+    if (!response?.ok) {
+      flash(payload?.error || "Could not update stamps.", "error");
       return;
     }
 
-    await supabase.from("stamp_transactions").insert({
-      client_id: profile.id,
-      category_id: categoryId,
-      action_type: direction > 0 ? "add_stamp" : "remove_stamp",
-      stamp_count: 1,
-      staff_id: adminId,
-      created_at: new Date().toISOString(),
-    });
+    if (payload?.completed) {
+      flash(`${payload.reward_type || `Free ${categoryName}`} earned and stamps reset.`);
+    } else {
+      flash(direction > 0 ? "Stamp added." : "Stamp removed.");
+    }
 
-    flash(direction > 0 ? "Stamp added." : "Stamp removed.");
     router.refresh();
   }
 
@@ -711,6 +880,21 @@ export default function ClientProfilePage({
               >
                 Change password
               </button>
+              <select
+                value={profileStatus}
+                onChange={(event) =>
+                  void updateProfileStatus(
+                    event.target.value as "client" | "staff" | "admin" | "deactivated",
+                  )
+                }
+                className="h-[38px] rounded-full border-0 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665] outline-none"
+                aria-label="Change profile role"
+              >
+                <option value="client">Client</option>
+                <option value="staff">Staff</option>
+                <option value="admin">Admin</option>
+                <option value="deactivated">Deactivate</option>
+              </select>
               {currentWhatsAppUrl ? (
                 <a
                   href={currentWhatsAppUrl}

@@ -174,23 +174,41 @@ function rewardOrStampLabel(row: ActivityRow, categoryName: string) {
 }
 
 function activityType(row: ActivityRow, categoryName: string) {
-  const action = String(
-    row.action_type ??
-      row.reward_type ??
+  const explicitAction = String(row.action_type ?? "").toLowerCase();
+  const fallbackAction = String(
+    row.reward_type ??
       row.status ??
       row.activity_source ??
       "",
   ).toLowerCase();
-  if (/redeem|redeemed/.test(action) || row.redeemed_at) return "Redeemed";
-  if (/expire|expired/.test(action) || row.expired_activity) return "Expired";
-  if (/contact|contacted/.test(action) || row.contact_key) return "Contact";
+
+  // Synthetic feed rows from the server deliberately set action_type.
+  // Trust that first. A reward can already have redeemed_at populated while
+  // its separate "gift_issued" activity still represents the earlier earned event.
+  if (/redeem|redeemed/.test(explicitAction)) return "Redeemed";
+  if (/expire|expired/.test(explicitAction) || row.expired_activity)
+    return "Expired";
+  if (/contact|contacted/.test(explicitAction) || row.contact_key)
+    return "Contact";
   if (
-    /gift|reward|issued|earned|claim|bounced|returned/.test(action) ||
+    /gift|reward|issued|earned|claim|bounced|returned|unlocked/.test(
+      explicitAction,
+    )
+  )
+    return "Gift";
+
+  if (isStampLike(row, categoryName)) return "Stamp";
+
+  // Only use raw reward state as a fallback for rows that did not receive an
+  // explicit feed action_type.
+  if (!explicitAction && row.redeemed_at) return "Redeemed";
+  if (
+    /gift|reward|issued|earned|claim|bounced|returned/.test(fallbackAction) ||
     row.reward_type ||
     row.activity_source === "reward"
   )
     return "Gift";
-  if (isStampLike(row, categoryName)) return "Stamp";
+
   return titleCase(row.action_type);
 }
 

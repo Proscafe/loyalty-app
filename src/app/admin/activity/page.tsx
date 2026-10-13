@@ -427,11 +427,11 @@ export default async function AdminActivityPage() {
       created_at: row.earned_at ?? row.created_at,
     });
 
-    const isRedeemed =
-      Boolean(row.redeemed_at) ||
-      String(row.status ?? row.reward_status ?? "").toLowerCase() ===
-        "redeemed";
+    const redeemedAt = row.redeemed_at ?? row.claimed_at ?? null;
+    const isRedeemed = Boolean(redeemedAt);
 
+    // Do not invent a redemption log from status alone. Older/imported reward
+    // rows can say "redeemed" without a trustworthy redemption timestamp.
     if (isRedeemed) {
       const redeemedStaff = staffById.get(String(row.redeemed_by ?? ""));
       const nearbyStaff = nearestStaffForReward(row);
@@ -456,11 +456,7 @@ export default async function AdminActivityPage() {
           ).trim(),
         is_birthday: birthday,
         birthday_reward: birthday,
-        created_at:
-          row.redeemed_at ??
-          row.updated_at ??
-          row.claimed_at ??
-          row.created_at,
+        created_at: redeemedAt,
       });
     }
   }
