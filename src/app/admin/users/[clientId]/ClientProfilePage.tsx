@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import AdminSidebar from "@/components/AdminSidebar";
 import { AdminMobileFloatingMenu } from "@/components/AdminMobileFloatingMenu";
@@ -157,6 +157,30 @@ function withinCurrentMonth(value?: string | null) {
   );
 }
 
+function withinProfileDateRange(
+  value: string | null | undefined,
+  range: "month" | "date_range" | "all",
+  rangeStart: string,
+  rangeEnd: string,
+) {
+  if (range === "all") return true;
+  if (!value) return false;
+
+  if (range === "month") return withinCurrentMonth(value);
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const start = rangeStart
+    ? new Date(`${rangeStart}T00:00:00`).getTime()
+    : Number.NEGATIVE_INFINITY;
+  const end = rangeEnd
+    ? new Date(`${rangeEnd}T23:59:59.999`).getTime()
+    : Number.POSITIVE_INFINITY;
+
+  return date.getTime() >= start && date.getTime() <= end;
+}
+
 function getRewardDate(reward: RewardRow) {
   return reward.earned_at ?? reward.created_at ?? reward.redeemed_at ?? null;
 }
@@ -290,7 +314,9 @@ export default function ClientProfilePage({
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [visitsOpen, setVisitsOpen] = useState(false);
   const [giftsSectionOpen, setGiftsSectionOpen] = useState(false);
-  const [timeRange, setTimeRange] = useState<"month" | "all">("month");
+  const [timeRange, setTimeRange] = useState<"month" | "date_range" | "all">("month");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>(() =>
     getProfileStatus(profile),
   );
@@ -305,6 +331,8 @@ export default function ClientProfilePage({
   >([]);
   const [lastContacted, setLastContacted] = useState<string | null>(null);
   const [claimingGiftId, setClaimingGiftId] = useState<string | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
 
   function flash(message: string, nextTone: "success" | "error" = "success") {
     setTone(nextTone);
@@ -315,6 +343,30 @@ export default function ClientProfilePage({
   useEffect(() => {
     setProfileStatus(getProfileStatus(profile));
   }, [profile?.id, profile?.role, profile?.is_active]);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+
+    function handleOutside(event: MouseEvent | TouchEvent) {
+      if (!actionsRef.current?.contains(event.target as Node)) {
+        setActionsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setActionsOpen(false);
+    }
+
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionsOpen]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -391,16 +443,26 @@ export default function ClientProfilePage({
   }, [stamps]);
 
   const visibleTransactions = useMemo(() => {
-    if (timeRange === "all") return transactions;
-    return transactions.filter((txn) => withinCurrentMonth(txn.created_at));
-  }, [timeRange, transactions]);
+    return transactions.filter((txn) =>
+      withinProfileDateRange(
+        txn.created_at,
+        timeRange,
+        rangeStart,
+        rangeEnd,
+      ),
+    );
+  }, [timeRange, transactions, rangeStart, rangeEnd]);
 
   const visibleRewards = useMemo(() => {
-    if (timeRange === "all") return rewards;
     return rewards.filter((reward) =>
-      withinCurrentMonth(getRewardDate(reward)),
+      withinProfileDateRange(
+        getRewardDate(reward),
+        timeRange,
+        rangeStart,
+        rangeEnd,
+      ),
     );
-  }, [rewards, timeRange]);
+  }, [rewards, timeRange, rangeStart, rangeEnd]);
 
   const visitRows = useMemo(() => {
     const byDay = new Map<string, string>();
@@ -472,41 +534,84 @@ export default function ClientProfilePage({
   const currentWhatsAppUrl = whatsappUrl(profile?.phone);
 
   const timeline = useMemo(() => {
-    const txnItems = visibleTransactions.map((txn) => {
+    const txnItems = visibleTransactions.flatMap((txn) => {
+      const actionType = String(txn.action_type ?? "").toLowerCase();
+
+      // Only real manual stamp changes are customer-facing activity.
+      // Internal reward bookkeeping rows such as reward_earned and
+      // reward_redeemed must never appear as STAMP timeline items.
+      if (actionType !== "add_stamp" && actionType !== "remove_stamp") {
+        return [];
+      }
+
       const category = txn.category_id
         ? categoryById.get(txn.category_id)
         : null;
       const categoryName = displayCategoryName(category?.name);
-      const actionType = String(txn.action_type ?? "activity").toLowerCase();
-      const actionLabel =
-        actionType === "add_stamp"
-          ? "added a"
-          : actionType === "remove_stamp"
-            ? "removed a"
-            : actionType.replace(/_/g, " ");
 
-      return {
-        id: `txn-${txn.id}`,
-        date: txn.created_at,
-        label: `${profile?.full_name || "Client"} ${actionLabel} ${categoryName} stamp`,
-        badge: actionType === "remove_stamp" ? "Removed" : "Stamp",
-      };
+      return [
+        {
+          id: `txn-${txn.id}`,
+          date: txn.created_at,
+          label: `${profile?.full_name || "Client"} ${
+            actionType === "add_stamp" ? "added a" : "removed a"
+          } ${categoryName} stamp`,
+          badge: actionType === "remove_stamp" ? "Removed" : "Stamp",
+        },
+      ];
     });
-    const rewardItems = visibleRewards.map((reward) => ({
-      id: `reward-${reward.id}`,
-      date: reward.earned_at ?? reward.created_at,
-      label: rewardTimelineLabel(reward, profile?.full_name || "Client"),
-      badge: isBirthdayRewardRow(reward) ? "Birthday" : "Gift",
-    }));
+
+    const rewardItems = visibleRewards.flatMap((reward) => {
+      const items: Array<{
+        id: string;
+        date: string | null | undefined;
+        label: string;
+        badge: string;
+      }> = [];
+
+      const earnedDate = reward.earned_at ?? reward.created_at;
+
+      if (earnedDate) {
+        items.push({
+          id: `reward-${reward.id}-earned`,
+          date: earnedDate,
+          label: rewardTimelineLabel(
+            reward,
+            profile?.full_name || "Client",
+          ),
+          badge: isBirthdayRewardRow(reward) ? "Birthday" : "Gift",
+        });
+      }
+
+      // Redemption is a separate real event and must use redeemed_at only.
+      // Never infer redemption from reward status or another timestamp.
+      if (reward.redeemed_at) {
+        items.push({
+          id: `reward-${reward.id}-redeemed`,
+          date: reward.redeemed_at,
+          label: `${profile?.full_name || "Client"} redeemed ✅ ${normalizeRewardText(
+            reward.reward_type,
+          )}`,
+          badge: "Redeemed",
+        });
+      }
+
+      return items;
+    });
+
     const noteItems = notes.map((note) => ({
       id: `note-${note.id}`,
       date: note.updated_at ?? note.created_at,
       label: note.updated_at ? `${note.text} · edited` : note.text,
       badge: "Note",
     }));
+
     const contactItems = [
       ...((contactHistory ?? [])
-        .filter((contact) => String(contact.source_id ?? "") === String(profile?.id ?? ""))
+        .filter(
+          (contact) =>
+            String(contact.source_id ?? "") === String(profile?.id ?? ""),
+        )
         .map((contact, index) => ({
           id: `contact-${contact.id || index}-${contact.contacted_at || contact.created_at}`,
           date: contact.contacted_at ?? contact.created_at,
@@ -524,6 +629,7 @@ export default function ClientProfilePage({
           ]
         : []),
     ];
+
     return [...txnItems, ...rewardItems, ...noteItems, ...contactItems]
       .filter((item) => item.date)
       .filter(
@@ -891,7 +997,7 @@ export default function ClientProfilePage({
           ← Back to users
         </Link>
 
-        <Panel>
+        <Panel className="relative z-50 overflow-visible">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">
@@ -920,53 +1026,285 @@ export default function ClientProfilePage({
             </div>
 
             <div className="flex flex-wrap gap-2 lg:justify-end">
-              <button
-                type="button"
-                onClick={() => setTimeRange((current) => (current === "month" ? "all" : "month"))}
-                className="rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/18"
-              >
-                {timeRange === "month" ? "This month" : "Show all"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPhoneOpen(true)}
-                className="rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white"
-              >
-                Edit phone
-              </button>
-              <button
-                type="button"
-                onClick={() => setPasswordOpen(true)}
-                className="rounded-full bg-white/12 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white"
-              >
-                Change password
-              </button>
-              <select
-                value={profileStatus}
-                onChange={(event) =>
-                  void updateProfileStatus(
-                    event.target.value as ProfileStatus,
-                  )
-                }
-                className="h-[38px] rounded-full border-0 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665] outline-none"
-                aria-label="Change profile role"
-              >
-                <option value="client">Client</option>
-                <option value="staff">Manager</option>
-                <option value="supervisor">Supervisor</option>
-                <option value="master_admin">Admin</option>
-                <option value="deactivated">Deactivate</option>
-              </select>
+              <div ref={actionsRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActionsOpen((current) => !current)}
+                  className="flex h-[42px] min-w-[126px] items-center justify-between gap-4 rounded-full bg-[#ffd66b] px-5 text-[11px] font-black uppercase tracking-[0.12em] text-[#365665] shadow-[0_10px_26px_rgba(255,214,107,0.20)] transition hover:bg-[#f0cf61]"
+                  aria-expanded={actionsOpen}
+                >
+                  <span>Actions</span>
+                  <span
+                    className={`text-[10px] transition ${
+                      actionsOpen ? "rotate-180" : ""
+                    }`}
+                  >
+                    ▾
+                  </span>
+                </button>
+
+                {actionsOpen ? (
+                  <>
+                    {/* Desktop Actions dropdown */}
+                    <div className="absolute right-0 top-12 z-[200] hidden w-[280px] overflow-hidden rounded-[24px] border border-[#ffd66b]/70 bg-[#ffd66b] p-3 shadow-[0_26px_80px_rgba(0,0,0,0.34)] lg:block">
+                      <div className="px-4 pb-2 text-[9px] font-black uppercase tracking-[0.16em] text-[#365665]/55">
+                        Date view
+                      </div>
+
+                      {[
+                        ["month", "This month"],
+                        ["all", "Show all"],
+                        ["date_range", "Date range"],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => {
+                            setTimeRange(
+                              value as "month" | "date_range" | "all",
+                            );
+                            if (value !== "date_range") setActionsOpen(false);
+                          }}
+                          className={`mb-1 flex h-10 w-full items-center rounded-[12px] px-4 text-left text-[11px] font-black uppercase tracking-[0.1em] transition ${
+                            timeRange === value
+                              ? "bg-[#2563eb] text-white"
+                              : "text-[#365665] hover:bg-white/35"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+
+                      {timeRange === "date_range" ? (
+                        <div className="mb-2 mt-2 rounded-[14px] bg-[#ffe59a] p-3">
+                          <label className="block">
+                            <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]/60">
+                              From
+                            </span>
+                            <input
+                              type="date"
+                              value={rangeStart}
+                              onChange={(event) =>
+                                setRangeStart(event.target.value)
+                              }
+                              className="h-10 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                            />
+                          </label>
+
+                          <label className="mt-2 block">
+                            <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]/60">
+                              To
+                            </span>
+                            <input
+                              type="date"
+                              value={rangeEnd}
+                              min={rangeStart || undefined}
+                              onChange={(event) =>
+                                setRangeEnd(event.target.value)
+                              }
+                              className="h-10 w-full rounded-[10px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                            />
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => setActionsOpen(false)}
+                            className="mt-3 h-10 w-full rounded-[10px] bg-[#365665] text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPhoneOpen(true);
+                          setActionsOpen(false);
+                        }}
+                        className="mt-1 flex h-11 w-full items-center rounded-[14px] px-4 text-left text-[11px] font-black uppercase tracking-[0.1em] text-[#365665] transition hover:bg-white/35"
+                      >
+                        Edit phone
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPasswordOpen(true);
+                          setActionsOpen(false);
+                        }}
+                        className="mt-1 flex h-11 w-full items-center rounded-[14px] px-4 text-left text-[11px] font-black uppercase tracking-[0.1em] text-[#365665] transition hover:bg-white/35"
+                      >
+                        Change password
+                      </button>
+
+                      <div className="mt-2 border-t border-[#365665]/15 pt-2">
+                        <div className="px-4 pb-2 text-[9px] font-black uppercase tracking-[0.16em] text-[#365665]/55">
+                          Profile role
+                        </div>
+                        <select
+                          value={profileStatus}
+                          onChange={(event) => {
+                            void updateProfileStatus(
+                              event.target.value as ProfileStatus,
+                            );
+                            setActionsOpen(false);
+                          }}
+                          className="h-11 w-full rounded-[14px] border-0 bg-white px-4 text-[11px] font-black uppercase tracking-[0.1em] text-[#365665] outline-none"
+                          aria-label="Change profile role"
+                        >
+                          <option value="client">Client</option>
+                          <option value="staff">Manager</option>
+                          <option value="supervisor">Supervisor</option>
+                          <option value="master_admin">Admin</option>
+                          <option value="deactivated">Deactivate</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Mobile Actions popup */}
+                    <div
+                      className="fixed inset-0 z-[220] flex items-center justify-center bg-[#172b2b]/74 px-4 py-6 backdrop-blur-md lg:hidden"
+                      onMouseDown={() => setActionsOpen(false)}
+                      onTouchStart={() => setActionsOpen(false)}
+                    >
+                      <div
+                        className="w-full max-w-[380px] rounded-[28px] border border-[#ffd66b]/70 bg-[#ffd66b] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.40)]"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onTouchStart={(event) => event.stopPropagation()}
+                      >
+                        <div className="mb-2 px-1 text-[9px] font-black uppercase tracking-[0.16em] text-[#365665]/60">
+                          Date view
+                        </div>
+
+                        {[
+                          ["month", "This month"],
+                          ["all", "Show all"],
+                          ["date_range", "Date range"],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setTimeRange(
+                                value as "month" | "date_range" | "all",
+                              );
+                              if (value !== "date_range") setActionsOpen(false);
+                            }}
+                            className={`mb-1 flex h-11 w-full items-center rounded-[14px] px-4 text-left text-[12px] font-black uppercase tracking-[0.1em] transition ${
+                              timeRange === value
+                                ? "bg-[#2563eb] text-white"
+                                : "text-[#365665] hover:bg-white/35"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+
+                        {timeRange === "date_range" ? (
+                          <div className="mb-2 mt-2 rounded-[16px] bg-[#ffe59a] p-3">
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className="block">
+                                <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]/60">
+                                  From
+                                </span>
+                                <input
+                                  type="date"
+                                  value={rangeStart}
+                                  onChange={(event) =>
+                                    setRangeStart(event.target.value)
+                                  }
+                                  className="h-11 w-full rounded-[11px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                                />
+                              </label>
+
+                              <label className="block">
+                                <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]/60">
+                                  To
+                                </span>
+                                <input
+                                  type="date"
+                                  value={rangeEnd}
+                                  min={rangeStart || undefined}
+                                  onChange={(event) =>
+                                    setRangeEnd(event.target.value)
+                                  }
+                                  className="h-11 w-full rounded-[11px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                                />
+                              </label>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setActionsOpen(false)}
+                              className="mt-3 h-11 w-full rounded-[12px] bg-[#365665] text-[11px] font-black uppercase tracking-[0.12em] text-white"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhoneOpen(true);
+                            setActionsOpen(false);
+                          }}
+                          className="mt-2 flex h-11 w-full items-center rounded-[14px] px-4 text-left text-[12px] font-black uppercase tracking-[0.1em] text-[#365665] transition hover:bg-white/35"
+                        >
+                          Edit phone
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPasswordOpen(true);
+                            setActionsOpen(false);
+                          }}
+                          className="mt-1 flex h-11 w-full items-center rounded-[14px] px-4 text-left text-[12px] font-black uppercase tracking-[0.1em] text-[#365665] transition hover:bg-white/35"
+                        >
+                          Change password
+                        </button>
+
+                        <div className="mt-3 border-t border-[#365665]/15 pt-3">
+                          <div className="px-1 pb-2 text-[9px] font-black uppercase tracking-[0.16em] text-[#365665]/55">
+                            Profile role
+                          </div>
+                          <select
+                            value={profileStatus}
+                            onChange={(event) => {
+                              void updateProfileStatus(
+                                event.target.value as ProfileStatus,
+                              );
+                              setActionsOpen(false);
+                            }}
+                            className="h-11 w-full rounded-[12px] border-0 bg-white px-3 text-[11px] font-black uppercase tracking-[0.1em] text-[#365665] outline-none"
+                            aria-label="Change profile role"
+                          >
+                            <option value="client">Client</option>
+                            <option value="staff">Manager</option>
+                            <option value="supervisor">Supervisor</option>
+                            <option value="master_admin">Admin</option>
+                            <option value="deactivated">Deactivate</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
               {currentWhatsAppUrl ? (
                 <a
                   href={currentWhatsAppUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-full bg-[#25D366] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white"
+                  className="inline-flex h-[42px] items-center justify-center rounded-full bg-[#25D366] px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white"
                 >
                   WA
                 </a>
               ) : null}
+
               <button
                 type="button"
                 onClick={() => setGiftOpen(true)}
@@ -974,6 +1312,7 @@ export default function ClientProfilePage({
               >
                 Send
               </button>
+
               <button
                 type="button"
                 onClick={() => void markContacted()}

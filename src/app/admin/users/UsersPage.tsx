@@ -1513,6 +1513,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   // Selected user profile
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [previewUser, setPreviewUser] = useState<AdminUser | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<AdminCategory[]>(
     [],
   );
@@ -3947,7 +3948,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                     </button>
 
                     {reportFiltersOpen ? (
-                      <div className="absolute left-0 right-0 top-14 z-40 w-full rounded-[22px] bg-[#ffd66b] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.30)] lg:left-auto lg:right-0 lg:top-12 lg:w-[250px]">
+                      <div className="absolute left-0 right-0 top-14 z-40 hidden w-full rounded-[22px] bg-[#ffd66b] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.30)] lg:left-auto lg:right-0 lg:top-12 lg:block lg:w-[250px]">
                         <div className="space-y-1">
                           {[
                             ["today", "Today"],
@@ -4041,6 +4042,120 @@ export function UsersPage({ adminId }: { adminId: string }) {
                               </option>
                             </select>
                           </label>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {reportFiltersOpen ? (
+                      <div
+                        className="fixed inset-0 z-[110] flex items-center justify-center bg-[#172b2b]/72 px-4 py-6 backdrop-blur-md lg:hidden"
+                        onMouseDown={() => setReportFiltersOpen(false)}
+                        onTouchStart={() => setReportFiltersOpen(false)}
+                      >
+                        <div
+                          className="w-full max-w-[390px] rounded-[28px] bg-[#ffd66b] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.38)]"
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onTouchStart={(event) => event.stopPropagation()}
+                        >
+
+
+                          <div className="space-y-1">
+                            {[
+                              ["today", "Today"],
+                              ["week", "This Week"],
+                              ["month", "This Month"],
+                              ["date_range", "Date Range"],
+                              ["all", "Show All"],
+                            ].map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => {
+                                  setTimeRange(value as DesktopTimeRange);
+                                  setVisibleUserCount(50);
+                                  if (value !== "date_range") {
+                                    setReportFiltersOpen(false);
+                                  }
+                                }}
+                                className={`flex h-11 w-full items-center rounded-[14px] px-4 text-left text-[12px] font-black uppercase tracking-[0.08em] transition ${
+                                  timeRange === value
+                                    ? "bg-[#2563eb] text-white"
+                                    : "text-[#365665] hover:bg-white/35"
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {timeRange === "date_range" ? (
+                            <div className="mt-3 rounded-[18px] bg-[#ffe59a] p-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                <label className="block">
+                                  <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                                    From
+                                  </span>
+                                  <input
+                                    type="date"
+                                    value={rangeStart}
+                                    onChange={(event) =>
+                                      setRangeStart(event.target.value)
+                                    }
+                                    className="h-11 w-full rounded-[11px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                                  />
+                                </label>
+                                <label className="block">
+                                  <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                                    To
+                                  </span>
+                                  <input
+                                    type="date"
+                                    value={rangeEnd}
+                                    min={rangeStart || undefined}
+                                    onChange={(event) =>
+                                      setRangeEnd(event.target.value)
+                                    }
+                                    className="h-11 w-full rounded-[11px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                                  />
+                                </label>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setReportFiltersOpen(false)}
+                                className="mt-3 h-11 w-full rounded-[12px] bg-[#365665] text-[11px] font-black uppercase tracking-[0.12em] text-white"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          ) : null}
+
+                          <div className="mt-3 border-t border-[#365665]/15 pt-3">
+                            <label className="block">
+                              <span className="mb-1.5 block px-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#365665]">
+                                Profile Tab
+                              </span>
+                              <select
+                                value={filter}
+                                onChange={(event) => {
+                                  setFilter(
+                                    event.target.value as DesktopProfileTab,
+                                  );
+                                  setVisibleUserCount(50);
+                                  setReportFiltersOpen(false);
+                                }}
+                                className="h-11 w-full rounded-[12px] border-0 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+                              >
+                                <option value="all">All profiles</option>
+                                <option value="client">Clients</option>
+                                <option value="staff">Manager</option>
+                                <option value="supervisor">Supervisor</option>
+                                <option value="master_admin">Admin</option>
+                                <option value="deactivated">
+                                  Deactivated profiles
+                                </option>
+                              </select>
+                            </label>
+                          </div>
                         </div>
                       </div>
                     ) : null}
@@ -4171,7 +4286,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                         <button
                           key={row.user.id}
                           type="button"
-                          onClick={() => void openUserProfile(row.user)}
+                          onClick={() => setPreviewUser(row.user)}
                           className="grid w-full grid-cols-[1.3fr_1fr_0.6fr_0.6fr_0.85fr] items-center gap-2 border-b border-white/10 px-3 py-3 text-left text-[11px] font-bold text-white/74 transition last:border-b-0 hover:bg-white/10"
                         >
                           <div className="min-w-0">
@@ -4305,7 +4420,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                         >
                           <button
                             type="button"
-                            onClick={() => void openUserProfile(row.user)}
+                            onClick={() => setPreviewUser(row.user)}
                             className="min-w-0 text-left"
                           >
                             <div className="flex min-w-0 items-center gap-2">
@@ -4449,6 +4564,130 @@ export function UsersPage({ adminId }: { adminId: string }) {
           )}
         </section>
       </div>
+      {previewUser ? (
+        <div
+          className="fixed inset-0 z-[115] flex items-center justify-center bg-[#102527]/82 px-4 py-6 backdrop-blur-[6px]"
+          onMouseDown={() => setPreviewUser(null)}
+          onTouchStart={() => setPreviewUser(null)}
+        >
+          <div
+            className="w-full max-w-[560px] rounded-[30px] border border-white/18 bg-[linear-gradient(145deg,#48636b_0%,#3f5961_52%,#6f7d6d_100%)] p-5 text-white shadow-[0_30px_90px_rgba(0,0,0,0.52)] sm:p-6"
+            onMouseDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+          >
+            {(() => {
+              const row = allProfileReportRows.find(
+                (item) => item.user.id === previewUser.id,
+              );
+              const userRewards = rewardRows.filter(
+                (reward: any) => reward.client_id === previewUser.id,
+              );
+              const redeemedGifts = userRewards.filter((reward: any) => {
+                const status = String(reward.status ?? "").toLowerCase();
+                return (
+                  status === "redeemed" ||
+                  status === "claimed" ||
+                  Boolean(reward.redeemed_at)
+                );
+              }).length;
+              const activeGifts = userRewards.filter(
+                (reward: any) =>
+                  String(reward.status ?? "").toLowerCase() === "available",
+              ).length;
+              const categoryPrice = new Map(
+                categories.map((category) => [
+                  category.id,
+                  parseMoneyValue(category.average_price),
+                ]),
+              );
+              const giftValue = userRewards.reduce(
+                (sum: number, reward: any) =>
+                  sum + (categoryPrice.get(reward.category_id ?? "") ?? 0),
+                0,
+              );
+              const contactKeys = sharedContactKeys(
+                previewUser.phone,
+                previewUser.email,
+                previewUser.full_name || previewUser.id,
+                previewUser.id,
+              );
+              const lastContacted =
+                contactHistoryForKeys(contactKeys)[0] ?? null;
+
+              return (
+                <>
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/58">
+                        Customer summary
+                      </div>
+                      <h3 className="mt-2 truncate text-[28px] font-black tracking-[-0.05em] text-white">
+                        {previewUser.full_name || "Client"}
+                      </h3>
+                      <div className="mt-2 text-[12px] font-bold leading-5 text-white/68">
+                        {previewUser.phone || "No phone"}
+                        {previewUser.client_code ? (
+                          <span className="text-white/48">
+                            {" "}· {previewUser.client_code}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewUser(null)}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-[18px] font-black text-white/70 transition hover:bg-white/16"
+                      aria-label="Close customer summary"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      ["Total visits", row?.totalVisits ?? previewUser.totalVisits ?? 0],
+                      ["Lifetime spend", desktopFormatMoney(row?.lifetimeValue ?? previewUser.lifetimeValue ?? 0)],
+                      ["Gifts sent", userRewards.length],
+                      ["Gifts redeemed", redeemedGifts],
+                      ["Active gifts", activeGifts],
+                      ["Gift value", desktopFormatMoney(giftValue)],
+                      ["Last visit", desktopFormatDateOnly(row?.lastVisit ?? previewUser.lastVisit)],
+                      ["Last contacted", desktopFormatDateOnly(lastContacted)],
+                    ].map(([label, value]) => (
+                      <div
+                        key={String(label)}
+                        className="min-h-[90px] rounded-[20px] border border-white/6 bg-white/[0.13] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                      >
+                        <div className="text-[11px] font-black text-white/72">
+                          {label}
+                        </div>
+                        <div className="mt-2 text-[22px] font-black tracking-[-0.05em] text-white">
+                          {value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const user = previewUser;
+                        setPreviewUser(null);
+                        void openUserProfile(user);
+                      }}
+                      className="rounded-full bg-[#ffd66b] px-6 py-3 text-[12px] font-black uppercase tracking-[0.08em] text-[#365665] shadow-[0_10px_24px_rgba(255,214,107,0.22)]"
+                    >
+                      View more
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      ) : null}
+
       {whatsAppTargetUser ? (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-[#172b2b]/75 px-4 py-6 backdrop-blur-md"

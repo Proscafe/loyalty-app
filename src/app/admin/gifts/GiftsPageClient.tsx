@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AdminPageShell } from "@/components/AdminPageShell";
+import { AdminMobileHeader } from "@/components/AdminMobileHeader";
 import { createClient } from "@/lib/supabase/client";
 
 type GiftRow = Record<string, any>;
@@ -804,7 +805,7 @@ export default function GiftsPageClient({
           className="pointer-events-none fixed inset-0 -z-10 hidden lg:block"
           style={{ background: PAGE_BG }}
         />
-        <MobileHeader />
+        <AdminMobileHeader title="Gifts | Pro's Cafe" />
         <div className="relative lg:min-h-[calc(100vh-48px)] lg:rounded-[34px] lg:border lg:border-white/10 lg:bg-white/10 lg:px-8 lg:py-8 lg:shadow-[0_26px_70px_rgba(35,54,47,0.22)] lg:backdrop-blur-2xl">
           <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -1123,32 +1124,6 @@ function FilterOption({
   );
 }
 
-function MobileHeader() {
-  return (
-    <div className="mb-5 lg:hidden">
-      <div className="flex h-[58px] items-center justify-between rounded-[18px] bg-white/10 px-4 shadow-[0_14px_36px_rgba(35,54,47,0.16)] backdrop-blur-2xl">
-        <img
-          src="/apple-icon.png"
-          alt="PRO's"
-          className="h-[36px] w-auto origin-left object-contain"
-        />
-        <Link
-          href="/profile"
-          aria-label="Open profile"
-          className="flex h-[32px] w-[32px] items-center justify-center text-[#ffd66b] transition hover:scale-105"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-[24px] w-[24px]"
-            fill="currentColor"
-          >
-            <path d="M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Zm0 2.2c-4.2 0-7.6 2.2-7.6 5v.6c0 .4.3.6.7.6h13.8c.4 0 .7-.3.7-.6v-.6c0-2.8-3.4-5-7.6-5Z" />
-          </svg>
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 function SummaryCard({
   label,

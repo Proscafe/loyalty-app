@@ -22,7 +22,7 @@ const MENU_ITEMS: ReadonlyArray<{
   { key: "users", label: "Users", icon: "♟", href: "/admin/users" },
   { key: "comment-cards", label: "Comment Cards", icon: "✎", href: "/admin/comment-cards" },
   { key: "reports", label: "Reports", icon: "▤", href: "/admin/reports" },
-  { key: "games", label: "Games", icon: "🎮", href: "/admin/games" },
+  { key: "gifts", label: "Gifts", icon: "🎁", href: "/admin/gifts" },
   { key: "loyalty-program", label: "Loyalty", icon: "★", href: "/admin/loyalty" },
 ];
 
@@ -91,7 +91,7 @@ export function AdminMobileFloatingMenu({
                   onBeforeNavigate?.();
                   setIsOpen(false);
                 }}
-                className={`group flex h-11 min-w-[154px] items-center justify-start gap-2 rounded-full px-4 text-[11px] font-black shadow-[0_14px_34px_rgba(20,30,26,0.24)] transition active:scale-[0.98] ${
+                className={`group flex h-11 min-w-[154px] items-center justify-start gap-2 rounded-full border border-white/50 px-4 text-[11px] font-black shadow-[0_14px_34px_rgba(20,30,26,0.24)] transition active:scale-[0.98] ${
                   isActive
                     ? "bg-[#ffd66b] text-[#365665]"
                     : "bg-[#365665]/95 text-white backdrop-blur-2xl"
