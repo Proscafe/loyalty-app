@@ -67,6 +67,8 @@ export async function POST(request: Request) {
 
     // A customer must redeem an active gift from this category before
     // collecting another stamp in the same category.
+    // IMPORTANT: this applies to EVERY role, including master_admin.
+    // There is intentionally no admin override.
     // Removing an existing stamp is still allowed.
     if (direction > 0) {
       const { data: activeReward, error: activeRewardError } = await supabase

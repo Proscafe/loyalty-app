@@ -947,6 +947,12 @@ function DesktopClientProfilePanel({
                     0,
                     Math.min(5, stampByCategory.get(category.id) ?? 0),
                   );
+                  const hasActiveGift = rewards.some(
+                    (reward) =>
+                      reward.category_id === category.id &&
+                      String(reward.status ?? "").toLowerCase() === "available" &&
+                      !reward.redeemed_at,
+                  );
 
                   return (
                     <div
@@ -978,10 +984,19 @@ function DesktopClientProfilePanel({
                           <button
                             type="button"
                             onClick={() => onAddStamp(category.id)}
-                            disabled={loading || count >= 5}
+                            disabled={loading || count >= 5 || hasActiveGift}
+                            title={
+                              hasActiveGift
+                                ? `Redeem the active ${
+                                    category.name === "Desserts 2"
+                                      ? "Hooka"
+                                      : category.name
+                                  } gift first`
+                                : "Add stamp"
+                            }
                             className="rounded-full bg-[#365665] px-4 py-2 text-[11px] font-black text-white transition hover:bg-[#27464f] disabled:cursor-not-allowed disabled:opacity-45"
                           >
-                            Stamp It!
+                            {hasActiveGift ? "Redeem Gift" : "Stamp It!"}
                           </button>
                         </div>
                       </div>
@@ -2628,100 +2643,42 @@ export function UsersPage({ adminId }: { adminId: string }) {
 
   async function addStampToSelectedClient(categoryId: string) {
     if (!selectedUser) return;
-    const currentRow = selectedStamps.find((s) => s.category_id === categoryId);
-    const currentCount = Math.max(0, currentRow?.stamp_count ?? 0);
-    const nextCount = Math.min(currentCount + 1, 5);
+
     setSelectedLoading(true);
 
-    const stampError = currentRow
-      ? (
-          await supabase
-            .from("client_stamps")
-            .update({
-              stamp_count: nextCount,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("client_id", selectedUser.id)
-            .eq("category_id", categoryId)
-        ).error
-      : (
-          await supabase
-            .from("client_stamps")
-            .insert({
-              client_id: selectedUser.id,
-              category_id: categoryId,
-              stamp_count: nextCount,
-              updated_at: new Date().toISOString(),
-            })
-        ).error;
-
-    if (stampError) {
-      flash(stampError.message, "error");
-      setSelectedLoading(false);
-      return;
-    }
-
-    await supabase
-      .from("stamp_transactions")
-      .insert({
-        client_id: selectedUser.id,
-        category_id: categoryId,
-        action_type: "add_stamp",
-        stamp_count: 1,
-        staff_id: adminId,
-        created_at: new Date().toISOString(),
+    try {
+      const response = await fetch("/api/profile-stamps/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: selectedUser.id,
+          categoryId,
+          direction: 1,
+          staffId: adminId,
+        }),
       });
 
-    if (nextCount >= 5) {
-      const categoryName =
-        selectedCategories
-          .find((c) => c.id === categoryId)
-          ?.name?.toLowerCase() ?? "";
-      const rewardType = categoryName.includes("sandwich")
-        ? "Free Sandwich"
-        : categoryName.includes("main")
-          ? "Free Main Course"
-          : categoryName.includes("dessert")
-            ? "Free Dessert"
-            : categoryName.includes("coffee")
-              ? "Free Coffee"
-              : categoryName.includes("hooka") ||
-                  categoryName.includes("hookah")
-                ? "Free Hooka"
-                : "Free Reward";
-      await supabase
-        .from("rewards")
-        .insert({
-          client_id: selectedUser.id,
-          category_id: categoryId,
-          reward_type: rewardType,
-          status: "available",
-          earned_at: new Date().toISOString(),
-          expires_at: new Date(
-            Date.now() + 30 * 24 * 60 * 60 * 1000,
-          ).toISOString(),
-        });
-      await supabase
-        .from("client_stamps")
-        .update({ stamp_count: 0, updated_at: new Date().toISOString() })
-        .eq("client_id", selectedUser.id)
-        .eq("category_id", categoryId);
-      await supabase
-        .from("stamp_transactions")
-        .insert({
-          client_id: selectedUser.id,
-          category_id: categoryId,
-          action_type: "reward_earned",
-          stamp_count: 5,
-          staff_id: adminId,
-          created_at: new Date().toISOString(),
-        });
-      flash("Gift earned.");
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        completed?: boolean;
+        reward_type?: string;
+        stamp_count?: number;
+      };
+
+      if (!response.ok) {
+        flash(
+          result.error ??
+            "This customer cannot collect another stamp until the active gift is redeemed.",
+          "error",
+        );
+        return;
+      }
+
+      flash(result.completed ? "Gift earned." : "Stamp added.");
       await openUserProfile(selectedUser);
-      return;
+    } finally {
+      setSelectedLoading(false);
     }
-    flash("Stamp added.");
-    await openUserProfile(selectedUser);
   }
 
   async function removeStampFromSelectedClient(categoryId: string) {

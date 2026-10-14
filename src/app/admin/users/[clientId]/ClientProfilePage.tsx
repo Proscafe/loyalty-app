@@ -1358,6 +1358,12 @@ export default function ClientProfilePage({
                       stampByCategory.get(category.id)?.stamp_count ?? 0,
                     ),
                   );
+                  const hasActiveGift = rewards.some(
+                    (reward) =>
+                      reward.category_id === category.id &&
+                      String(reward.status ?? "").toLowerCase() === "available" &&
+                      !reward.redeemed_at,
+                  );
                   return (
                     <div
                       key={category.id}
@@ -1383,9 +1389,15 @@ export default function ClientProfilePage({
                           <button
                             type="button"
                             onClick={() => void updateStamp(category.id, 1)}
-                            className="rounded-full bg-[#ffd66b] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-[#365665]"
+                            disabled={hasActiveGift}
+                            title={
+                              hasActiveGift
+                                ? `Redeem the active ${displayCategoryName(category.name)} gift first`
+                                : "Add stamp"
+                            }
+                            className="rounded-full bg-[#ffd66b] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-[#365665] disabled:cursor-not-allowed disabled:opacity-45"
                           >
-                            Stamp
+                            {hasActiveGift ? "Redeem gift" : "Stamp"}
                           </button>
                         </div>
                       </div>
