@@ -575,6 +575,11 @@ function StaffConsole({
     useState<Reward[]>([]);
 
   const [
+    blockingRewards,
+    setBlockingRewards,
+  ] = useState<Reward[]>([]);
+
+  const [
     claimedRewards,
     setClaimedRewards,
   ] = useState<
@@ -656,6 +661,31 @@ function StaffConsole({
 
       return map;
     }, [stamps]);
+
+  const blockedCategoryIds =
+    useMemo(() => {
+      const ids = new Set<string>();
+
+      blockingRewards.forEach(
+        (reward) => {
+          const status = String(
+            reward.status ?? "",
+          ).toLowerCase();
+
+          if (
+            reward.category_id &&
+            (status === "available" ||
+              status === "claimed")
+          ) {
+            ids.add(
+              reward.category_id,
+            );
+          }
+        },
+      );
+
+      return ids;
+    }, [blockingRewards]);
 
   const flash = useCallback(
     (
@@ -1084,9 +1114,12 @@ function StaffConsole({
                 "client_id",
                 clientId,
               )
-              .eq(
+              .in(
                 "status",
-                "claimed",
+                [
+                  "available",
+                  "claimed",
+                ],
               )
               .order(
                 "earned_at",
@@ -1097,14 +1130,60 @@ function StaffConsole({
               ),
           ]);
 
+        const activeRewards =
+          (nextRewards ??
+            []) as Reward[];
+
         setStamps(
           (nextStamps ??
             []) as ClientStamp[],
         );
 
+        setBlockingRewards(
+          activeRewards,
+        );
+
         setRewards(
-          (nextRewards ??
-            []) as Reward[],
+          activeRewards.filter(
+            (reward) =>
+              String(
+                reward.status ?? "",
+              ).toLowerCase() ===
+              "claimed",
+          ),
+        );
+
+        const blockedIds =
+          new Set(
+            activeRewards
+              .filter((reward) => {
+                const status =
+                  String(
+                    reward.status ?? "",
+                  ).toLowerCase();
+
+                return (
+                  reward.category_id &&
+                  (status ===
+                    "available" ||
+                    status ===
+                      "claimed")
+                );
+              })
+              .map(
+                (reward) =>
+                  reward.category_id as string,
+              ),
+          );
+
+        setSelectedCategories(
+          (previous) =>
+            previous.filter(
+              (id) =>
+                !blockedIds.has(
+                  id,
+                ),
+            ),
         );
       },
       [
@@ -1401,6 +1480,18 @@ function StaffConsole({
   function toggleCategory(
     categoryId: string,
   ) {
+    if (
+      blockedCategoryIds.has(
+        categoryId,
+      )
+    ) {
+      flash(
+        "Redeem this gift first before collecting new stamps.",
+        "error",
+      );
+      return;
+    }
+
     setSelectedCategories(
       (previous) =>
         previous.includes(
@@ -2426,20 +2517,31 @@ function StaffConsole({
                         category.id,
                       );
 
+                    const blocked =
+                      blockedCategoryIds.has(
+                        category.id,
+                      );
+
                     return (
                       <button
                         key={
                           category.id
+                        }
+                        type="button"
+                        disabled={
+                          blocked
                         }
                         onClick={() =>
                           toggleCategory(
                             category.id,
                           )
                         }
-                        className={`rounded-[28px] border p-4 text-left shadow-[0_18px_45px_rgba(72,24,25,0.13)] backdrop-blur-2xl transition active:scale-[0.99] ${
-                          active
-                            ? "border-[#ffd66b] bg-white/28 ring-2 ring-[#ffd66b]/35"
-                            : "border-white/20 bg-white/16"
+                        className={`rounded-[28px] border p-4 text-left shadow-[0_18px_45px_rgba(72,24,25,0.13)] backdrop-blur-2xl transition ${
+                          blocked
+                            ? "cursor-not-allowed border-white/10 bg-[#263832]/72"
+                            : active
+                              ? "border-[#ffd66b] bg-white/28 ring-2 ring-[#ffd66b]/35 active:scale-[0.99]"
+                              : "border-white/20 bg-white/16 active:scale-[0.99]"
                         }`}
                       >
                         <div className="mb-3 flex items-center justify-between gap-3">
@@ -2450,7 +2552,13 @@ function StaffConsole({
                               : category.name}
                           </span>
 
-                          <span className="rounded-full bg-white/16 px-3 py-1 text-[12px] font-black tabular-nums text-[#ffd66b]">
+                          <span
+                            className={`rounded-full px-3 py-1 text-[12px] font-black tabular-nums ${
+                              blocked
+                                ? "bg-black/18 text-white/55"
+                                : "bg-white/16 text-[#ffd66b]"
+                            }`}
+                          >
                             {
                               count
                             }
@@ -2458,30 +2566,36 @@ function StaffConsole({
                           </span>
                         </div>
 
-                        <div className="flex gap-1.5">
-                          {Array.from(
-                            {
-                              length: 5,
-                            },
-                          ).map(
-                            (
-                              _,
-                              index,
-                            ) => (
-                              <div
-                                key={
-                                  index
-                                }
-                                className={`h-2.5 flex-1 rounded-full ${
-                                  index <
-                                  count
-                                    ? "bg-[#ffd66b]"
-                                    : "bg-[#d9ded5]/45"
-                                }`}
-                              />
-                            ),
-                          )}
-                        </div>
+                        {blocked ? (
+                          <div className="flex h-2.5 items-center text-left text-[13px] font-black uppercase tracking-[0.08em] text-[#ffd66b]">
+                            🎁 Redeem Gift First
+                          </div>
+                        ) : (
+                          <div className="flex gap-1.5">
+                            {Array.from(
+                              {
+                                length: 5,
+                              },
+                            ).map(
+                              (
+                                _,
+                                index,
+                              ) => (
+                                <div
+                                  key={
+                                    index
+                                  }
+                                  className={`h-2.5 flex-1 rounded-full ${
+                                    index <
+                                    count
+                                      ? "bg-[#ffd66b]"
+                                      : "bg-[#d9ded5]/45"
+                                  }`}
+                                />
+                              ),
+                            )}
+                          </div>
+                        )}
                       </button>
                     );
                   },
