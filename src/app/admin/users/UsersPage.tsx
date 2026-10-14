@@ -3510,7 +3510,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
         return (aAvg - bAvg) * dir;
       }
       if (customerSort.key === "lifetime")
-        return (a.lifetimeValue - b.lifetimeValue) * dir;
+        return (a.scopedSpend - b.scopedSpend) * dir;
       if (customerSort.key === "gifts")
         return (a.scopedGifts - b.scopedGifts) * dir;
       if (customerSort.key === "status")
@@ -3615,6 +3615,11 @@ export function UsersPage({ adminId }: { adminId: string }) {
             (new Date(b.lastVisit || 0).getTime() || 0)) *
           dir
         );
+      if (customerSort.key === "daysAgo")
+        return (
+          ((a.daysSinceLastVisit ?? 99999) - (b.daysSinceLastVisit ?? 99999)) *
+          dir
+        );
       if (customerSort.key === "visits")
         return (a.scopedVisits - b.scopedVisits) * dir;
       if (customerSort.key === "avgSpent") {
@@ -3623,7 +3628,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
         return (aAvg - bAvg) * dir;
       }
       if (customerSort.key === "lifetime")
-        return (a.lifetimeValue - b.lifetimeValue) * dir;
+        return (a.scopedSpend - b.scopedSpend) * dir;
       if (customerSort.key === "gifts")
         return (a.scopedGifts - b.scopedGifts) * dir;
       if (customerSort.key === "status")
@@ -3819,7 +3824,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
           desktopFormatMoney(
             r.scopedVisits > 0 ? r.scopedSpend / r.scopedVisits : 0,
           ),
-          desktopFormatMoney(r.lifetimeValue),
+          desktopFormatMoney(r.scopedSpend),
           r.scopedGifts,
           daysAgoStatusLabel(r.daysSinceLastVisit),
         ].join(","),
@@ -4122,7 +4127,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
               {/* Mobile customer list */}
               <div className="lg:hidden">
                 <div className="overflow-hidden rounded-[22px] bg-white/10">
-                  <div className="grid grid-cols-[1.25fr_0.8fr_0.55fr_0.85fr] gap-3 border-b border-white/14 bg-white/6 px-3 py-3 text-[9px] font-black uppercase tracking-[0.13em] text-white/58">
+                  <div className="grid grid-cols-[1.3fr_1fr_0.6fr_0.6fr_0.85fr] gap-2 border-b border-white/14 bg-white/6 px-3 py-3 text-[8px] font-black uppercase tracking-[0.13em] text-white/58">
                     <button
                       type="button"
                       onClick={() => sortBy("name")}
@@ -4135,7 +4140,14 @@ export function UsersPage({ adminId }: { adminId: string }) {
                       onClick={() => sortBy("lastVisit")}
                       className={headerClass("lastVisit")}
                     >
-                      Date
+                      Last Visit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sortBy("daysAgo")}
+                      className={headerClass("daysAgo")}
+                    >
+                      Days Ago
                     </button>
                     <button
                       type="button"
@@ -4146,10 +4158,10 @@ export function UsersPage({ adminId }: { adminId: string }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => sortBy("status")}
-                      className={headerClass("status")}
+                      onClick={() => sortBy("avgSpent")}
+                      className={headerClass("avgSpent")}
                     >
-                      Status
+                      Avg. Spent
                     </button>
                   </div>
                   <div className="max-h-[560px] overflow-auto pb-20">
@@ -4160,7 +4172,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                           key={row.user.id}
                           type="button"
                           onClick={() => void openUserProfile(row.user)}
-                          className="grid w-full grid-cols-[1.25fr_0.8fr_0.55fr_0.85fr] items-center gap-3 border-b border-white/10 px-3 py-3 text-left text-[11px] font-bold text-white/74 transition last:border-b-0 hover:bg-white/10"
+                          className="grid w-full grid-cols-[1.3fr_1fr_0.6fr_0.6fr_0.85fr] items-center gap-2 border-b border-white/10 px-3 py-3 text-left text-[11px] font-bold text-white/74 transition last:border-b-0 hover:bg-white/10"
                         >
                           <div className="min-w-0">
                             <div className="truncate font-black text-white">
@@ -4170,15 +4182,22 @@ export function UsersPage({ adminId }: { adminId: string }) {
                           <div className="text-[10px] leading-tight text-white/72">
                             {desktopFormatDateOnly(row.lastVisit)}
                           </div>
+                          <div>
+                            <span
+                              className={`inline-flex min-w-[28px] justify-center rounded-full px-2 py-1 text-[10px] font-black ${daysAgoClass(row.daysSinceLastVisit)}`}
+                            >
+                              {row.daysSinceLastVisit ?? "—"}
+                            </span>
+                          </div>
                           <div className="font-black text-white">
                             {row.scopedVisits}
                           </div>
-                          <div>
-                            <span
-                              className={`inline-flex rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${daysAgoClass(row.daysSinceLastVisit)}`}
-                            >
-                              {daysAgoStatusLabel(row.daysSinceLastVisit)}
-                            </span>
+                          <div className="font-black text-white">
+                            {desktopFormatMoney(
+                              row.scopedVisits > 0
+                                ? row.scopedSpend / row.scopedVisits
+                                : 0,
+                            )}
                           </div>
                         </button>
                       ))}
@@ -4327,7 +4346,7 @@ export function UsersPage({ adminId }: { adminId: string }) {
                             )}
                           </div>
                           <div className="font-black text-white">
-                            {desktopFormatMoney(row.lifetimeValue)}
+                            {desktopFormatMoney(row.scopedSpend)}
                           </div>
                           <div className="font-black text-white">
                             {row.scopedGifts}
