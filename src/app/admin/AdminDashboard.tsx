@@ -1447,6 +1447,10 @@ function MobileDashboard({
   period,
   setPeriod,
   periodLabel,
+  rangeStart,
+  rangeEnd,
+  setRangeStart,
+  setRangeEnd,
   metrics,
   loyaltyRows,
   attentionRows,
@@ -1459,6 +1463,10 @@ function MobileDashboard({
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
   periodLabel: string;
+  rangeStart: string;
+  rangeEnd: string;
+  setRangeStart: (value: string) => void;
+  setRangeEnd: (value: string) => void;
   metrics: MobileImportantMetric[];
   loyaltyRows: InsightRow[];
   attentionRows: InsightRow[];
@@ -1527,18 +1535,15 @@ function MobileDashboard({
         </div>
       </header>
 
-      <Panel className="mb-4 p-5">
-        <div className="flex items-start justify-between gap-3">
+      <Panel className="mb-4 p-4">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[12px] font-extrabold uppercase tracking-[0.18em] text-[#ffd66b]">
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#ffd66b]">
               {periodLabel}
             </p>
-            <h1 className="mt-1 text-[28px] font-black tracking-[-0.055em] text-white">
+            <h1 className="mt-1 text-[26px] font-black tracking-[-0.055em] text-white">
               Dashboard
             </h1>
-            <p className="mt-2 text-[13px] font-bold leading-relaxed text-white/70">
-              Important loyalty numbers only, optimized for mobile.
-            </p>
           </div>
           <span className="rounded-full bg-[#ffd66b] px-3 py-1 text-[11px] font-black text-[#102b31]">
             Live
@@ -1546,21 +1551,39 @@ function MobileDashboard({
         </div>
       </Panel>
 
-      <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {PERIODS.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setPeriod(item.key)}
-            className={`h-10 shrink-0 rounded-full px-4 text-[12px] font-black transition ${
-              period === item.key
-                ? "bg-[#ffd66b] text-[#112b31] shadow-[0_12px_26px_rgba(255,214,107,0.22)]"
-                : "border border-white/14 bg-white/[0.07] text-white"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="mb-4">
+        <select
+          value={period}
+          onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
+          className="h-11 w-full rounded-[16px] border border-white/18 bg-white/10 px-4 text-[12px] font-black text-white outline-none backdrop-blur-2xl"
+          aria-label="Dashboard date filter"
+        >
+          <option value="today" className="text-[#365665]">Today</option>
+          <option value="week" className="text-[#365665]">This week</option>
+          <option value="month" className="text-[#365665]">This month</option>
+          <option value="date_range" className="text-[#365665]">Date range</option>
+          <option value="all" className="text-[#365665]">Show all</option>
+        </select>
+
+        {period === "date_range" ? (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={rangeStart}
+              onChange={(event) => setRangeStart(event.target.value)}
+              className="h-11 min-w-0 rounded-[14px] border border-white/18 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+              aria-label="Date range start"
+            />
+            <input
+              type="date"
+              value={rangeEnd}
+              min={rangeStart || undefined}
+              onChange={(event) => setRangeEnd(event.target.value)}
+              className="h-11 min-w-0 rounded-[14px] border border-white/18 bg-white px-3 text-[11px] font-black text-[#365665] outline-none"
+              aria-label="Date range end"
+            />
+          </div>
+        ) : null}
       </div>
 
       <section className="grid grid-cols-2 gap-3">
@@ -2131,6 +2154,10 @@ function AdminDashboard({
         period={period}
         setPeriod={setPeriod}
         periodLabel={periodLabel}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        setRangeStart={setRangeStart}
+        setRangeEnd={setRangeEnd}
         metrics={mobileMetrics}
         loyaltyRows={loyaltyRows}
         attentionRows={attentionRows}
