@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ClientDashboard } from "./ClientDashboardPreview";
@@ -43,6 +42,7 @@ function currentStreak(rows: Array<{ created_at?: string | null }>) {
   if (!cursor) return 0;
 
   let streak = 0;
+
   while (cursor && daySet.has(cursor)) {
     streak += 1;
     cursor = previousDateKey(cursor);
@@ -52,10 +52,6 @@ function currentStreak(rows: Array<{ created_at?: string | null }>) {
 }
 
 export default async function DashboardPreviewPage() {
-  if (process.env.NODE_ENV === "production") {
-    notFound();
-  }
-
   const profile = await requireRole([
     "client",
     "staff",
@@ -64,13 +60,6 @@ export default async function DashboardPreviewPage() {
   ]);
 
   const supabase = await createClient();
-
-  try {
-    await supabase.rpc("reset_stale_claimed_rewards");
-    await supabase.rpc("expire_old_rewards");
-  } catch {
-    // Best-effort cleanup only.
-  }
 
   const [
     { data: categories },
@@ -114,7 +103,7 @@ export default async function DashboardPreviewPage() {
   const allTimeStamps = (stampActivity ?? []).length;
   const giftsEarned = (rewards ?? []).length;
   const streak = currentStreak(
-    ((stampActivity ?? []) as Array<{ created_at?: string | null }>),
+    (stampActivity ?? []) as Array<{ created_at?: string | null }>,
   );
 
   return (
