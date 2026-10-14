@@ -1538,10 +1538,7 @@ function MobileDashboard({
       <Panel className="mb-4 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#ffd66b]">
-              {periodLabel}
-            </p>
-            <h1 className="mt-1 text-[26px] font-black tracking-[-0.055em] text-white">
+            <h1 className="text-[26px] font-black tracking-[-0.055em] text-white">
               Dashboard
             </h1>
           </div>
@@ -1552,18 +1549,26 @@ function MobileDashboard({
       </Panel>
 
       <div className="mb-4">
-        <select
-          value={period}
-          onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
-          className="h-11 w-full rounded-[16px] border border-white/18 bg-white/10 px-4 text-[12px] font-black text-white outline-none backdrop-blur-2xl"
-          aria-label="Dashboard date filter"
-        >
-          <option value="today" className="text-[#365665]">Today</option>
-          <option value="week" className="text-[#365665]">This week</option>
-          <option value="month" className="text-[#365665]">This month</option>
-          <option value="date_range" className="text-[#365665]">Date range</option>
-          <option value="all" className="text-[#365665]">Show all</option>
-        </select>
+        <div className="relative">
+          <select
+            value={period}
+            onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
+            className="h-11 w-full appearance-none rounded-[16px] border border-[#ffd66b]/80 bg-[#ffd66b] px-4 pr-12 text-[12px] font-black text-[#365665] outline-none shadow-[0_10px_24px_rgba(255,214,107,0.18)]"
+            aria-label="Dashboard date filter"
+          >
+            <option value="today" className="text-[#365665]">Today</option>
+            <option value="week" className="text-[#365665]">This week</option>
+            <option value="month" className="text-[#365665]">This month</option>
+            <option value="date_range" className="text-[#365665]">Date range</option>
+            <option value="all" className="text-[#365665]">Show all</option>
+          </select>
+          <span
+            className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[14px] font-black text-[#365665]"
+            aria-hidden="true"
+          >
+            ▾
+          </span>
+        </div>
 
         {period === "date_range" ? (
           <div className="mt-2 grid grid-cols-2 gap-2">
