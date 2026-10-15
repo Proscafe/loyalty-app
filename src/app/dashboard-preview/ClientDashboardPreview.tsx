@@ -669,44 +669,47 @@ function ImageSpinWheel({
   rotation?: number;
   spinning?: boolean;
 }) {
-  const size = compact ? 142 : 300;
+  const size = compact ? 168 : 350;
 
   return (
     <div
       className="relative mx-auto"
-      style={{
-        width: size,
-        height: compact ? size + 10 : size + 26,
-      }}
+      style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <div className="sr-only" />
-
-      <div
-        className="absolute left-1/2 top-1/2"
+      <img
+        src="/02_base.png"
+        alt=""
+        draggable={false}
+        className="pointer-events-none absolute inset-0 h-full w-full object-contain"
         style={{
-          width: size,
-          height: compact ? size + 6 : size + 16,
-          transform: "translate(-50%,-50%)",
           filter: compact
-            ? "drop-shadow(0 10px 16px rgba(0,0,0,.24))"
-            : "drop-shadow(0 22px 36px rgba(0,0,0,.30))",
+            ? "drop-shadow(0 8px 12px rgba(0,0,0,.18))"
+            : "drop-shadow(0 18px 26px rgba(0,0,0,.24))",
         }}
-      >
-        <img
-          src="/spin-wheel-premium.png"
-          alt=""
-          draggable={false}
-          className="absolute inset-0 h-full w-full max-w-none object-contain"
-          style={{
-            transform: `rotate(${rotation}deg) scale(${compact ? 1.02 : 1.04})`,
-            transition: spinning
-              ? "transform 2.4s cubic-bezier(.12,.72,.2,1)"
-              : "none",
-            transformOrigin: "50% 46%",
-          }}
-        />
-      </div>
+      />
+
+      <img
+        src="/01_wheel_circle.png"
+        alt=""
+        draggable={false}
+        className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+        style={{
+          transform: `rotate(${rotation}deg)`,
+          transition: spinning
+            ? "transform 2.4s cubic-bezier(.12,.72,.2,1)"
+            : "none",
+          transformOrigin: "50% 50%",
+          willChange: spinning ? "transform" : "auto",
+        }}
+      />
+
+      <img
+        src="/03_pointer.png"
+        alt=""
+        draggable={false}
+        className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+      />
     </div>
   );
 }
@@ -980,6 +983,13 @@ export function ClientDashboard({
   const [spinError, setSpinError] = useState<string | null>(null);
   const [dashboardGreeting, setDashboardGreeting] = useState<string>(DASHBOARD_GREETINGS[0]);
   const [testCompletedVisits, setTestCompletedVisits] = useState<number>(3);
+  const openSpinModal = () => {
+    setSpinError(null);
+    setSpinResult(null);
+    setIsSpinning(false);
+    setSpinRotation(0);
+    window.requestAnimationFrame(() => setIsSpinOpen(true));
+  };
 
   const visibleBanners = useMemo(
     () =>
@@ -1840,7 +1850,7 @@ export function ClientDashboard({
             <img
               src="/client-main-card.png"
               alt=""
-              className="absolute inset-y-0 right-[-10%] h-full w-[115%] max-w-none object-cover object-right opacity-78"
+              className="absolute inset-y-0 right-[-15%] h-full w-[130%] max-w-none object-cover object-right opacity-78"
               draggable={false}
             />
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(55,74,60,0.84)_0%,rgba(55,74,60,0.48)_46%,rgba(55,74,60,0.20)_100%)]" />
@@ -1864,7 +1874,7 @@ export function ClientDashboard({
                   setIsFeedbackOpen(true);
                   setFeedbackStatus(null);
                 }}
-                className="preview-cta-blink mt-7 inline-flex items-center justify-center rounded-[16px] bg-[#f2cd5d] px-6 py-3.5 text-[15px] font-black text-[#24352f] shadow-[0_10px_24px_rgba(255,214,107,0.2)]"
+                className="preview-cta-blink mt-7 inline-flex w-[132px] items-center justify-center rounded-[16px] bg-[#ffd66b] px-3 py-2.5 text-[11px] font-black text-[#26382d] shadow-[0_8px_20px_rgba(255,214,107,0.20)]"
               >
                 Your Feedback
               </button>
@@ -1885,7 +1895,7 @@ export function ClientDashboard({
 
         <section className="preview-card-animate mt-4 grid grid-cols-3 gap-3">
           {[
-            { icon: "star", value: allTimeStampCount, label: "All-Time Stamps" },
+            { icon: "star", value: allTimeStampCount, label: "Stamps Earned" },
             { icon: "gift", value: giftsEarnedCount, label: "Gifts Earned" },
             { icon: "fire", value: displayStreakCount, label: "Weekly Visits" },
           ].map((item) => (
@@ -1906,7 +1916,7 @@ export function ClientDashboard({
                 </div>
                 <div className="min-w-0 text-left leading-none">
                   <div className="text-[19px] font-black text-white">{item.value}</div>
-                  <div className="mt-1 text-[10px] font-medium leading-[1.1] text-white/82">
+                  <div className="mt-1 whitespace-nowrap text-[10px] font-medium leading-[1.1] text-white/82">
                     {item.label}
                   </div>
                 </div>
@@ -1919,14 +1929,15 @@ export function ClientDashboard({
           className="preview-card-animate mt-4 overflow-hidden border border-white/10 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.14)] backdrop-blur-2xl"
           style={{ borderRadius: 24, background: GLASS_CARD }}
         >
-          <div className="grid grid-cols-[1fr_146px] items-start gap-3">
+          <div className="grid grid-cols-[1fr_168px] items-start gap-3">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
                 Weekly Challenge
               </div>
 
-              <p className="mt-2 max-w-[220px] text-left text-[13px] font-semibold leading-5 text-white/80">
-                Visit 4 times this week to unlock a free spin!
+              <p className="mt-2 max-w-[220px] text-left text-[12px] font-semibold leading-5 text-white/80">
+                Visit 4 times this week to<br />
+                <span className="whitespace-nowrap">unlock a free spin!</span>
               </p>
 
               <div className="mt-4 flex items-center gap-3">
@@ -1961,11 +1972,12 @@ export function ClientDashboard({
                       );
                       return;
                     }
-                    setSpinError(null);
-                    setIsSpinOpen(true);
+                    openSpinModal();
                   }}
-                  className={`min-w-[154px] rounded-[16px] px-4 py-3 text-[14px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
-                    isSpinUnlocked ? "preview-cta-blink bg-[#ffd66b] text-[#2f4435]" : "bg-[#26382d]/80 text-white"
+                  className={`w-[132px] rounded-[16px] px-3 py-2.5 text-[11px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
+                    isSpinUnlocked
+                      ? "preview-cta-blink bg-[#ffd66b] text-[#2f4435]"
+                      : "bg-[#26382d]/80 text-white"
                   }`}
                 >
                   {isSpinUnlocked ? "Spin & Win" : `${visitsLeft} More Visit${visitsLeft === 1 ? "" : "s"}`}
@@ -1978,11 +1990,9 @@ export function ClientDashboard({
                 type="button"
                 onClick={() => {
                   if (!isSpinUnlocked) return;
-                  setSpinError(null);
-                  setIsSpinOpen(true);
+                  openSpinModal();
                 }}
-                disabled={!isSpinUnlocked}
-                className="group mt-1 h-[158px] w-[146px] disabled:opacity-55"
+                className="group mt-0 h-[168px] w-[168px]"
                 aria-label="Open Spin & Win"
               >
                 <ImageSpinWheel compact />
@@ -2244,10 +2254,10 @@ export function ClientDashboard({
 
         <section className="preview-card-animate mt-5 pb-7">
           <div
-            className="mx-auto w-full rounded-[34px] border border-white/10 px-5 pb-4 pt-4 backdrop-blur-2xl"
+            className="mx-auto w-full rounded-[34px] border border-white/10 px-5 py-5"
             style={{ background: "rgba(255,255,255,0.08)" }}
           >
-            <div className="mb-3 text-left text-[22px] font-black text-white">
+            <div className="mb-4 text-left text-[22px] font-black text-white">
               Follow Us
             </div>
 
@@ -2286,22 +2296,19 @@ export function ClientDashboard({
             onClick={() => !isSpinning && setIsSpinOpen(false)}
           >
             <div
-              className="w-full max-w-md rounded-[30px] border border-white/12 px-6 pb-7 pt-4 shadow-[0_30px_90px_rgba(0,0,0,0.4)] max-h-[92vh] overflow-y-auto preview-hide-scrollbar"
+              className="relative w-full max-w-md rounded-[30px] border border-white/12 px-6 pb-7 pt-6 shadow-[0_30px_90px_rgba(0,0,0,0.4)] max-h-[92vh] overflow-y-auto preview-hide-scrollbar"
               style={{ background: "linear-gradient(155deg,#405845,#2e4435)" }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="mx-auto h-1.5 w-12 rounded-full bg-white/22" />
-              <div className="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => !isSpinning && setIsSpinOpen(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-[20px] font-black text-white"
-                >
-                  ×
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => !isSpinning && setIsSpinOpen(false)}
+                className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-[20px] font-black text-white"
+              >
+                ×
+              </button>
 
-              <div className="text-left">
+              <div className="text-left pr-10">
                 <h2 className="text-[30px] font-black text-white">Spin the Wheel!</h2>
                 <p className="mt-2 text-[13px] font-semibold leading-5 text-white/68">
                   You&apos;ve completed {displayStreakCount} days in a row.
@@ -2310,7 +2317,7 @@ export function ClientDashboard({
                 </p>
               </div>
 
-              <div className="relative mx-auto mt-5 flex min-h-[326px] items-center justify-center">
+              <div className="relative mx-auto mt-3 flex min-h-[350px] items-center justify-center">
                 <ImageSpinWheel
                   rotation={spinRotation}
                   spinning={isSpinning}
