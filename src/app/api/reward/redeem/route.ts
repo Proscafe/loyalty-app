@@ -40,6 +40,7 @@ async function updateRewardAsRedeemed(
       .from("rewards")
       .update(patch)
       .eq("id", rewardId)
+      .eq("status", "claimed")
       .select("*")
       .maybeSingle();
 
@@ -106,6 +107,10 @@ export async function POST(req: Request) {
 
     if (rawStatus === "redeemed" || rawStatus === "used") {
       return NextResponse.json({ ok: true, reward });
+    }
+
+    if (rawStatus !== "claimed") {
+      return jsonError("This gift must be claimed by the client before it can be confirmed.", 409);
     }
 
     const updatedReward = await updateRewardAsRedeemed(admin, rewardId);

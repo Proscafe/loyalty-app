@@ -1538,7 +1538,8 @@ export function ClientDashboard({
         );
       }
 
-      void sendStaffClaimAlert(rewardId);
+      // /api/reward/claim already sends the staff push notification server-side.
+      // Avoid sending the same claim notification a second time from the client.
       router.refresh();
     } catch {
       setLocalRewards((current) =>
