@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-
 import { createClient } from "@/lib/supabase/client";
 
 export function BOLogoutButton() {
@@ -10,9 +9,7 @@ export function BOLogoutButton() {
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(false);
 
-  async function handleLogout() {
-    if (loading) return;
-
+  async function logout() {
     setLoading(true);
     await supabase.auth.signOut();
     router.replace("/bo");
@@ -22,9 +19,9 @@ export function BOLogoutButton() {
   return (
     <button
       type="button"
-      onClick={() => void handleLogout()}
+      onClick={() => void logout()}
       disabled={loading}
-      className="rounded-[12px] border border-white/15 bg-white/8 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.06em] text-white transition hover:bg-white/12 disabled:opacity-60"
+      className="rounded-[10px] border border-black/15 bg-white px-4 py-2.5 text-[10px] font-black uppercase text-black hover:bg-black hover:text-white disabled:opacity-50"
     >
       {loading ? "LOGGING OUT..." : "LOG OUT"}
     </button>
