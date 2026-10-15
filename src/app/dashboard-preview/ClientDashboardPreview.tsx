@@ -659,6 +659,58 @@ function GiftCarouselCard({
 }
 
 
+
+function ImageSpinWheel({
+  compact = false,
+  rotation = 0,
+  spinning = false,
+}: {
+  compact?: boolean;
+  rotation?: number;
+  spinning?: boolean;
+}) {
+  const size = compact ? 142 : 300;
+
+  return (
+    <div
+      className="relative mx-auto"
+      style={{
+        width: size,
+        height: compact ? size + 10 : size + 26,
+      }}
+      aria-hidden="true"
+    >
+      <div className="sr-only" />
+
+      <div
+        className="absolute left-1/2 top-1/2"
+        style={{
+          width: size,
+          height: compact ? size + 6 : size + 16,
+          transform: "translate(-50%,-50%)",
+          filter: compact
+            ? "drop-shadow(0 10px 16px rgba(0,0,0,.24))"
+            : "drop-shadow(0 22px 36px rgba(0,0,0,.30))",
+        }}
+      >
+        <img
+          src="/spin-wheel-premium.png"
+          alt=""
+          draggable={false}
+          className="absolute inset-0 h-full w-full max-w-none object-contain"
+          style={{
+            transform: `rotate(${rotation}deg) scale(${compact ? 1.02 : 1.04})`,
+            transition: spinning
+              ? "transform 2.4s cubic-bezier(.12,.72,.2,1)"
+              : "none",
+            transformOrigin: "50% 46%",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function DisabledLoyaltyProgramCard() {
   return (
     <div
@@ -1788,7 +1840,7 @@ export function ClientDashboard({
             <img
               src="/client-main-card.png"
               alt=""
-              className="absolute inset-y-0 right-[-7%] h-full w-[110%] max-w-none object-cover object-right opacity-78"
+              className="absolute inset-y-0 right-[-10%] h-full w-[115%] max-w-none object-cover object-right opacity-78"
               draggable={false}
             />
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(55,74,60,0.84)_0%,rgba(55,74,60,0.48)_46%,rgba(55,74,60,0.20)_100%)]" />
@@ -1839,60 +1891,24 @@ export function ClientDashboard({
           ].map((item) => (
             <div
               key={String(item.label)}
-              className="flex min-h-[76px] items-center justify-center border border-white/10 px-2 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.12)] backdrop-blur-2xl"
+              className="flex min-h-[78px] items-center justify-center border border-white/10 px-3 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.12)] backdrop-blur-2xl"
               style={{ borderRadius: 18, background: GLASS_CARD }}
             >
-              <div className="w-fit">
-                <div className="flex items-center justify-start gap-2">
-                  <div className="flex h-[32px] w-[32px] shrink-0 items-center justify-center">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-[32px] w-[32px] shrink-0 items-center justify-center text-[28px] leading-none">
                   {item.icon === "star" ? (
-                    <svg viewBox="0 0 24 24" className="h-[32px] w-[32px]" aria-hidden="true">
-                      <path
-                        d="M12 2.2 14.95 8.18l6.6.96-4.78 4.66 1.13 6.57L12 17.27l-5.9 3.1 1.13-6.57-4.78-4.66 6.6-.96L12 2.2Z"
-                        fill="#ffd66b"
-                      />
-                    </svg>
+                    <span aria-hidden="true">⭐</span>
                   ) : item.icon === "gift" ? (
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-[32px] w-[32px]"
-                      fill="none"
-                      stroke="#ffd66b"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <rect x="3.5" y="9" width="17" height="11" rx="1.8" />
-                      <path d="M12 9v11M3 12.3h18" />
-                      <path d="M12 9H8.2a2.7 2.7 0 1 1 2.1-4.4C11.2 5.7 12 9 12 9Z" />
-                      <path d="M12 9h3.8a2.7 2.7 0 1 0-2.1-4.4C12.8 5.7 12 9 12 9Z" />
-                    </svg>
+                    <span aria-hidden="true">🎁</span>
                   ) : (
-                    <svg viewBox="0 0 24 24" className="h-[32px] w-[32px]" aria-hidden="true">
-                      <path
-                        d="M13.1 2.1c.4 3.4-1 5-2.5 6.7-1.4 1.6-2.7 3.1-2.7 5.7 0 2.4 1.8 4.3 4.2 4.3 2.8 0 4.8-2.3 4.8-5.2 0-2.2-.9-4.1-2.6-6.1.1 2.2-.8 3.4-1.8 4.5.3-3.1-.4-6.4.6-9.9Z"
-                        fill="#ffd66b"
-                      />
-                      <path
-                        d="M7.4 10.2C5.7 12 5 13.7 5 15.5A7 7 0 0 0 12 22a7 7 0 0 0 7-7c0-2.2-1.1-4.5-3.2-6.8.2 1.9-.2 3.7-1.3 5.2-.4-1.8-1.3-3.4-2.7-4.8.2 1.8-.3 3.3-1.4 4.7-1 1.3-1.3 2.1-1.3 3.1 0 1.7 1.3 3 3 3"
-                        fill="none"
-                        stroke="#f39b33"
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <span aria-hidden="true">🔥</span>
                   )}
-                  </div>
-
-                  <div className="text-[24px] font-black leading-none text-white">
-                    {item.value}
-                  </div>
                 </div>
-
-                <div className="mt-1 whitespace-nowrap text-left text-[9px] font-medium leading-none text-white/72">
-                  {item.label}
+                <div className="min-w-0 text-left leading-none">
+                  <div className="text-[19px] font-black text-white">{item.value}</div>
+                  <div className="mt-1 text-[10px] font-medium leading-[1.1] text-white/82">
+                    {item.label}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1903,7 +1919,7 @@ export function ClientDashboard({
           className="preview-card-animate mt-4 overflow-hidden border border-white/10 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.14)] backdrop-blur-2xl"
           style={{ borderRadius: 24, background: GLASS_CARD }}
         >
-          <div className="grid grid-cols-[1fr_150px] items-start gap-3">
+          <div className="grid grid-cols-[1fr_146px] items-start gap-3">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
                 Weekly Challenge
@@ -1935,102 +1951,42 @@ export function ClientDashboard({
                 })}
               </div>
 
-              <div className="mt-3 text-[13px] font-black text-white">
-                {testCompletedVisits} / {visitTarget} visits
-              </div>
-              {isSpinUnlocked ? (
-                <div className="mt-1 text-[11px] font-medium leading-4 text-white/62">
-                  Your free spin is unlocked!
-                </div>
-              ) : null}
-            </div>
-
-            <div className="relative flex min-h-[165px] items-start justify-center">
-              <div className="relative h-[162px] w-[150px]">
+              <div className="mt-4">
                 <button
                   type="button"
                   onClick={() => {
-                    if (!isSpinUnlocked) return;
+                    if (!isSpinUnlocked) {
+                      setTestCompletedVisits((current) =>
+                        current >= visitTarget ? 0 : Math.min(visitTarget, current + 1),
+                      );
+                      return;
+                    }
                     setSpinError(null);
                     setIsSpinOpen(true);
                   }}
-                  disabled={!isSpinUnlocked}
-                  className="group absolute left-1/2 top-0 h-[142px] w-[142px] -translate-x-1/2 disabled:opacity-45"
-                  aria-label="Open Spin & Win"
+                  className={`min-w-[154px] rounded-[16px] px-4 py-3 text-[14px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
+                    isSpinUnlocked ? "preview-cta-blink bg-[#ffd66b] text-[#2f4435]" : "bg-[#26382d]/80 text-white"
+                  }`}
                 >
-                  <div className="absolute left-1/2 top-[-2px] z-30 -translate-x-1/2">
-                    <div
-                      className="h-0 w-0 border-x-[9px] border-t-[16px] border-x-transparent border-t-[#e33f35] drop-shadow-[0_0_0.8px_#ffffff]"
-                      style={{ filter: "drop-shadow(0 0 1px white) drop-shadow(0 2px 4px rgba(0,0,0,.28))" }}
-                    />
-                  </div>
-
-                  <div
-                    className="absolute inset-1 rounded-full border-[7px] border-[#e2ad2f] shadow-[0_0_18px_rgba(255,214,107,0.45),0_8px_22px_rgba(0,0,0,0.24),inset_0_0_0_2px_rgba(255,255,255,0.18)]"
-                    style={{
-                      background:
-                        "conic-gradient(from -30deg, #f3ca45 0deg 60deg, #df5b4d 60deg 120deg, #2f6fb1 120deg 180deg, #7e5ba9 180deg 240deg, #36a99a 240deg 300deg, #f39b33 300deg 360deg)",
-                    }}
-                  >
-                    {[0, 60, 120, 180, 240, 300].map((angle) => (
-                      <span
-                        key={angle}
-                        className="absolute left-1/2 top-1/2 h-2 w-2 rounded-full bg-[#fff3a6] shadow-[0_0_8px_rgba(255,233,130,0.95)]"
-                        style={{
-                          transform: `translate(-50%,-50%) rotate(${angle}deg) translateY(-60px)`,
-                        }}
-                      />
-                    ))}
-
-                    {[
-                      ["$50", 0],
-                      ["M", 60],
-                      ["S", 120],
-                      ["H", 180],
-                      ["D", 240],
-                      ["C", 300],
-                    ].map(([label, angle]) => (
-                      <span
-                        key={`${label}-${angle}`}
-                        className={`absolute left-1/2 top-1/2 w-[44px] origin-center text-center font-black ${
-                          label === "$50"
-                            ? "text-[13px] text-[#b91c1c] [text-shadow:0_0_8px_rgba(255,250,210,.95),0_1px_0_rgba(255,255,255,.7)]"
-                            : "text-[15px] text-white [text-shadow:0_1px_2px_rgba(0,0,0,.42)]"
-                        }`}
-                        style={{
-                          transform: `translate(-50%,-50%) rotate(${angle}deg) translateY(-43px) rotate(-${angle}deg)`,
-                        }}
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="absolute left-1/2 top-1/2 z-10 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-[4px] border-[#d9a024] bg-[#ffd66b] text-[8px] font-black leading-[1.05] text-[#6a4a00] shadow-md">
-                    <span>SPIN</span>
-                    <span>&amp; WIN</span>
-                  </div>
+                  {isSpinUnlocked ? "Spin & Win" : `${visitsLeft} More Visit${visitsLeft === 1 ? "" : "s"}`}
                 </button>
-
-                <div className="absolute bottom-[14px] left-1/2 z-40 -translate-x-1/2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!isSpinUnlocked) {
-                        setTestCompletedVisits((current) => (current >= visitTarget ? 0 : Math.min(visitTarget, current + 1)));
-                        return;
-                      }
-                      setSpinError(null);
-                      setIsSpinOpen(true);
-                    }}
-                    className={`w-[132px] rounded-[16px] px-3 py-2.5 text-[11px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
-                      isSpinUnlocked ? "preview-cta-blink bg-[#ffd66b] text-[#2f4435]" : "bg-[#26382d]/80 text-white"
-                    }`}
-                  >
-                    {isSpinUnlocked ? "Spin & Win" : `${visitsLeft} More Visit${visitsLeft === 1 ? "" : "s"}`}
-                  </button>
-                </div>
               </div>
+            </div>
+
+            <div className="relative flex min-h-[165px] items-start justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isSpinUnlocked) return;
+                  setSpinError(null);
+                  setIsSpinOpen(true);
+                }}
+                disabled={!isSpinUnlocked}
+                className="group mt-1 h-[158px] w-[146px] disabled:opacity-55"
+                aria-label="Open Spin & Win"
+              >
+                <ImageSpinWheel compact />
+              </button>
             </div>
           </div>
         </section>
@@ -2172,21 +2128,21 @@ export function ClientDashboard({
                               key={starIndex}
                               src={stampTheme.asset}
                               alt=""
-                              className="h-[22px] w-[22px] object-contain"
+                              className="h-[26px] w-[26px] object-contain"
                               draggable={false}
                             />
                           ) : (
                             <svg
                               key={starIndex}
                               viewBox="0 0 100 100"
-                              className="h-[22px] w-[22px]"
+                              className="h-[26px] w-[26px]"
                               aria-hidden="true"
                             >
                               <polygon
                                 points="50,5 61,36 94,36 67,56 78,89 50,69 22,89 33,56 6,36 39,36"
-                                fill="rgba(255,255,255,0.04)"
+                                fill="rgba(255,255,255,0.06)"
                                 stroke={stampTheme.stroke}
-                                opacity="0.62"
+                                opacity="0.78"
                                 strokeWidth="3.2"
                                 strokeDasharray="4 4"
                                 strokeLinejoin="round"
@@ -2354,60 +2310,11 @@ export function ClientDashboard({
                 </p>
               </div>
 
-              <div className="relative mx-auto mt-6 h-[300px] w-[300px]">
-                <div className="absolute left-1/2 top-[-4px] z-40 -translate-x-1/2">
-                  <div className="mx-auto h-0 w-0 border-x-[12px] border-t-[20px] border-x-transparent border-t-[#e33f35]" style={{ filter: "drop-shadow(0 0 1.4px white) drop-shadow(0 4px 7px rgba(0,0,0,.28))" }} />
-                </div>
-
-                <div
-                  className="absolute inset-1 rounded-full border-[12px] border-[#e0aa28] shadow-[0_22px_50px_rgba(0,0,0,0.30),inset_0_0_0_3px_rgba(255,255,255,0.17)]"
-                  style={{
-                    background:
-                      "conic-gradient(from -30deg, #f3ca45 0deg 60deg, #df5b4d 60deg 120deg, #2f6fb4 120deg 180deg, #7e5ba9 180deg 240deg, #36a99a 240deg 300deg, #f39b33 300deg 360deg)",
-                    transform: `rotate(${spinRotation}deg)`,
-                    transition: isSpinning ? "transform 2.4s cubic-bezier(.12,.72,.2,1)" : "none",
-                  }}
-                >
-                  {[0, 60, 120, 180, 240, 300].map((angle) => (
-                    <span
-                      key={angle}
-                      className="absolute left-1/2 top-1/2 h-3 w-3 rounded-full bg-[#fff3a6] shadow-[0_0_10px_rgba(255,234,130,1)]"
-                      style={{
-                        transform: `translate(-50%,-50%) rotate(${angle}deg) translateY(-130px)`,
-                      }}
-                    />
-                  ))}
-
-                  {[
-                    ["$50", 0],
-                    ["M", 60],
-                    ["S", 120],
-                    ["H", 180],
-                    ["D", 240],
-                    ["C", 300],
-                  ].map(([label, angle]) => (
-                    <span
-                      key={`${label}-${angle}`}
-                      className={`absolute left-1/2 top-1/2 w-[66px] origin-center text-center font-black ${
-                        label === "$50"
-                          ? "text-[20px] text-[#b91c1c] [text-shadow:0_0_14px_rgba(255,248,190,.95),0_1px_0_rgba(255,255,255,.75)]"
-                          : "text-[24px] text-white [text-shadow:0_2px_4px_rgba(0,0,0,.45)]"
-                      }`}
-                      style={{
-                        transform: `translate(-50%,-50%) rotate(${angle}deg) translateY(-95px) rotate(-${angle}deg)`,
-                      }}
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="absolute left-1/2 top-1/2 z-20 flex h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-[8px] border-[#d29a17] bg-[#ffd66b] text-center text-[14px] font-black leading-[1.05] text-[#6d4d00] shadow-[0_8px_20px_rgba(0,0,0,0.22)]">
-                  <span>SPIN</span>
-                  <span>&amp; WIN</span>
-                </div>
-
-                <div className="absolute bottom-[-15px] left-1/2 h-7 w-[128px] -translate-x-1/2 rounded-t-[55%] bg-[#d7a11f] shadow-[0_8px_18px_rgba(0,0,0,0.18)]" />
+              <div className="relative mx-auto mt-5 flex min-h-[326px] items-center justify-center">
+                <ImageSpinWheel
+                  rotation={spinRotation}
+                  spinning={isSpinning}
+                />
               </div>
 
               {spinError ? (
