@@ -89,6 +89,21 @@ const DEFAULT_CATEGORY_ORDER = [
   "Hooka",
 ];
 
+const DASHBOARD_GREETINGS = [
+  "WELCOME BACK",
+  "GOOD TO SEE YOU",
+  "LOOK WHO'S HERE",
+  "HELLO AGAIN",
+  "READY FOR MORE?",
+  "YOUR HAPPY PLACE",
+  "GREAT TO HAVE YOU",
+  "KEEP IT GOING",
+  "ANOTHER GREAT DAY",
+  "BACK FOR MORE?",
+  "GOOD VIBES ONLY",
+  "THE FUN CONTINUES",
+] as const;
+
 function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -463,6 +478,21 @@ function getRewardState(reward: ClientReward) {
   if (reward.status === "claimed") return { label: "Your gift is on its way.", action: "Pending" };
   if (reward.status === "expired") return { label: "Expired", action: "Expired" };
   return { label: "Confirmed", action: "Confirmed" };
+}
+
+function getClaimCountdownLabel(reward: ClientReward) {
+  if (reward.status === "claimed") return "Claim request sent — waiting for confirmation";
+  if (reward.status !== "available") return null;
+
+  const expiresAt = rewardExpiryDate(reward);
+  if (!expiresAt) return "Ready to claim";
+
+  const msLeft = expiresAt - Date.now();
+  const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+
+  if (daysLeft <= 0) return "Expires today";
+  if (daysLeft === 1) return "Expires in 1 day";
+  return `Expires in ${daysLeft} days`;
 }
 
 function ConfirmedGiftCheck() {
@@ -896,6 +926,8 @@ export function ClientDashboard({
   const [spinRotation, setSpinRotation] = useState(0);
   const [spinResult, setSpinResult] = useState<ClientReward | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
+  const [dashboardGreeting, setDashboardGreeting] = useState<string>(DASHBOARD_GREETINGS[0]);
+  const [testCompletedVisits, setTestCompletedVisits] = useState<number>(3);
 
   const visibleBanners = useMemo(
     () =>
@@ -921,6 +953,18 @@ export function ClientDashboard({
 
     return () => window.clearInterval(timer);
   }, [visibleBanners.length]);
+
+  useEffect(() => {
+    const storageKey = "pros-preview-dashboard-greeting";
+    const lastGreeting = typeof window !== "undefined" ? window.sessionStorage.getItem(storageKey) : null;
+    const pool = DASHBOARD_GREETINGS.filter((item) => item !== lastGreeting);
+    const nextGreeting = pool[Math.floor(Math.random() * pool.length)] || DASHBOARD_GREETINGS[0];
+    setDashboardGreeting(nextGreeting);
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(storageKey, nextGreeting);
+    }
+  }, []);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenRewardIdsRef = useRef<Set<string>>(
     new Set(
@@ -1322,7 +1366,15 @@ export function ClientDashboard({
       }
     });
 
-    return mergedRows;
+    return mergedRows.sort((a, b) => {
+      const countA = Math.max(0, Number((a as AnyRecord).stamp_count ?? 0));
+      const countB = Math.max(0, Number((b as AnyRecord).stamp_count ?? 0));
+      if (countA !== countB) return countB - countA;
+
+      const nameA = normalizeCategoryName(String((a as AnyRecord).category_name || (a as AnyRecord).name || ""));
+      const nameB = normalizeCategoryName(String((b as AnyRecord).category_name || (b as AnyRecord).name || ""));
+      return DEFAULT_CATEGORY_ORDER.indexOf(nameA) - DEFAULT_CATEGORY_ORDER.indexOf(nameB);
+    });
   }, [categories, categoryMap, rawStampRows]);
 
   const totalStamps = useMemo(() => {
@@ -1373,6 +1425,27 @@ export function ClientDashboard({
 
     return gifts;
   }, [categoryMap, visibleRewards]);
+
+  const displayedStampRows = useMemo(() => {
+    return [...stampRows].sort((a, b) => {
+      const nameA = normalizeCategoryName(
+        String((a as AnyRecord).category_name || (a as AnyRecord).name || ""),
+      );
+      const nameB = normalizeCategoryName(
+        String((b as AnyRecord).category_name || (b as AnyRecord).name || ""),
+      );
+      const hasGiftA = activeGiftByCategory.has(nameA);
+      const hasGiftB = activeGiftByCategory.has(nameB);
+
+      if (hasGiftA !== hasGiftB) return hasGiftA ? -1 : 1;
+
+      const countA = Math.max(0, Number((a as AnyRecord).stamp_count ?? 0));
+      const countB = Math.max(0, Number((b as AnyRecord).stamp_count ?? 0));
+      if (countA !== countB) return countB - countA;
+
+      return DEFAULT_CATEGORY_ORDER.indexOf(nameA) - DEFAULT_CATEGORY_ORDER.indexOf(nameB);
+    });
+  }, [activeGiftByCategory, stampRows]);
 
   useEffect(() => {
     const birthdayPopupKey = getBirthdayPopupStorageKey(profile.id);
@@ -1596,8 +1669,38 @@ export function ClientDashboard({
       ),
     ).length;
 
-  const displayStreakCount = previewStreak > 0 ? previewStreak : 4;
-  const previewWeekStatuses = ["success", "fail", "success", "success", "pending", "fail", "success"] as const;
+  const visitTarget = 4;
+  const displayStreakCount = previewStreak > 0 ? previewStreak : testCompletedVisits;
+  const visitsLeft = Math.max(0, visitTarget - testCompletedVisits);
+  const isSpinUnlocked = visitsLeft === 0;
+  const weekLabels = ["M", "T", "W", "T", "F", "S", "S"] as const;
+  const previewWeekStatuses = weekLabels.map((_, index) => {
+    if (index < testCompletedVisits) return "success" as const;
+    if (index === testCompletedVisits && !isSpinUnlocked) return "pending" as const;
+    return "fail" as const;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-preview-reveal]"));
+    if (!elements.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.14 },
+    );
+
+    elements.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [stampRows.length, visibleRewards.length]);
 
   return (
     <AppShell
@@ -1654,6 +1757,17 @@ export function ClientDashboard({
           animation: previewCtaBlink 1.9s ease-in-out infinite;
         }
 
+        .preview-reveal {
+          opacity: 0;
+          transform: translateY(26px);
+          transition: opacity 560ms ease, transform 560ms ease;
+        }
+
+        .preview-reveal.is-visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
         @media (prefers-reduced-motion: reduce) {
           .preview-card-animate,
           .preview-cta-blink {
@@ -1665,11 +1779,7 @@ export function ClientDashboard({
       `}</style>
 
       <main className="mx-auto w-full max-w-md px-4 pb-10 pt-4 font-raleway text-white">
-        <div className="mb-3 flex justify-center">
-          <div className="rounded-full border border-[#ffd66b]/35 bg-[#ffd66b]/12 px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#ffd66b]">
-            Preview Only · Changes Are Not Saved
-          </div>
-        </div>
+
         <section
           className="preview-card-animate relative overflow-hidden border border-white/10 px-5 py-5 shadow-[0_18px_45px_rgba(0,0,0,0.16)] backdrop-blur-2xl"
           style={{ borderRadius: 24, background: GLASS_CARD_DARK }}
@@ -1686,8 +1796,11 @@ export function ClientDashboard({
 
           <div className="relative z-10 grid grid-cols-[1fr_auto] items-start gap-4">
             <div className="min-w-0 pt-2">
-              <h1 className="text-[31px] font-black leading-[0.98] tracking-[-0.04em] text-white">
-                Hello, <span className="text-[#ffd66b]">{displayName}</span>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/80">
+                {dashboardGreeting}
+              </div>
+              <h1 className="mt-1 text-[31px] font-black leading-[0.98] tracking-[-0.04em] text-white">
+                <span className="text-[#ffd66b]">{displayName}</span>
               </h1>
               <p className="mt-3 text-[15px] font-semibold text-white/72">
                 Keep collecting stamps!
@@ -1706,10 +1819,10 @@ export function ClientDashboard({
             </div>
 
             <div className="flex flex-col items-center pt-1">
-              <div className="rounded-[15px] bg-white p-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.14)]">
+              <div className="rounded-[15px] bg-white p-2 shadow-[0_10px_28px_rgba(0,0,0,0.14)]">
                 <QRCode
                   value={profile.client_code || profile.id}
-                  size={90}
+                  size={78}
                   bgColor="#ffffff"
                   fgColor="#1f2d2a"
                 />
@@ -1718,32 +1831,67 @@ export function ClientDashboard({
           </div>
         </section>
 
-        <section
-          className="preview-card-animate mt-4 grid grid-cols-3 divide-x divide-white/15 border border-white/10 px-2 py-4 shadow-[0_14px_34px_rgba(0,0,0,0.12)] backdrop-blur-2xl"
-          style={{ borderRadius: 22, background: GLASS_CARD }}
-        >
+        <section className="preview-card-animate mt-4 grid grid-cols-3 gap-3">
           {[
-            { iconType: "image", icon: "/star.png", value: allTimeStampCount, label: "All-Time Stamps" },
-            { iconType: "image", icon: "/gift.png", value: giftsEarnedCount, label: "Gifts Earned" },
-            { iconType: "image", icon: "/fire.png", value: displayStreakCount, label: "Day Streak" },
+            { icon: "star", value: allTimeStampCount, label: "All-Time Stamps" },
+            { icon: "gift", value: giftsEarnedCount, label: "Gifts Earned" },
+            { icon: "fire", value: displayStreakCount, label: "Weekly Visits" },
           ].map((item) => (
-            <div key={String(item.label)} className="flex items-center justify-center gap-2 px-2">
-              <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center">
-                {item.iconType === "image" ? (
-                  <Image
-                    src={String(item.icon)}
-                    alt={String(item.label)}
-                    width={38}
-                    height={38}
-                    className="h-[38px] w-[38px] object-contain"
-                  />
-                ) : (
-                  <div className="text-[30px] leading-none text-white">{item.icon}</div>
-                )}
-              </div>
-              <div>
-                <div className="text-[27px] font-black leading-none text-white">{item.value}</div>
-                <div className="mt-1 text-[10px] font-bold leading-tight text-white/68">
+            <div
+              key={String(item.label)}
+              className="flex min-h-[76px] items-center justify-center border border-white/10 px-2 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.12)] backdrop-blur-2xl"
+              style={{ borderRadius: 18, background: GLASS_CARD }}
+            >
+              <div className="w-fit">
+                <div className="flex items-center justify-start gap-2">
+                  <div className="flex h-[32px] w-[32px] shrink-0 items-center justify-center">
+                  {item.icon === "star" ? (
+                    <svg viewBox="0 0 24 24" className="h-[32px] w-[32px]" aria-hidden="true">
+                      <path
+                        d="M12 2.2 14.95 8.18l6.6.96-4.78 4.66 1.13 6.57L12 17.27l-5.9 3.1 1.13-6.57-4.78-4.66 6.6-.96L12 2.2Z"
+                        fill="#ffd66b"
+                      />
+                    </svg>
+                  ) : item.icon === "gift" ? (
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-[32px] w-[32px]"
+                      fill="none"
+                      stroke="#ffd66b"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="3.5" y="9" width="17" height="11" rx="1.8" />
+                      <path d="M12 9v11M3 12.3h18" />
+                      <path d="M12 9H8.2a2.7 2.7 0 1 1 2.1-4.4C11.2 5.7 12 9 12 9Z" />
+                      <path d="M12 9h3.8a2.7 2.7 0 1 0-2.1-4.4C12.8 5.7 12 9 12 9Z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="h-[32px] w-[32px]" aria-hidden="true">
+                      <path
+                        d="M13.1 2.1c.4 3.4-1 5-2.5 6.7-1.4 1.6-2.7 3.1-2.7 5.7 0 2.4 1.8 4.3 4.2 4.3 2.8 0 4.8-2.3 4.8-5.2 0-2.2-.9-4.1-2.6-6.1.1 2.2-.8 3.4-1.8 4.5.3-3.1-.4-6.4.6-9.9Z"
+                        fill="#ffd66b"
+                      />
+                      <path
+                        d="M7.4 10.2C5.7 12 5 13.7 5 15.5A7 7 0 0 0 12 22a7 7 0 0 0 7-7c0-2.2-1.1-4.5-3.2-6.8.2 1.9-.2 3.7-1.3 5.2-.4-1.8-1.3-3.4-2.7-4.8.2 1.8-.3 3.3-1.4 4.7-1 1.3-1.3 2.1-1.3 3.1 0 1.7 1.3 3 3 3"
+                        fill="none"
+                        stroke="#f39b33"
+                        strokeWidth="1.3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                  </div>
+
+                  <div className="text-[24px] font-black leading-none text-white">
+                    {item.value}
+                  </div>
+                </div>
+
+                <div className="mt-1 whitespace-nowrap text-left text-[9px] font-medium leading-none text-white/72">
                   {item.label}
                 </div>
               </div>
@@ -1757,47 +1905,44 @@ export function ClientDashboard({
         >
           <div className="grid grid-cols-[1fr_150px] items-start gap-3">
             <div>
-              <div className="flex items-center gap-3">
-                <Image
-                  src="/fire.png"
-                  alt="Streak"
-                  width={36}
-                  height={36}
-                  className="h-9 w-9 shrink-0 object-contain"
-                />
-                <h2 className="text-[22px] font-black leading-none text-white">
-                  Streak Reward
-                </h2>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
+                Weekly Challenge
               </div>
 
-              <p className="mt-2 max-w-[220px] text-left text-[13px] font-semibold leading-5 text-white/68">
-                Visit 4 days in a row to spin the wheel and win a surprise gift!
+              <p className="mt-2 max-w-[220px] text-left text-[13px] font-semibold leading-5 text-white/80">
+                Visit 4 times this week to unlock a free spin!
               </p>
 
-              <div className="mt-5 grid grid-cols-7 gap-1.5">
-                {["M", "T", "W", "T", "F", "S", "S"].map((day, index) => {
-                  const status = previewWeekStatuses[index];
+              <div className="mt-4 flex items-center gap-3">
+                {Array.from({ length: visitTarget }).map((_, index) => {
+                  const completed = index < testCompletedVisits;
 
                   return (
-                    <div key={`${day}-${index}`} className="text-center">
-                      <div
-                        className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full border text-[13px] font-black ${
-                          status === "success"
-                            ? "border-[#ffd66b] bg-[#ffd66b] text-[#324438]"
-                            : status === "fail"
-                              ? "border-[#d7dbd4] bg-[#d7dbd4] text-[#879187]"
-                              : "border-white/38 bg-transparent text-transparent"
-                        }`}
-                      >
-                        {status === "success" ? "✓" : status === "fail" ? "×" : "•"}
-                      </div>
-                      <div className="mt-1 text-[10px] font-black text-white/72">
-                        {day}
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      key={index}
+                      onClick={() => setTestCompletedVisits(index + 1)}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full border text-[14px] font-black transition ${
+                        completed
+                          ? "border-[#ffd66b] bg-[#ffd66b] text-[#324438]"
+                          : "border-white/45 bg-transparent text-transparent"
+                      }`}
+                      aria-label={`Set ${index + 1} visits for testing`}
+                    >
+                      {completed ? "✓" : "•"}
+                    </button>
                   );
                 })}
               </div>
+
+              <div className="mt-3 text-[13px] font-black text-white">
+                {testCompletedVisits} / {visitTarget} visits
+              </div>
+              {isSpinUnlocked ? (
+                <div className="mt-1 text-[11px] font-medium leading-4 text-white/62">
+                  Your free spin is unlocked!
+                </div>
+              ) : null}
             </div>
 
             <div className="relative flex min-h-[165px] items-start justify-center">
@@ -1805,9 +1950,11 @@ export function ClientDashboard({
                 <button
                   type="button"
                   onClick={() => {
+                    if (!isSpinUnlocked) return;
                     setSpinError(null);
                     setIsSpinOpen(true);
                   }}
+                  disabled={!isSpinUnlocked}
                   className="group absolute left-1/2 top-0 h-[142px] w-[142px] -translate-x-1/2 disabled:opacity-45"
                   aria-label="Open Spin & Win"
                 >
@@ -1869,12 +2016,18 @@ export function ClientDashboard({
                   <button
                     type="button"
                     onClick={() => {
+                      if (!isSpinUnlocked) {
+                        setTestCompletedVisits((current) => (current >= visitTarget ? 0 : Math.min(visitTarget, current + 1)));
+                        return;
+                      }
                       setSpinError(null);
                       setIsSpinOpen(true);
                     }}
-                    className="preview-cta-blink w-[132px] rounded-[16px] bg-[#ffd66b] px-3 py-2.5 text-[11px] font-black text-[#2f4435] shadow-[0_6px_18px_rgba(0,0,0,0.24)]"
+                    className={`w-[132px] rounded-[16px] px-3 py-2.5 text-[11px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
+                      isSpinUnlocked ? "preview-cta-blink bg-[#ffd66b] text-[#2f4435]" : "bg-[#26382d]/80 text-white"
+                    }`}
                   >
-                    Spin &amp; Win
+                    {isSpinUnlocked ? "Spin & Win" : `${visitsLeft} More Visit${visitsLeft === 1 ? "" : "s"}`}
                   </button>
                 </div>
               </div>
@@ -1973,7 +2126,7 @@ export function ClientDashboard({
 
           {isLoyaltyProgramEnabled ? (
             <div className="divide-y divide-white/15">
-              {stampRows.map((item, index) => {
+              {displayedStampRows.map((item, index) => {
                 const count = Math.max(
                   0,
                   Math.min(5, Number((item as AnyRecord).stamp_count ?? 0)),
@@ -1992,12 +2145,19 @@ export function ClientDashboard({
                       (item as AnyRecord).category_name ||
                       index
                     }
-                    className={`grid grid-cols-[124px_1fr_auto] items-center gap-2 px-5 py-3 ${
+                    data-preview-reveal
+                    className={`preview-reveal grid grid-cols-[110px_1fr_auto] items-center gap-2 px-5 py-3 ${
                       isDisabled ? "opacity-40" : ""
                     }`}
+                    style={{ transitionDelay: `${index * 70}ms` }}
                   >
-                    <div className="text-[13px] font-black uppercase tracking-[0.08em] text-white">
-                      {normalizedName}
+                    <div>
+                      <div className="text-[13px] font-black uppercase tracking-[0.08em] text-white">
+                        {normalizedName}
+                      </div>
+                      <div className="mt-1 text-[12px] font-medium text-white/55">
+                        {count} / 5
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-center gap-1.5">
@@ -2024,10 +2184,10 @@ export function ClientDashboard({
                             >
                               <polygon
                                 points="50,5 61,36 94,36 67,56 78,89 50,69 22,89 33,56 6,36 39,36"
-                                fill="transparent"
+                                fill="rgba(255,255,255,0.04)"
                                 stroke={stampTheme.stroke}
-                                opacity="0.4"
-                                strokeWidth="3"
+                                opacity="0.62"
+                                strokeWidth="3.2"
                                 strokeDasharray="4 4"
                                 strokeLinejoin="round"
                               />
@@ -2051,9 +2211,7 @@ export function ClientDashboard({
                         Pending
                       </div>
                     ) : (
-                      <div className="min-w-[54px] rounded-full bg-black/10 px-2.5 py-1.5 text-center text-[12px] font-black text-white">
-                        {count} / 5
-                      </div>
+                      <div className="min-w-[54px]" />
                     )}
                   </div>
                 );
@@ -2075,7 +2233,7 @@ export function ClientDashboard({
               <h2 className="text-[22px] font-black text-white">My Gifts</h2>
             </div>
 
-            <div className="divide-y divide-white/8">
+            <div className="divide-y divide-white/15">
               {visibleRewards.map((reward, index) => {
                 const state = getRewardState(reward);
                 const title = previewRewardTitle(reward, index);
@@ -2084,7 +2242,9 @@ export function ClientDashboard({
                 return (
                   <div
                     key={reward.id}
-                    className="grid grid-cols-[58px_1fr_auto] items-center gap-3 px-5 py-4"
+                    data-preview-reveal
+                    className="preview-reveal grid grid-cols-[58px_1fr_auto] items-center gap-3 px-5 py-4"
+                    style={{ transitionDelay: `${index * 70}ms` }}
                   >
                     <div className="flex h-[54px] w-[54px] items-center justify-center rounded-[16px] bg-white/8">
                       <Image
@@ -2101,7 +2261,7 @@ export function ClientDashboard({
                         {title}
                       </div>
                       <div className="mt-1 text-[12px] font-semibold text-white/66">
-                        {state.label}
+                        {getClaimCountdownLabel(reward) || state.label}
                       </div>
                     </div>
 
@@ -2128,33 +2288,39 @@ export function ClientDashboard({
 
         <section className="preview-card-animate mt-5 pb-7">
           <div
-            className="mx-auto flex w-full items-center justify-between rounded-[34px] border border-white/10 px-5 py-4 backdrop-blur-2xl"
+            className="mx-auto w-full rounded-[34px] border border-white/10 px-5 pb-4 pt-4 backdrop-blur-2xl"
             style={{ background: "rgba(255,255,255,0.08)" }}
           >
-            {[
-              ["https://www.instagram.com/pros_cafe", "/instagram.png", "Instagram"],
-              ["https://www.tiktok.com/@pros_cafe", "/tik-tok.png", "TikTok"],
-              ["https://wa.me/9613720277", "/whatsapp.png", "WhatsApp"],
-              ["https://fb.com/proscafe", "/facebook.png", "Facebook"],
-              ["https://shark-accounting.com/menu/Pros_cafe_dekwaneh/", "/dish.png", "Menu"],
-            ].map(([href, src, alt]) => (
-              <a
-                key={alt}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={alt}
-                className="flex h-[52px] w-[52px] items-center justify-center rounded-full border border-white/55 bg-white/5"
-              >
-                <Image
-                  src={src}
-                  alt={alt}
-                  width={27}
-                  height={27}
-                  className="h-[27px] w-[27px] object-contain"
-                />
-              </a>
-            ))}
+            <div className="mb-3 text-left text-[22px] font-black text-white">
+              Follow Us
+            </div>
+
+            <div className="flex items-center justify-between">
+              {[
+                ["https://www.instagram.com/pros_cafe", "/instagram.png", "Instagram"],
+                ["https://www.tiktok.com/@pros_cafe", "/tik-tok.png", "TikTok"],
+                ["https://wa.me/9613720277", "/whatsapp.png", "WhatsApp"],
+                ["https://fb.com/proscafe", "/facebook.png", "Facebook"],
+                ["https://shark-accounting.com/menu/Pros_cafe_dekwaneh/", "/dish.png", "Menu"],
+              ].map(([href, src, alt]) => (
+                <a
+                  key={alt}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={alt}
+                  className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-white/0"
+                >
+                  <Image
+                    src={src}
+                    alt={alt}
+                    width={27}
+                    height={27}
+                    className="h-[27px] w-[27px] object-contain brightness-0 invert"
+                  />
+                </a>
+              ))}
+            </div>
           </div>
         </section>
 
