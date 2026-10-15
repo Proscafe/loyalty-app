@@ -16,7 +16,7 @@ type AppShellProps = {
 
 export function AppShell({
   children,
-  logoSrc = "/pros-logo-basic.png",
+  logoSrc = "/pros-logo-white.png",
   logoAlt = "PRO's Logo",
   pageBackground = "#ffffff",
 }: AppShellProps) {

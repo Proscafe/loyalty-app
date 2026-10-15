@@ -3,6 +3,7 @@
 import Image from "next/image";
 import QRCode from "react-qr-code";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 type Profile = {
@@ -445,7 +446,7 @@ function isBirthdayReward(reward: ClientReward) {
 }
 
 function getRewardIcon(reward: ClientReward) {
-  return isBirthdayReward(reward) ? "/birthday-cake.png" : reward.gift_icon || "/gift.png";
+  return isBirthdayReward(reward) ? "/birthday-cake.png" : "/gift.png";
 }
 
 function makeBirthdayRewards(profile: Profile): ClientReward[] {
@@ -669,7 +670,7 @@ function ImageSpinWheel({
   rotation?: number;
   spinning?: boolean;
 }) {
-  const size = compact ? 144 : 350;
+  const size = compact ? 154 : 350;
 
   return (
     <div
@@ -984,7 +985,7 @@ export function ClientDashboard({
   const [spinResult, setSpinResult] = useState<ClientReward | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
   const [dashboardGreeting, setDashboardGreeting] = useState<string>(DASHBOARD_GREETINGS[0]);
-  const [testCompletedVisits, setTestCompletedVisits] = useState<number>(3);
+  const [testCompletedVisits, setTestCompletedVisits] = useState<number>(4);
   const openSpinModal = () => {
     setSpinError(null);
     setSpinResult(null);
@@ -996,7 +997,7 @@ export function ClientDashboard({
       spinAudioRef.current.currentTime = 0;
     }
 
-    window.requestAnimationFrame(() => setIsSpinOpen(true));
+    setIsSpinOpen(true);
   };
 
   const visibleBanners = useMemo(
@@ -1799,11 +1800,19 @@ export function ClientDashboard({
           }
         });
       },
-      { threshold: 0.14 },
+      { threshold: 0.08, rootMargin: "0px 0px 48px 0px" },
     );
 
     elements.forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
+
+    const fallback = window.setTimeout(() => {
+      elements.forEach((element) => element.classList.add("is-visible"));
+    }, 900);
+
+    return () => {
+      window.clearTimeout(fallback);
+      observer.disconnect();
+    };
   }, [stampRows.length, visibleRewards.length]);
 
   return (
@@ -1816,6 +1825,10 @@ export function ClientDashboard({
       logoAlt="PRO's Logo"
     >
       <style>{`
+        button {
+          text-transform: uppercase;
+        }
+
         .preview-hide-scrollbar {
           -ms-overflow-style: none;
           scrollbar-width: none;
@@ -1862,14 +1875,12 @@ export function ClientDashboard({
         }
 
         .preview-reveal {
-          opacity: 0;
-          transform: translateY(26px);
-          transition: opacity 560ms ease, transform 560ms ease;
+          opacity: 1;
+          transform: translateY(0);
         }
 
         .preview-reveal.is-visible {
-          opacity: 1;
-          transform: translateY(0);
+          animation: previewFadeUp 560ms ease-out both;
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -1951,13 +1962,25 @@ export function ClientDashboard({
             >
               <div className="flex w-full flex-col items-center text-center">
                 <div className="flex items-center justify-center gap-2.5">
-                  <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center text-[27px] leading-none">
+                  <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center leading-none">
                     {item.icon === "star" ? (
-                      <span aria-hidden="true">⭐</span>
+                      <Image
+                        src="/star.png"
+                        alt=""
+                        width={30}
+                        height={30}
+                        className="h-[30px] w-[30px] object-contain"
+                      />
                     ) : item.icon === "gift" ? (
-                      <span aria-hidden="true">🎁</span>
+                      <Image
+                        src="/gift.png"
+                        alt=""
+                        width={30}
+                        height={30}
+                        className="h-[30px] w-[30px] object-contain"
+                      />
                     ) : (
-                      <span aria-hidden="true">🔥</span>
+                      <span className="text-[27px]" aria-hidden="true">🔥</span>
                     )}
                   </div>
                   <div className="text-[19px] font-black leading-none text-white">{item.value}</div>
@@ -1974,8 +1997,8 @@ export function ClientDashboard({
           className="preview-card-animate mt-4 overflow-hidden border border-white/10 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.14)] backdrop-blur-2xl"
           style={{ borderRadius: 24, background: GLASS_CARD }}
         >
-          <div className="grid grid-cols-[1fr_144px] items-start gap-2">
-            <div>
+          <div className="grid grid-cols-[1fr_154px] items-start gap-2">
+            <div className="relative z-20">
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
                 Weekly Challenge
               </div>
@@ -1985,7 +2008,7 @@ export function ClientDashboard({
                 <span className="whitespace-nowrap">unlock a free spin!</span>
               </p>
 
-              <div className="mt-4 flex items-center gap-2">
+              <div className="relative z-[100] mt-4 flex items-center gap-2 pointer-events-auto">
                 {Array.from({ length: visitTarget }).map((_, index) => {
                   const completed = index < testCompletedVisits;
 
@@ -1993,13 +2016,20 @@ export function ClientDashboard({
                     <button
                       type="button"
                       key={index}
-                      onClick={() => setTestCompletedVisits(index + 1)}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full border text-[14px] font-black transition ${
+                      onPointerUp={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        setTestCompletedVisits((current) =>
+                          current >= visitTarget ? 0 : Math.min(visitTarget, current + 1),
+                        );
+                      }}
+                      className={`relative z-[100] flex h-8 w-8 cursor-pointer touch-manipulation select-none items-center justify-center rounded-full border text-[14px] font-black transition pointer-events-auto ${
                         completed
                           ? "border-[#ffd66b] bg-[#ffd66b] text-[#324438]"
                           : "border-white/45 bg-transparent text-transparent"
                       }`}
-                      aria-label={`Set ${index + 1} visits for testing`}
+                      aria-label="Add one test visit"
                     >
                       {completed ? "✓" : "•"}
                     </button>
@@ -2007,37 +2037,28 @@ export function ClientDashboard({
                 })}
               </div>
 
-              <div className="mt-4">
+              <div className="relative z-[120] mt-4 pointer-events-auto">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!isSpinUnlocked) {
-                      setTestCompletedVisits((current) =>
-                        current >= visitTarget ? 0 : Math.min(visitTarget, current + 1),
-                      );
-                      return;
-                    }
+                  onClick={(event) => {
+                    event.stopPropagation();
                     openSpinModal();
                   }}
-                  className={`w-[132px] rounded-[16px] px-3 py-2.5 text-[13px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
-                    isSpinUnlocked
-                      ? "preview-cta-blink bg-[#ffd66b] text-[#2f4435]"
-                      : "bg-[#26382d]/80 text-white"
-                  }`}
+                  className="preview-cta-blink relative z-[120] w-[132px] cursor-pointer touch-manipulation rounded-[16px] bg-[#ffd66b] px-3 py-2.5 text-[13px] font-black uppercase text-[#2f4435] shadow-[0_6px_18px_rgba(0,0,0,0.24)] pointer-events-auto"
                 >
-                  {isSpinUnlocked ? "Spin & Win" : `${visitsLeft} More Visit${visitsLeft === 1 ? "" : "s"}`}
+                  SPIN &amp; WIN
                 </button>
               </div>
             </div>
 
-            <div className="relative flex min-h-[165px] items-start justify-center">
+            <div className={`relative z-0 flex min-h-[165px] items-start justify-center ${isSpinUnlocked ? "pointer-events-auto" : "pointer-events-none"}`}>
               <button
                 type="button"
-                onClick={() => {
-                  if (!isSpinUnlocked) return;
+                onClick={(event) => {
+                  event.stopPropagation();
                   openSpinModal();
                 }}
-                className="group mt-0 h-[158px] w-[144px]"
+                className="group mt-0 h-[168px] w-[154px] cursor-pointer touch-manipulation"
                 aria-label="Open Spin & Win"
               >
                 <ImageSpinWheel compact />
@@ -2173,8 +2194,15 @@ export function ClientDashboard({
 
                     <div className="flex items-center justify-center gap-1.5">
                       {isGiftLocked ? (
-                        <div className="w-full text-center text-[12px] font-black uppercase tracking-[0.08em] text-[#ffd66b]">
-                          🎁 Redeem Gift
+                        <div className="flex w-full items-center justify-center gap-1.5 text-center text-[12px] font-black uppercase tracking-[0.08em] text-[#ffd66b]">
+                          <Image
+                            src="/gift.png"
+                            alt=""
+                            width={18}
+                            height={18}
+                            className="h-[18px] w-[18px] object-contain"
+                          />
+                          <span>Redeem Gift</span>
                         </div>
                       ) : (
                         Array.from({ length: 5 }).map((_, starIndex) =>
@@ -2183,14 +2211,14 @@ export function ClientDashboard({
                               key={starIndex}
                               src={stampTheme.asset}
                               alt=""
-                              className="h-[26px] w-[26px] object-contain"
+                              className="h-[24px] w-[24px] object-contain"
                               draggable={false}
                             />
                           ) : (
                             <svg
                               key={starIndex}
                               viewBox="0 0 100 100"
-                              className="h-[26px] w-[26px]"
+                              className="h-[24px] w-[24px]"
                               aria-hidden="true"
                             >
                               <polygon
@@ -2213,7 +2241,7 @@ export function ClientDashboard({
                         type="button"
                         onClick={() => void handleClaim(activeGift.id)}
                         disabled={claimingRewardIds.has(activeGift.id)}
-                        className="preview-cta-blink min-w-[62px] rounded-[14px] bg-[#ffd66b] px-3 py-2 text-[10px] font-black uppercase tracking-[0.04em] text-[#26382d] disabled:opacity-60"
+                        className="preview-cta-blink min-w-[62px] rounded-[14px] bg-[#ffd66b] px-3 py-2 text-[10px] font-black tracking-[0.04em] text-[#26382d] disabled:opacity-60"
                       >
                         {claimingRewardIds.has(activeGift.id) ? "..." : "Claim"}
                       </button>
@@ -2335,10 +2363,15 @@ export function ClientDashboard({
           </div>
         </section>
 
-        {isSpinOpen ? (
+        {isSpinOpen && typeof document !== "undefined"
+          ? createPortal(
+              (
           <div
-            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 px-3 py-6 backdrop-blur-sm"
-            onClick={() => !isSpinning && setIsSpinOpen(false)}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 px-3 py-6 backdrop-blur-sm"
+            onClick={(event) => {
+              if (event.target !== event.currentTarget || isSpinning) return;
+              setIsSpinOpen(false);
+            }}
           >
             <div
               className="relative w-full max-w-md rounded-[30px] border border-white/12 px-6 pb-7 pt-6 shadow-[0_30px_90px_rgba(0,0,0,0.4)] max-h-[92vh] overflow-y-auto preview-hide-scrollbar"
@@ -2386,7 +2419,10 @@ export function ClientDashboard({
 
             </div>
           </div>
-        ) : null}
+              ),
+              document.body,
+            )
+          : null}
 
         {celebrationReward ? (
           <RewardCelebrationModal
