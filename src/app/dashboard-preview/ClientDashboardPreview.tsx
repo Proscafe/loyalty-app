@@ -669,7 +669,7 @@ function ImageSpinWheel({
   rotation?: number;
   spinning?: boolean;
 }) {
-  const size = compact ? 168 : 350;
+  const size = compact ? 144 : 350;
 
   return (
     <div
@@ -978,6 +978,8 @@ export function ClientDashboard({
   const [bannerIndex, setBannerIndex] = useState(0);
   const [isSpinOpen, setIsSpinOpen] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
+  const spinAudioRef = useRef<HTMLAudioElement | null>(null);
+  const winAudioRef = useRef<HTMLAudioElement | null>(null);
   const [spinRotation, setSpinRotation] = useState(0);
   const [spinResult, setSpinResult] = useState<ClientReward | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
@@ -988,6 +990,12 @@ export function ClientDashboard({
     setSpinResult(null);
     setIsSpinning(false);
     setSpinRotation(0);
+
+    if (spinAudioRef.current) {
+      spinAudioRef.current.pause();
+      spinAudioRef.current.currentTime = 0;
+    }
+
     window.requestAnimationFrame(() => setIsSpinOpen(true));
   };
 
@@ -1631,6 +1639,19 @@ export function ClientDashboard({
     setSpinError(null);
     setSpinResult(null);
 
+    if (spinAudioRef.current) {
+      spinAudioRef.current.pause();
+      spinAudioRef.current.currentTime = 0;
+      spinAudioRef.current.loop = true;
+      spinAudioRef.current.volume = 0.55;
+
+      try {
+        await spinAudioRef.current.play();
+      } catch {
+        // Some browsers may block audio until another user interaction.
+      }
+    }
+
     const activeCategories = ((categories ?? []) as LoyaltyCategory[]).filter(
       (category) => category.is_active !== false && category.id && category.name,
     );
@@ -1648,6 +1669,11 @@ export function ClientDashboard({
     });
 
     if (!eligibleCategories.length) {
+      if (spinAudioRef.current) {
+        spinAudioRef.current.pause();
+        spinAudioRef.current.currentTime = 0;
+      }
+
       setSpinError("No active loyalty categories are available for the preview.");
       setIsSpinning(false);
       return;
@@ -1673,6 +1699,22 @@ export function ClientDashboard({
     setSpinRotation((current) => current + extraRotation);
 
     await new Promise((resolve) => window.setTimeout(resolve, 2450));
+
+    if (spinAudioRef.current) {
+      spinAudioRef.current.pause();
+      spinAudioRef.current.currentTime = 0;
+    }
+
+    if (winAudioRef.current) {
+      winAudioRef.current.currentTime = 0;
+      winAudioRef.current.volume = 0.7;
+
+      try {
+        await winAudioRef.current.play();
+      } catch {
+        // Keep the reward flow working even if audio cannot play.
+      }
+    }
 
     setSpinResult(reward);
     setLocalRewards((current) => [reward, ...current.filter((item) => item.id !== reward.id)]);
@@ -1840,6 +1882,9 @@ export function ClientDashboard({
         }
       `}</style>
 
+      <audio ref={spinAudioRef} src="/spin-wheel.mp3" preload="auto" />
+      <audio ref={winAudioRef} src="/spin-win.mp3" preload="auto" />
+
       <main className="mx-auto w-full max-w-md px-4 pb-10 pt-4 font-raleway text-white">
 
         <section
@@ -1864,7 +1909,7 @@ export function ClientDashboard({
               <h1 className="mt-1 text-[31px] font-black leading-[0.98] tracking-[-0.04em] text-white">
                 <span className="text-[#ffd66b]">{displayName}</span>
               </h1>
-              <p className="mt-3 text-[15px] font-semibold text-white/72">
+              <p className="mt-3 text-[13px] font-semibold text-white/72">
                 Keep collecting stamps!
               </p>
 
@@ -1874,7 +1919,7 @@ export function ClientDashboard({
                   setIsFeedbackOpen(true);
                   setFeedbackStatus(null);
                 }}
-                className="preview-cta-blink mt-7 inline-flex w-[132px] items-center justify-center rounded-[16px] bg-[#ffd66b] px-3 py-2.5 text-[11px] font-black text-[#26382d] shadow-[0_8px_20px_rgba(255,214,107,0.20)]"
+                className="preview-cta-blink mt-7 inline-flex w-[132px] items-center justify-center rounded-[16px] bg-[#ffd66b] px-3 py-2.5 text-[13px] font-black text-[#26382d] shadow-[0_8px_20px_rgba(255,214,107,0.20)]"
               >
                 Your Feedback
               </button>
@@ -1901,24 +1946,24 @@ export function ClientDashboard({
           ].map((item) => (
             <div
               key={String(item.label)}
-              className="flex min-h-[78px] items-center justify-center border border-white/10 px-3 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.12)] backdrop-blur-2xl"
+              className="flex min-h-[82px] items-center justify-start border border-white/10 px-3 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.12)] backdrop-blur-2xl"
               style={{ borderRadius: 18, background: GLASS_CARD }}
             >
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-[32px] w-[32px] shrink-0 items-center justify-center text-[28px] leading-none">
-                  {item.icon === "star" ? (
-                    <span aria-hidden="true">⭐</span>
-                  ) : item.icon === "gift" ? (
-                    <span aria-hidden="true">🎁</span>
-                  ) : (
-                    <span aria-hidden="true">🔥</span>
-                  )}
-                </div>
-                <div className="min-w-0 text-left leading-none">
-                  <div className="text-[19px] font-black text-white">{item.value}</div>
-                  <div className="mt-1 whitespace-nowrap text-[10px] font-medium leading-[1.1] text-white/82">
-                    {item.label}
+              <div className="flex w-full flex-col items-center text-center">
+                <div className="flex items-center justify-center gap-2.5">
+                  <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center text-[27px] leading-none">
+                    {item.icon === "star" ? (
+                      <span aria-hidden="true">⭐</span>
+                    ) : item.icon === "gift" ? (
+                      <span aria-hidden="true">🎁</span>
+                    ) : (
+                      <span aria-hidden="true">🔥</span>
+                    )}
                   </div>
+                  <div className="text-[19px] font-black leading-none text-white">{item.value}</div>
+                </div>
+                <div className="mt-2 whitespace-nowrap text-center text-[11px] font-medium leading-[1.1] text-white/82">
+                  {item.label}
                 </div>
               </div>
             </div>
@@ -1929,7 +1974,7 @@ export function ClientDashboard({
           className="preview-card-animate mt-4 overflow-hidden border border-white/10 p-5 shadow-[0_16px_40px_rgba(0,0,0,0.14)] backdrop-blur-2xl"
           style={{ borderRadius: 24, background: GLASS_CARD }}
         >
-          <div className="grid grid-cols-[1fr_168px] items-start gap-3">
+          <div className="grid grid-cols-[1fr_144px] items-start gap-2">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
                 Weekly Challenge
@@ -1940,7 +1985,7 @@ export function ClientDashboard({
                 <span className="whitespace-nowrap">unlock a free spin!</span>
               </p>
 
-              <div className="mt-4 flex items-center gap-3">
+              <div className="mt-4 flex items-center gap-2">
                 {Array.from({ length: visitTarget }).map((_, index) => {
                   const completed = index < testCompletedVisits;
 
@@ -1974,7 +2019,7 @@ export function ClientDashboard({
                     }
                     openSpinModal();
                   }}
-                  className={`w-[132px] rounded-[16px] px-3 py-2.5 text-[11px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
+                  className={`w-[132px] rounded-[16px] px-3 py-2.5 text-[13px] font-black shadow-[0_6px_18px_rgba(0,0,0,0.24)] ${
                     isSpinUnlocked
                       ? "preview-cta-blink bg-[#ffd66b] text-[#2f4435]"
                       : "bg-[#26382d]/80 text-white"
@@ -1992,7 +2037,7 @@ export function ClientDashboard({
                   if (!isSpinUnlocked) return;
                   openSpinModal();
                 }}
-                className="group mt-0 h-[168px] w-[168px]"
+                className="group mt-0 h-[158px] w-[144px]"
                 aria-label="Open Spin & Win"
               >
                 <ImageSpinWheel compact />
