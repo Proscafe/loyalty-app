@@ -1,9 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { SearchablePicker } from "../SearchablePicker";
 import { moneyLbp, moneyUsd, pct } from "../format";
+import { downloadProductionRecipePdf } from "../downloadProductionRecipePdf";
 
 type Row = Record<string, any>;
 
@@ -30,6 +31,7 @@ const EMPTY_LINE = {
   fixed_currency: "LBP",
   in_yield: true,
   note: "",
+  needs_review: false,
 };
 
 function asNumber(value: unknown) {
@@ -42,41 +44,251 @@ export function MenuClient() {
   const [menuData, setMenuData] = useState<any>(null);
   const [recipeData, setRecipeData] = useState<any>(null);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [visibilityFilter, setVisibilityFilter] = useState("visible");
+  const [sortKey, setSortKey] = useState("name");
+  const [sortAscending, setSortAscending] = useState(true);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [actionBusy, setActionBusy] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<Row | null>(null);
   const [draft, setDraft] = useState<any>({ ...EMPTY_ITEM });
   const [recipeDraft, setRecipeDraft] = useState<any>(null);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [newRecipePickerOpen, setNewRecipePickerOpen] = useState(false);
+  const [newRecipeSearch, setNewRecipeSearch] = useState("");
+  const [unitCosts, setUnitCosts] = useState<Record<string, number>>({});
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState("");
+  const selectionAnchor = useRef<number | null>(null);
 
   async function load() {
     setError("");
+    try {
+      const [menuRes, recipeRes, unitRes] = await Promise.all([
+        fetch("/api/bo/menu", { cache: "no-store" }),
+        fetch("/api/bo/recipes?kind=menu", { cache: "no-store" }),
+        fetch("/api/bo/ingredient-unit-costs", { cache: "no-store" }),
+      ]);
 
-    const [menuRes, recipeRes] = await Promise.all([
-      fetch("/api/bo/menu", { cache: "no-store" }),
-      fetch("/api/bo/recipes?kind=menu", { cache: "no-store" }),
-    ]);
+      const readJson = async (res: Response, label: string) => {
+        const body = await res.text();
+        let parsed: any;
+        try { parsed = JSON.parse(body); } catch {
+          throw new Error(`${label}: received ${res.status} ${res.statusText || ""} instead of JSON. Verify the API route exists and check the Next.js terminal.`);
+        }
+        if (!res.ok) throw new Error(parsed?.error || `${label}: HTTP ${res.status}`);
+        return parsed;
+      };
 
-    const menuJson = await menuRes.json();
-    const recipeJson = await recipeRes.json();
+      // Main menu and recipe data should still load if the auxiliary unit-cost
+      // route is unavailable. The server costing engine remains the source of truth.
+      const [menuJson, recipeJson] = await Promise.all([
+        readJson(menuRes, "Menu API"),
+        readJson(recipeRes, "Recipes API"),
+      ]);
+      setMenuData(menuJson);
+      setRecipeData(recipeJson);
 
-    if (!menuRes.ok) {
-      setError(menuJson?.error || "Unable to load menu.");
-      return;
+      try {
+        const unitJson = await readJson(unitRes, "Ingredient unit costs API");
+        setUnitCosts(unitJson?.costs || {});
+      } catch (unitError) {
+        setUnitCosts({});
+        setError(unitError instanceof Error ? unitError.message : "Unable to load ingredient unit costs.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load Recipes.");
     }
-
-    if (!recipeRes.ok) {
-      setError(recipeJson?.error || "Unable to load recipes.");
-      return;
-    }
-
-    setMenuData(menuJson);
-    setRecipeData(recipeJson);
   }
 
   useEffect(() => {
     void load();
   }, []);
+
+  // Open the editor when arriving from Menu Pricing's read-only preview.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("edit");
+    if (!id || !menuData || !recipeData) return;
+    const item = (menuData?.items ?? menuData?.menuItems ?? []).find((row: Row) => String(row.id) === id);
+    if (!item) return;
+    startEdit(item);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [menuData, recipeData]);
+
+
+  async function toggleVisibility(row: Row) {
+    if (actionBusy !== null) return;
+    setActionBusy(Number(row.id)); setError(""); setNotice("");
+    try {
+      const nextActive = row.active === false;
+      const response = await fetch("/api/bo/menu", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: row.id, name: row.name, menu_category_id: row.menu_category_id,
+          cover_section_id: row.cover_section_id, recipe_id: row.recipe_id,
+          recipe_factor: row.recipe_factor ?? 1, sp_usd: row.sp_usd,
+          active: nextActive,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to update visibility.");
+      await load();
+      setOpen(false); setNotice(`${row.name} is now ${nextActive ? "visible" : "hidden"} on Menu Pricing.`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to update visibility."); }
+    finally { setActionBusy(null); }
+  }
+
+  async function deleteItem(row: Row) {
+    if (actionBusy !== null) return;
+    if (!window.confirm(`Delete menu item "${row.name}"? This removes it from Recipes and Menu Pricing. The linked production/recipe data will not be deleted.`)) return;
+    setActionBusy(Number(row.id)); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/bo/menu?id=${encodeURIComponent(String(row.id))}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to delete menu item.");
+      await load(); setOpen(false); setNotice(`${row.name} deleted.`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to delete menu item."); }
+    finally { setActionBusy(null); }
+  }
+
+  function hasFlaggedLines(row: Row) {
+    const recipe = (recipeData?.recipes ?? []).find(
+      (x: Row) => String(x.id) === String(row.recipe_id),
+    );
+    return (recipe?.lines ?? []).some((line: Row) => line.needs_review === true);
+  }
+
+  function downloadRecipe(row: Row) {
+    const recipe = (recipeData?.recipes ?? []).find((x: Row) => String(x.id) === String(row.recipe_id));
+    if (!recipe) { setError(`No linked recipe is available for ${row.name}.`); return; }
+    downloadProductionRecipePdf(recipe, {
+      ingredients: recipeData?.ingredients ?? [], utilities: recipeData?.utilities ?? [],
+      allRecipes: recipeData?.all_recipes ?? [], rate: Number(menuData?.usd_lbp_rate) || 0,
+    });
+  }
+
+  const categoryGroups = useMemo(() => {
+    const categories: Row[] = menuData?.categories ?? [];
+    const matching = (menuData?.items ?? []).filter((row: Row) => {
+      const needle = search.trim().toLowerCase();
+      return (!needle || String(row.name).toLowerCase().includes(needle) || String(row.recipe?.name ?? "").toLowerCase().includes(needle))
+        && (categoryFilter === "all" || String(row.menu_category_id ?? "none") === categoryFilter)
+        && (visibilityFilter === "all" || (visibilityFilter === "visible" && row.active !== false) || (visibilityFilter === "hidden" && row.active === false) || (visibilityFilter === "review" && hasFlaggedLines(row)));
+    });
+    const groups = categories.map((category: Row) => ({ id: String(category.id), name: String(category.name),
+      items: matching.filter((row: Row) => String(row.menu_category_id) === String(category.id)) }));
+    const known = new Set(categories.map((category: Row) => String(category.id)));
+    groups.push({ id: "none", name: "Uncategorized", items: matching.filter((row: Row) => !known.has(String(row.menu_category_id))) });
+    const sortValue = (r: Row): string | number | null => {
+      if (sortKey === "name") return String(r.name ?? "");
+      if (sortKey === "profit_usd") return Number(r.gross_profit_lbp ?? 0) / (Number(menuData?.usd_lbp_rate) || 1);
+      if (sortKey === "profit_lbp") return r.gross_profit_lbp == null ? null : Number(r.gross_profit_lbp);
+      return r[sortKey] == null ? null : Number(r[sortKey]);
+    };
+    return groups.filter(group => group.items.length > 0).map(group => ({ ...group, items: [...group.items].sort((a: Row, b: Row) => {
+      const av = sortValue(a), bv = sortValue(b);
+      if (av == null) return bv == null ? 0 : 1;
+      if (bv == null) return -1;
+      const comparison = typeof av === "string" && typeof bv === "string" ? av.localeCompare(bv, undefined, {numeric: true, sensitivity: "base"}) : Number(av) - Number(bv);
+      return sortAscending ? comparison : -comparison;
+    }) }));
+  }, [menuData, search, categoryFilter, visibilityFilter, sortKey, sortAscending, recipeData]);
+
+  // Selection is by menu item ID and is independent of category collapse.
+  const visibleSelectionIds = categoryGroups.flatMap((group: Row) => group.items.map((item: Row) => Number(item.id)));
+  const selectedItems: Row[] = (menuData?.items ?? []).filter((item: Row) => selectedIds.includes(Number(item.id)));
+  const allVisibleSelected = visibleSelectionIds.length > 0 && visibleSelectionIds.every(id => selectedIds.includes(id));
+  // Shift-click selects the contiguous range in the current visible, sorted table order.
+  // Normal clicks become the new selection anchor; Shift-click retains the anchor.
+  const selectRow = (id: number, shiftKey: boolean) => {
+    const anchor = selectionAnchor.current;
+    const from = anchor === null ? -1 : visibleSelectionIds.indexOf(anchor);
+    const to = visibleSelectionIds.indexOf(id);
+    setSelectedIds(previous => {
+      const checked = !previous.includes(id);
+      if (shiftKey && from !== -1 && to !== -1) {
+        const range = visibleSelectionIds.slice(Math.min(from, to), Math.max(from, to) + 1);
+        return checked
+          ? [...new Set([...previous, ...range])]
+          : previous.filter(value => !range.includes(value));
+      }
+      return checked ? [...previous, id] : previous.filter(value => value !== id);
+    });
+    if (!shiftKey || anchor === null || from === -1) selectionAnchor.current = id;
+  };
+  const toggleGroupSelection = (ids: number[], checked: boolean) =>
+    setSelectedIds(previous => checked ? [...new Set([...previous, ...ids])] : previous.filter(id => !ids.includes(id)));
+
+  // Use the same endpoint and payload as the existing single-item action.
+  async function updateMenuItem(row: Row, changes: Row) {
+    const response = await fetch("/api/bo/menu", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: row.id, name: row.name, menu_category_id: row.menu_category_id,
+        cover_section_id: row.cover_section_id, recipe_id: row.recipe_id,
+        recipe_factor: row.recipe_factor ?? 1, sp_usd: row.sp_usd,
+        active: row.active !== false, ...changes,
+      }),
+    });
+    const body = await response.text();
+    let result: Row = {};
+    try { result = body ? JSON.parse(body) : {}; } catch { /* show HTTP status */ }
+    if (!response.ok || result.ok !== true) throw new Error(result.error || `HTTP ${response.status}`);
+  }
+
+  async function runBulk(action: "hide" | "delete" | "category" | "flag" | "unflag") {
+    if (bulkBusy || actionBusy !== null || !selectedItems.length) return;
+    if (action === "category" && !bulkCategory) { setError("Choose the destination category first."); return; }
+    const verb = action === "hide" ? "hide from Menu Pricing" : action === "delete" ? "DELETE" : action === "category" ? "move to the selected category" : action === "flag" ? "flag for review" : "clear review flags for";
+    if (!window.confirm(`${verb} ${selectedItems.length} selected recipe(s)?${action === "delete" ? " This deletes the menu items, not their shared recipe definitions." : ""}`)) return;
+    setBulkBusy(true); setError(""); setNotice("");
+    const succeeded: number[] = [];
+    const failures: string[] = [];
+    for (const row of selectedItems) {
+      try {
+        if (action === "hide") await updateMenuItem(row, { active: false });
+        if (action === "category") await updateMenuItem(row, { menu_category_id: bulkCategory === "none" ? null : Number(bulkCategory) });
+        if (action === "delete") {
+          const response = await fetch(`/api/bo/menu?id=${encodeURIComponent(String(row.id))}`, { method: "DELETE" });
+          const body = await response.text();
+          let result: Row = {};
+          try { result = body ? JSON.parse(body) : {}; } catch { /* show HTTP status */ }
+          if (!response.ok || result.ok !== true) throw new Error(result.error || `HTTP ${response.status}`);
+        }
+        if (action === "flag" || action === "unflag") {
+          const recipe = (recipeData?.recipes ?? []).find((r: Row) => String(r.id) === String(row.recipe_id));
+          const lines: Row[] = recipe?.lines ?? [];
+          if (!recipe || !lines.length) throw new Error("No saved recipe lines found");
+          // A recipe is flagged when at least one saved line needs review.
+          // Clearing review must clear EVERY flagged line, not just the first.
+          const targetLines = action === "flag"
+            ? (lines.some((line: Row) => line.needs_review === true) ? [] : [lines[0]])
+            : lines.filter((line: Row) => line.needs_review === true);
+          for (const line of targetLines) {
+            if (!line.id) throw new Error("A recipe line has no saved ID");
+            const response = await fetch("/api/bo/recipe-review", {
+              method: "PATCH", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ line_id: line.id, recipe_id: recipe.id, needs_review: action === "flag" }),
+            });
+            const body = await response.text();
+            let result: Row = {};
+            try { result = body ? JSON.parse(body) : {}; } catch { /* show HTTP status */ }
+            if (!response.ok || result.ok !== true) throw new Error(result.error || `HTTP ${response.status}`);
+          }
+        }
+        succeeded.push(Number(row.id));
+      } catch (e) { failures.push(`${row.name}: ${e instanceof Error ? e.message : "Request failed"}`); }
+    }
+    setSelectedIds(previous => previous.filter(id => !succeeded.includes(id)));
+    try { await load(); } catch { /* load already reports errors */ }
+    if (failures.length) setError(`${succeeded.length} succeeded; ${failures.length} failed. ${failures.slice(0, 5).join(" | ")}`);
+    else setNotice(`${succeeded.length} recipe(s) updated successfully.`);
+    setBulkBusy(false);
+  }
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -89,13 +301,33 @@ export function MenuClient() {
     );
   }, [menuData, search]);
 
+  const searchableMenuItems: Row[] = useMemo(() => {
+    const q = newRecipeSearch.trim().toLowerCase();
+    return [...(menuData?.items ?? [])]
+      .filter((row: Row) => !q || String(row.name ?? "").toLowerCase().includes(q))
+      .sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
+  }, [menuData, newRecipeSearch]);
+
   const ingredients: Row[] = recipeData?.ingredients ?? [];
   const utilities: Row[] = recipeData?.utilities ?? [];
   const allRecipes: Row[] = recipeData?.all_recipes ?? [];
 
-  function buildRecipeDraft(recipe: Row | null) {
+  function buildRecipeDraft(recipe: Row | null, item?: Row) {
     if (!recipe) {
-      setRecipeDraft(null);
+      // Menu items without a linked recipe must still be editable.
+      // Persist the new recipe only when Save Changes is pressed.
+      setRecipeDraft({
+        id: null,
+        name: String(item?.name || draft.name || "New recipe"),
+        kind: "menu",
+        menu_category_id: String(item?.menu_category_id || draft.menu_category_id || ""),
+        yield_qty: "1",
+        yield_mode: "fixed",
+        yield_unit: "POR",
+        waste_pct: "0",
+        notes: "",
+        lines: [],
+      });
       return;
     }
 
@@ -116,7 +348,7 @@ export function MenuClient() {
         sub_recipe_id: line.sub_recipe_id ? String(line.sub_recipe_id) : "",
         utility_id: line.utility_id ? String(line.utility_id) : "",
         qty: line.qty ?? "",
-        factor: line.factor ?? "1",
+        factor: "1", // Legacy hidden factors are retired when this recipe is saved.
         fixed_price: line.fixed_price ?? "",
       })),
     });
@@ -130,7 +362,7 @@ export function MenuClient() {
       menu_category_id: row.menu_category_id ? String(row.menu_category_id) : "",
       cover_section_id: row.cover_section_id ? String(row.cover_section_id) : "",
       recipe_id: row.recipe_id ? String(row.recipe_id) : "",
-      recipe_factor: row.recipe_factor ?? "1",
+      recipe_factor: "1",
       sp_usd: row.sp_usd ?? "",
       active: row.active !== false,
     };
@@ -141,7 +373,75 @@ export function MenuClient() {
       (x: Row) => String(x.id) === String(nextDraft.recipe_id),
     ) ?? null;
 
-    buildRecipeDraft(recipe);
+    buildRecipeDraft(recipe, row);
+    setOpen(true);
+    setError("");
+  }
+
+  function startNewRecipeForItem(row: Row) {
+    // Copy the selected item's existing recipe into an independent new draft.
+    // Never reuse its recipe id or recipe-line ids; the original remains intact.
+    const sourceRecipe = (recipeData?.recipes ?? []).find(
+      (recipe: Row) => String(recipe.id) === String(row.recipe_id),
+    ) ?? null;
+
+    // Do not silently present an empty recipe when a linked recipe could not
+    // be loaded. That risks overwriting a linked item's costing information.
+    if (row.recipe_id && !sourceRecipe) {
+      setError(`The recipe linked to “${row.name}” was not loaded. Reopen Recipes and try again.`);
+      setNewRecipePickerOpen(false);
+      return;
+    }
+
+    const nextDraft = {
+      name: row.name ?? "",
+      menu_category_id: row.menu_category_id ? String(row.menu_category_id) : "",
+      cover_section_id: row.cover_section_id ? String(row.cover_section_id) : "",
+      recipe_id: "",
+      recipe_factor: "1",
+      sp_usd: row.sp_usd ?? "",
+      active: true, // Every newly created recipe is visible on Menu Pricing by default.
+    };
+    setEditing(row);
+    setDraft(nextDraft);
+    setRecipeDraft({
+      id: null,
+      name: String(sourceRecipe?.name || row.name || "New recipe"),
+      kind: "menu",
+      menu_category_id: nextDraft.menu_category_id,
+      yield_qty: sourceRecipe?.yield_qty ?? "1",
+      yield_mode: sourceRecipe?.yield_mode ?? "fixed",
+      yield_unit: sourceRecipe?.yield_unit ?? "POR",
+      waste_pct: sourceRecipe?.waste_pct ?? "0",
+      notes: sourceRecipe?.notes ?? "",
+      lines: (sourceRecipe?.lines ?? []).map((line: Row) => ({
+        ...EMPTY_LINE,
+        ...line,
+        id: undefined,
+        recipe_id: undefined,
+        ingredient_id: line.ingredient_id ? String(line.ingredient_id) : "",
+        sub_recipe_id: line.sub_recipe_id ? String(line.sub_recipe_id) : "",
+        utility_id: line.utility_id ? String(line.utility_id) : "",
+        qty: line.qty ?? "",
+        factor: "1",
+        fixed_price: line.fixed_price ?? "",
+      })),
+    });
+    setError("");
+    setNewRecipePickerOpen(false);
+    setOpen(true);
+  }
+
+  function startNewRecipeNamed(name: string) {
+    const trimmed = name.trim();
+    setEditing({ id: null, name: trimmed, active: true });
+    setDraft({ ...EMPTY_ITEM, name: trimmed, menu_category_id: "", active: true });
+    setRecipeDraft({
+      id: null, name: trimmed || "New recipe", kind: "menu",
+      menu_category_id: "", yield_qty: "1", yield_mode: "fixed",
+      yield_unit: "POR", waste_pct: "0", notes: "", lines: [],
+    });
+    setNewRecipePickerOpen(false);
     setOpen(true);
     setError("");
   }
@@ -166,6 +466,7 @@ export function MenuClient() {
         {
           ...EMPTY_LINE,
           line_type: type,
+          qty: type === "utility" || type === "recipe" ? "1" : "",
           section: type === "utility" || type === "fixed" ? "utility" : "primary",
         },
       ],
@@ -181,6 +482,43 @@ export function MenuClient() {
         i === index ? { ...line, ...patch } : line,
       ),
     });
+  }
+
+  async function toggleReviewFlag(index: number) {
+    if (!recipeDraft || saving) return;
+    const line = recipeDraft.lines[index];
+    if (!line) return;
+    const next = line.needs_review !== true;
+    // Display the flag immediately. Unsaved lines are persisted by Save Changes.
+    updateLine(index, { needs_review: next });
+    if (!line.id || !recipeDraft.id) {
+      setNotice("Flag set in this draft. Click Save Changes to keep it.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/bo/recipe-review", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ line_id: line.id, recipe_id: recipeDraft.id, needs_review: next }),
+      });
+      const body = await response.text();
+      let payload: any = null;
+      try { payload = body ? JSON.parse(body) : null; } catch { /* non-JSON response */ }
+      if (!response.ok || payload?.ok !== true || payload?.line?.needs_review !== next) {
+        throw new Error(payload?.error || `Review flag could not be saved (HTTP ${response.status}). Verify the recipe-review API and database migration.`);
+      }
+      // Refresh list badges; keep the current popup and its draft intact.
+      const recipeResponse = await fetch("/api/bo/recipes", { cache: "no-store" });
+      if (recipeResponse.ok) {
+        const updatedRecipes = await recipeResponse.json();
+        setRecipeData(updatedRecipes);
+      }
+    } catch (e) {
+      updateLine(index, { needs_review: !next });
+      setError(e instanceof Error ? e.message : "Unable to update review flag.");
+    }
   }
 
   function removeLine(index: number) {
@@ -200,7 +538,7 @@ export function MenuClient() {
       return {
         name: source?.name ?? "SELECT INGREDIENT",
         unit: source?.consumption_unit || source?.purchase_unit || "—",
-        cost: asNumber(source?.unit_cost_lbp),
+        cost: asNumber(unitCosts[String(line.ingredient_id)] ?? source?.unit_cost_lbp),
       };
     }
 
@@ -249,37 +587,44 @@ export function MenuClient() {
   function lineTotal(line: Row) {
     const source = sourceMeta(line);
     const qty = asNumber(line.qty);
-    const factor = asNumber(line.factor) ?? 1;
-
     if (source.cost === null || qty === null) return null;
-    return source.cost * qty * factor;
+    return source.cost * qty;
   }
 
-  const recipeFactor = asNumber(draft.recipe_factor) ?? 1;
+  const recipeFactor = 1; // No hidden menu-level cost multiplier.
   const recipeLines: Row[] = recipeDraft?.lines ?? [];
 
+  // A source belongs to exactly one section. In particular, PREP / SAUCE
+  // lines must not appear in both Ingredients and Utility.
   const ingredientsWithIndex = recipeLines
     .map((line: Row, index: number) => ({ line, index }))
-    .filter(({ line }) => {
-      const section = String(line.section || "").toLowerCase();
-      return (
-        line.line_type === "ingredient" ||
-        section === "primary" ||
-        section === "secondary"
-      );
-    });
+    .filter(({ line }) => line.line_type === "ingredient" || line.line_type === "recipe");
 
   const utilityWithIndex = recipeLines
     .map((line: Row, index: number) => ({ line, index }))
-    .filter(({ line }) => {
-      const section = String(line.section || "").toLowerCase();
-      return (
-        section === "utility" ||
-        line.line_type === "utility" ||
-        line.line_type === "fixed" ||
-        line.line_type === "recipe"
-      );
-    });
+    .filter(({ line }) => line.line_type === "utility" || line.line_type === "fixed");
+
+  // Show the entire utility catalog, without modifying the saved recipe.
+  // Utilities previously removed from this recipe remain removed until explicitly added.
+  const assignedUtilityIds = new Set(
+    recipeLines.filter((line: Row) => line.line_type === "utility")
+      .map((line: Row) => String(line.utility_id)),
+  );
+  const availableUtilities = utilities.filter((utility: Row) =>
+    !assignedUtilityIds.has(String(utility.id))
+  );
+
+  function addSpecificUtility(utilityId: number | string) {
+    if (!recipeDraft || assignedUtilityIds.has(String(utilityId))) return;
+    setRecipeDraft((previous: any) => previous ? {
+      ...previous,
+      lines: [...previous.lines, {
+        ...EMPTY_LINE,
+        section: "utility", line_type: "utility",
+        utility_id: String(utilityId), qty: "1", factor: "1",
+      }],
+    } : previous);
+  }
 
   const liveRecipeCost = recipeLines.reduce((sum, line) => {
     const total = lineTotal(line);
@@ -291,6 +636,15 @@ export function MenuClient() {
   const usableYield = yieldQty && yieldQty > 0 ? yieldQty * (1 - waste) : null;
   const liveUnitCost =
     usableYield && usableYield > 0 ? liveRecipeCost / usableYield : null;
+
+  // Utility costs are a component of the total recipe cost, not an additional charge.
+  const utilityBatchCost = utilityWithIndex.reduce((sum, entry) =>
+    sum + (lineTotal(entry.line) ?? 0), 0);
+  const utilityCostLbp = usableYield && usableYield > 0
+    ? (utilityBatchCost / usableYield) * recipeFactor : null;
+  const rate = Number(menuData?.usd_lbp_rate) || 0;
+  const displayUsd = (lbp: number | null) =>
+    lbp !== null && rate > 0 ? moneyUsd(lbp / rate) : "—";
 
   const salePriceLbp =
     draft.sp_usd && menuData?.usd_lbp_rate
@@ -338,30 +692,103 @@ export function MenuClient() {
     setError("");
 
     try {
-      if (recipeDraft?.id) {
-        const recipeRes = await fetch("/api/bo/recipes", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(recipeDraft),
+      if (!String(draft.name || "").trim()) throw new Error("Enter the recipe/item name before saving.");
+      if (!recipeDraft?.lines?.length && !editing?.id) throw new Error("Add at least one ingredient or utility before saving a new recipe.");
+      let menuItemId = Number(editing?.id) || null;
+      if (!menuItemId) {
+        const itemRes = await fetch("/api/bo/menu", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...draft, recipe_id: null, recipe_factor: 1 }),
         });
-
-        const recipeJson = await recipeRes.json();
-
-        if (!recipeRes.ok) {
-          throw new Error(recipeJson?.error || "Unable to save recipe.");
-        }
+        const itemJson = await itemRes.json();
+        if (!itemRes.ok || !itemJson?.item?.id) throw new Error(itemJson?.error || "Could not create new menu item.");
+        menuItemId = Number(itemJson.item.id);
+        setEditing(itemJson.item);
       }
 
-      const menuRes = await fetch("/api/bo/menu", {
-        method: "PUT",
+      let outgoingRecipe = recipeDraft;
+      let outgoingItem = { ...draft, id: menuItemId, recipe_factor: 1 };
+      if (recipeDraft && !Number(recipeDraft.id)) {
+        if (!recipeDraft.lines.length) {
+          throw new Error("Add at least one ingredient, preparation, or utility before saving a new recipe.");
+        }
+        const createRes = await fetch("/api/bo/recipes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...recipeDraft,
+            name: String(draft.name || recipeDraft.name).trim(),
+            menu_category_id: draft.menu_category_id,
+            kind: "menu",
+            lines: recipeDraft.lines.map((line: Row) => ({ ...line, factor: 1 })),
+          }),
+        });
+        const created = await createRes.json();
+        if (!createRes.ok || !created?.id) {
+          throw new Error(created?.error || "Unable to create the linked recipe.");
+        }
+        outgoingRecipe = { ...recipeDraft, id: Number(created.id) };
+        outgoingItem = { ...outgoingItem, recipe_id: Number(created.id) };
+        // Once created, retain the id even if linking the menu item fails,
+        // avoiding duplicate recipe creation on retry.
+        setRecipeDraft(outgoingRecipe);
+        setDraft((prev: any) => ({ ...prev, recipe_id: Number(created.id) }));
+      }
+      const res = await fetch("/api/bo/menu/save", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, id: editing?.id }),
+        body: JSON.stringify({
+          item: outgoingItem,
+          recipe: outgoingRecipe ? { ...outgoingRecipe, lines: outgoingRecipe.lines.map((line: Row) => ({ ...line, factor: 1 })) } : null,
+        }),
       });
 
-      const menuJson = await menuRes.json();
+      const json = await res.json();
 
-      if (!menuRes.ok) {
-        throw new Error(menuJson?.error || "Unable to save menu item.");
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Unable to save changes.");
+      }
+
+      // Verify using the exact persisted recipe lines, not the costing snapshot.
+      // The snapshot can be truncated by Supabase's default row limit.
+      if (outgoingRecipe) {
+        const recipeId = String(json.recipe_id ?? outgoingRecipe.id);
+        const verifyRes = await fetch(`/api/bo/recipes?id=${encodeURIComponent(recipeId)}`, {
+          cache: "no-store",
+        });
+        const verifyJson = await verifyRes.json();
+        if (!verifyRes.ok) throw new Error(verifyJson?.error || "Unable to verify saved recipe.");
+        const stored = verifyJson.lines ?? [];
+        const expected = (outgoingRecipe.lines ?? []).map((line: Row) => ({ ...line, factor: 1 }));
+        const normalize = (line: Row) => {
+          const id = line.line_type === "ingredient" ? line.ingredient_id :
+            line.line_type === "recipe" ? line.sub_recipe_id :
+            line.line_type === "utility" ? line.utility_id : null;
+          const num = (v: unknown, fallback: number) =>
+            v === "" || v == null ? fallback : Number(v);
+          return JSON.stringify([
+            line.line_type, id == null || id === "" ? null : Number(id),
+            num(line.qty, 0), 1,
+            line.line_type === "fixed" ? num(line.fixed_price, 0) : null,
+            line.line_type === "fixed" ? (line.fixed_currency === "USD" ? "USD" : "LBP") : null,
+            String(line.note ?? "").trim(),
+            line.needs_review === true,
+          ]);
+        };
+        const available = new Map<string, number>();
+        for (const line of stored) {
+          const key = normalize(line);
+          available.set(key, (available.get(key) ?? 0) + 1);
+        }
+        for (const [index, line] of expected.entries()) {
+          const key = normalize(line);
+          const count = available.get(key) ?? 0;
+          if (!count) {
+            const candidate = stored.find((savedLine: Row) => savedLine.line_type === line.line_type && String(savedLine.sub_recipe_id ?? savedLine.ingredient_id ?? savedLine.utility_id ?? "") === String(line.sub_recipe_id ?? line.ingredient_id ?? line.utility_id ?? ""));
+            throw new Error(`Recipe row ${index + 1} (${line.line_type}) did not match after saving. ${candidate ? `Saved row has QTY ${candidate.qty}, review flag ${String(candidate.needs_review)}.` : `No matching source was found among ${stored.length} rows.`} Your draft remains open.`);
+          }
+          available.set(key, count - 1);
+        }
       }
 
       await load();
@@ -373,7 +800,7 @@ export function MenuClient() {
     }
   }
 
-  function LineTable({
+  function renderLineTable({
     title,
     lines,
     utilityMode = false,
@@ -427,19 +854,16 @@ export function MenuClient() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-left">
+          <table className="w-full min-w-[800px] border-collapse text-left">
             <thead className="bg-[#f4f4f4] text-[10px] font-black uppercase text-[#333]">
               <tr>
-                <th className="px-3 py-3">GROUP</th>
-                <th className="px-3 py-3">TYPE</th>
-                <th className="px-3 py-3">SOURCE</th>
-                <th className="px-3 py-3 text-right">QTY</th>
-                <th className="px-3 py-3">UNIT</th>
-                <th className="px-3 py-3 text-right">UNIT COST</th>
-                <th className="px-3 py-3 text-right">FACTOR</th>
-                <th className="px-3 py-3 text-right">TOTAL COST</th>
-                <th className="px-3 py-3">REMARK</th>
-                <th className="px-3 py-3 text-right">ACTION</th>
+                <th className="px-3 py-2 text-left">TYPE</th>
+                <th className="px-3 py-2 text-left">ITEM</th>
+                <th className="px-3 py-2 text-right">QTY</th>
+                <th className="px-3 py-2 text-left">UNIT</th>
+                <th className="px-3 py-2 text-right">UNIT COST USD</th>
+                <th className="px-3 py-2 text-right">TOTAL COST USD</th>
+                <th className="px-3 py-2 text-right">ACTION</th>
               </tr>
             </thead>
 
@@ -450,21 +874,6 @@ export function MenuClient() {
 
                 return (
                   <tr key={index} className="border-t border-black/[0.08] text-[11px] text-black">
-                    <td className="px-3 py-2">
-                      <select
-                        value={line.section}
-                        onChange={(e) =>
-                          updateLine(index, { section: e.target.value })
-                        }
-                        className="w-full rounded-[7px] border border-[#aaa] bg-white px-2 py-2 font-bold text-black"
-                      >
-                        <option value="primary">PRIMARY</option>
-                        <option value="secondary">SECONDARY</option>
-                        <option value="utility">UTILITY</option>
-                        <option value="main">OTHER</option>
-                      </select>
-                    </td>
-
                     <td className="px-3 py-2">
                       <select
                         value={line.line_type}
@@ -540,35 +949,25 @@ export function MenuClient() {
                     </td>
 
                     <td className="px-3 py-2 text-right font-black tabular-nums">
-                      {moneyLbp(meta.cost)}
-                    </td>
-
-                    <td className="px-3 py-2">
-                      <input
-                        value={line.factor ?? "1"}
-                        onChange={(e) =>
-                          updateLine(index, { factor: e.target.value })
-                        }
-                        className="w-[90px] rounded-[7px] border border-[#aaa] bg-white px-2 py-2 text-right font-bold text-black"
-                      />
+                      {meta.cost === null || !(Number(menuData?.usd_lbp_rate) > 0) ? "—" : moneyUsd(meta.cost / Number(menuData.usd_lbp_rate))}
                     </td>
 
                     <td className="px-3 py-2 text-right font-black tabular-nums">
-                      {moneyLbp(total)}
-                    </td>
-
-                    <td className="px-3 py-2">
-                      <input
-                        value={line.note ?? ""}
-                        onChange={(e) =>
-                          updateLine(index, { note: e.target.value })
-                        }
-                        placeholder="REMARK"
-                        className="w-full min-w-[150px] rounded-[7px] border border-[#aaa] bg-white px-2 py-2 text-black"
-                      />
+                      {total === null || !(Number(menuData?.usd_lbp_rate) > 0) ? "—" : moneyUsd(total / Number(menuData.usd_lbp_rate))}
                     </td>
 
                     <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button type="button"
+                          onClick={() => void toggleReviewFlag(index)}
+                          title={line.needs_review ? "Clear Needs Review flag" : "Flag item for recipe review"}
+                          aria-label={line.needs_review ? "Clear review flag" : "Flag item for review"}
+                          aria-pressed={line.needs_review === true}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-[7px] border transition-colors ${line.needs_review ? "border-amber-500 bg-amber-100 text-amber-800" : "border-black/20 bg-white text-black hover:bg-gray-100"}`}>
+                          <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill={line.needs_review ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 21V4m0 1c4-3 7 3 12 0v11c-5 3-8-3-12 0" />
+                          </svg>
+                        </button>
                       <button
                         type="button"
                         onClick={() => removeLine(index)}
@@ -576,6 +975,7 @@ export function MenuClient() {
                       >
                         REMOVE
                       </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -598,11 +998,29 @@ export function MenuClient() {
     );
   }
 
+  const sortHeader = (key: string, label: string) => (
+    <button type="button" onClick={() => {
+      if (sortKey === key) setSortAscending(prev => !prev);
+      else { setSortKey(key); setSortAscending(true); }
+    }} className={`inline-flex w-full items-center gap-1 whitespace-nowrap font-bold hover:text-black ${key === "name" ? "justify-start" : "justify-end"}`} aria-label={`Sort by ${label}`}>
+      {label}<span className="text-[10px] text-black/50">{sortKey === key ? (sortAscending ? "▲" : "▼") : "↕"}</span>
+    </button>
+  );
+  const foodCostTone = (value: unknown) => {
+    const n = Number(value);
+    if (value == null || !Number.isFinite(n)) return "text-black/40";
+    const percent = n * 100;
+    return percent <= 30 ? "text-emerald-700" : percent <= 35 ? "text-amber-700" : "text-red-700";
+  };
+  const allCollapsed = categoryGroups.length > 0 && categoryGroups.every(g => collapsedCategories[g.id]);
+  const resetFilters = () => { setSearch(""); setCategoryFilter("all"); setVisibilityFilter("visible"); setSortKey("name"); setSortAscending(true); };
+
   return (
     <BOFrame
       active="/bo/menu"
-      title="MENU COSTING"
-      subtitle="Edit menu items and their recipe costs."
+      title="RECIPES"
+      subtitle="Manage recipes, visibility, and menu costing."
+      actions={<button type="button" onClick={() => { setNewRecipeSearch(""); setError(""); setNewRecipePickerOpen(true); }} className="rounded-[10px] bg-black px-4 py-3 text-[11px] font-black uppercase text-white hover:bg-black/80">ADD RECIPE</button>}
     >
       {error ? (
         <div className="mb-4 rounded-[10px] border border-black/15 bg-white px-4 py-3 text-[12px] font-bold text-black">
@@ -610,54 +1028,133 @@ export function MenuClient() {
         </div>
       ) : null}
 
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="SEARCH MENU ITEM OR RECIPE"
-        className="mb-4 w-full rounded-[10px] border border-[#c5c5c5] bg-white px-4 py-3 text-[12px] font-bold text-black outline-none focus:border-black"
-      />
-
-      <div className="overflow-hidden rounded-[14px] border border-[#c9c9c9] bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1060px] text-left">
-            <thead className="bg-[#e9e9e9] text-[10px] font-black uppercase text-[#333]">
-              <tr>
-                <th className="px-4 py-3">ITEM</th>
-                <th className="px-3 py-3">RECIPE</th>
-                <th className="px-3 py-3 text-right">SP USD</th>
-                <th className="px-3 py-3 text-right">SP LBP</th>
-                <th className="px-3 py-3 text-right">COST</th>
-                <th className="px-3 py-3 text-right">FOOD COST</th>
-                <th className="px-3 py-3 text-right">PROFIT</th>
-                <th className="px-4 py-3 text-right">ACTION</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.map((row: Row) => (
-                <tr key={row.id} className="border-t border-black/[0.08] text-[11px] text-black">
-                  <td className="px-4 py-3 font-black">{row.name}</td>
-                  <td className="px-3 py-3">{row.recipe?.name || "—"}</td>
-                  <td className="px-3 py-3 text-right">{moneyUsd(row.sp_usd)}</td>
-                  <td className="px-3 py-3 text-right">{moneyLbp(row.sp_lbp)}</td>
-                  <td className="px-3 py-3 text-right">{moneyLbp(row.cost_lbp)}</td>
-                  <td className="px-3 py-3 text-right font-black">{pct(row.food_cost_pct)}</td>
-                  <td className="px-3 py-3 text-right">{moneyLbp(row.gross_profit_lbp)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(row)}
-                      className="rounded-[8px] bg-black px-3 py-2 text-[10px] font-black uppercase text-white"
-                    >
-                      EDIT
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {notice ? <div role="status" className="mb-3 rounded-lg border border-black/10 bg-white px-4 py-2 text-xs">{notice}</div> : null}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-black/10 bg-white p-3 xl:flex-nowrap">
+        <input aria-label="Search recipes" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item or recipe"
+          className="min-w-[170px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs" />
+        <select aria-label="Category filter" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="min-w-[150px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
+          <option value="all">All categories</option>
+          {(menuData?.categories ?? []).map((cat: Row) => <option key={cat.id} value={String(cat.id)}>{cat.name}</option>)}
+          <option value="none">Uncategorized</option>
+        </select>
+        <select aria-label="Visibility filter" value={visibilityFilter} onChange={e => setVisibilityFilter(e.target.value)} className="min-w-[160px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
+          <option value="visible">Visible on Menu Pricing</option><option value="hidden">Hidden on Menu Pricing</option><option value="review">Needs Review</option><option value="all">All items</option>
+        </select>
+        <button type="button" title="Reset filters" aria-label="Reset filters" onClick={resetFilters} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/20 bg-white hover:bg-gray-100">
+          <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
+        </button>
+        <button type="button" title={allCollapsed ? "Expand all categories" : "Collapse all categories"} aria-label={allCollapsed ? "Expand all categories" : "Collapse all categories"} onClick={() => setCollapsedCategories(Object.fromEntries(categoryGroups.map(g => [g.id, !allCollapsed])))} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-black/20 bg-white hover:bg-gray-100">
+          {allCollapsed ? <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 7v10M7 12h10"/></svg> : <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h10"/></svg>}
+        </button>
+      </div>
+      {selectedIds.length > 0 && (
+      <div role="region" aria-label="Selected recipes actions" className="sticky top-[82px] z-30 mb-3 flex w-full min-w-0 flex-wrap items-center gap-2 rounded-xl border border-black/20 bg-white p-3 text-xs shadow-lg xl:flex-nowrap">
+        <label className="inline-flex items-center gap-2 font-semibold">
+          <input type="checkbox" checked={allVisibleSelected} disabled={!visibleSelectionIds.length || bulkBusy}
+            onChange={e => toggleGroupSelection(visibleSelectionIds, e.target.checked)} />
+          Select visible
+        </label>
+        <span className="text-black/60">{selectedIds.length} selected</span>
+        <button type="button" onClick={() => { setSelectedIds([]); selectionAnchor.current = null; }} disabled={!selectedIds.length || bulkBusy}
+          className="rounded-md border border-black/20 px-2 py-2 disabled:opacity-40">Clear</button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void runBulk("hide")} disabled={!selectedItems.length || bulkBusy}
+            className="rounded-md border border-black/20 px-3 py-2 font-bold disabled:opacity-40">Hide selected</button>
+          <select aria-label="Destination category" value={bulkCategory} disabled={bulkBusy} onChange={e => setBulkCategory(e.target.value)}
+            className="max-w-[190px] rounded-md border border-black/20 bg-white px-2 py-2">
+            <option value="">Move to category…</option>
+            {(menuData?.categories ?? []).map((category: Row) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}
+            <option value="none">Uncategorized</option>
+          </select>
+          <button type="button" onClick={() => void runBulk("category")} disabled={!selectedItems.length || !bulkCategory || bulkBusy}
+            className="rounded-md border border-black/20 px-3 py-2 font-bold disabled:opacity-40">Move</button>
+          <button type="button" onClick={() => void runBulk("flag")} disabled={!selectedItems.length || bulkBusy}
+            className="rounded-md border border-amber-300 px-3 py-2 font-bold text-amber-800 disabled:opacity-40">Flag for review</button>
+          <button type="button" onClick={() => void runBulk("unflag")} disabled={!selectedItems.length || bulkBusy}
+            className="rounded-md border border-black/20 px-3 py-2 font-bold text-black disabled:opacity-40">Clear review flags</button>
+          <button type="button" onClick={() => void runBulk("delete")} disabled={!selectedItems.length || bulkBusy}
+            className="rounded-md border border-red-300 px-3 py-2 font-bold text-red-700 disabled:opacity-40">Delete selected</button>
         </div>
       </div>
+      )}
+      <div className="space-y-3">
+        {categoryGroups.map(group => <section key={group.id} className="overflow-hidden rounded-xl border border-black/15 bg-white">
+          <button type="button" onClick={() => setCollapsedCategories(prev => ({...prev, [group.id]: !prev[group.id]}))}
+            aria-expanded={!collapsedCategories[group.id]} className="flex w-full items-center justify-between bg-gray-100 px-4 py-3 text-left text-xs font-bold uppercase">
+            <span>{group.name} ({group.items.length})</span><span>{collapsedCategories[group.id] ? "+" : "−"}</span>
+          </button>
+          {!collapsedCategories[group.id] && <div className="overflow-x-auto"><table className="w-full min-w-[1130px] border-collapse text-left text-[12px]">
+            <thead className="bg-gray-50 text-[10px] uppercase text-black/65"><tr>
+              <th className="w-9 px-2 py-2"><input aria-label={`Select all in ${group.name}`} type="checkbox"
+                checked={group.items.length > 0 && group.items.every((row: Row) => selectedIds.includes(Number(row.id)))}
+                disabled={bulkBusy} onChange={e => toggleGroupSelection(group.items.map((row: Row) => Number(row.id)), e.target.checked)} /></th>
+              <th className="px-3 py-2">{sortHeader("name", "Items")}</th>
+              <th className="px-2 py-2 text-right">{sortHeader("sp_usd", "Selling Price USD")}</th>
+              <th className="px-2 py-2 text-right">{sortHeader("sp_lbp", "Selling Price LBP")}</th>
+              <th className="px-2 py-2 text-right">{sortHeader("cost_lbp", "Cost LBP")}</th>
+              <th className="px-2 py-2 text-right">{sortHeader("food_cost_pct", "Food Cost %")}</th>
+              <th className="px-2 py-2 text-right">{sortHeader("profit_usd", "Profit USD")}</th>
+              <th className="px-2 py-2 text-right">{sortHeader("profit_lbp", "Profit LBP")}</th>
+              <th className="px-2 py-2 text-right">Actions</th>
+            </tr></thead>
+            <tbody>{group.items.map((row: Row) => <tr key={row.id} className="border-t border-black/10">
+              <td className="w-9 px-2 py-1.5"><input type="checkbox" aria-label={`Select ${row.name}`}
+                checked={selectedIds.includes(Number(row.id))} disabled={bulkBusy}
+                onClick={e => selectRow(Number(row.id), e.shiftKey)}
+                readOnly /></td>
+              <td className="px-3 py-1.5 font-bold"><span className="inline-flex items-center gap-2">{row.name}{hasFlaggedLines(row) && <span title="Recipe has items needing review" aria-label="Needs review" className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.6"><path d="M5 21V4m0 1c4-3 7 3 12 0v11c-5 3-8-3-12 0" /></svg>Review</span>}</span></td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{moneyUsd(row.sp_usd)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{moneyLbp(row.sp_lbp)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{moneyLbp(row.cost_lbp)}</td>
+              <td className={`px-2 py-1.5 text-right font-bold tabular-nums ${foodCostTone(row.food_cost_pct)}`}>{row.sp_usd > 0 ? pct(row.food_cost_pct) : "—"}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{row.sp_usd > 0 && Number(menuData?.usd_lbp_rate) > 0 ? moneyUsd(Number(row.gross_profit_lbp ?? 0) / Number(menuData.usd_lbp_rate)) : "—"}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{row.sp_usd > 0 ? moneyLbp(row.gross_profit_lbp) : "—"}</td>
+              <td className="px-2 py-1.5"><div className="flex items-center justify-end gap-1.5">
+                <button type="button" disabled={actionBusy !== null} onClick={() => toggleVisibility(row)} title={row.active === false ? "Show on Menu Pricing" : "Hide from Menu Pricing"}
+                  aria-label={`${row.active === false ? "Show" : "Hide"} ${row.name} on Menu Pricing`} className={`flex h-9 w-9 items-center justify-center rounded-md border hover:bg-gray-100 disabled:opacity-50 ${row.active === false ? "border-red-300 text-red-700" : "border-black/20"}`}>
+                  <svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>{row.active === false && <path d="M3 3l18 18"/>}</svg>
+                </button>
+                <button type="button" onClick={() => downloadRecipe(row)} title="Download recipe" aria-label={`Download ${row.name}`} className="flex h-9 w-9 items-center justify-center rounded-md border border-black/20 hover:bg-gray-100">
+                  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 16v4h16v-4"/></svg>
+                </button>
+                <button type="button" onClick={() => startEdit(row)} className="h-9 rounded-md bg-black px-3 text-[11px] font-bold text-white">Edit</button>
+                <button type="button" disabled={actionBusy !== null} onClick={() => deleteItem(row)} className="h-9 rounded-md border border-red-300 px-3 text-[11px] font-bold text-red-700 disabled:opacity-50">Delete</button>
+              </div></td>
+            </tr>)}</tbody>
+          </table></div>}
+        </section>)}
+      </div>
+
+      {newRecipePickerOpen ? (
+        <div role="presentation" className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4" onClick={() => setNewRecipePickerOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-label="Choose menu item for new recipe" onClick={event => event.stopPropagation()}
+            className="w-full max-w-[560px] rounded-2xl border border-black/15 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h2 className="text-lg font-black uppercase">Add Recipe</h2>
+              <button type="button" className="h-9 w-9 rounded-lg border border-black/20" aria-label="Close" onClick={() => setNewRecipePickerOpen(false)}>×</button>
+            </div>
+            <label className="block text-xs font-bold uppercase text-black/70">Search by item name
+              <input autoFocus value={newRecipeSearch} onChange={event => setNewRecipeSearch(event.target.value)}
+                placeholder="Search menu item…" className="mt-2 w-full rounded-lg border border-black/20 px-3 py-3 text-sm font-normal text-black" />
+            </label>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => startNewRecipeNamed(newRecipeSearch)} className="rounded-lg bg-black px-3 py-3 text-xs font-bold text-white">CREATE {newRecipeSearch.trim() ? `“${newRecipeSearch.trim()}”` : "NEW RECIPE"}</button>
+              <button type="button" onClick={() => startNewRecipeNamed("")} className="rounded-lg border border-black/20 px-3 py-3 text-xs font-bold">START BLANK</button>
+            </div>
+            <div className="mt-3 max-h-[370px] overflow-y-auto rounded-lg border border-black/10">
+              {searchableMenuItems.map((row: Row) => (
+                <button type="button" key={row.id} onClick={() => startNewRecipeForItem(row)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-black/10 px-3 py-3 text-left text-sm hover:bg-gray-100 last:border-0">
+                  <span className="font-semibold">{row.name}</span>
+                  <span className="shrink-0 text-xs text-black/50">{row.recipe_id ? "Copy existing recipe" : "Start empty recipe"}</span>
+                </button>
+              ))}
+              {searchableMenuItems.length === 0 ? <p className="p-4 text-sm text-black/60">No matching menu items.</p> : null}
+            </div>
+            <p className="mt-3 text-xs text-black/60">Select an item to copy its existing ingredients and utilities into a new recipe, type a new name, or start blank. New recipes are visible on Menu Pricing by default.</p>
+          </div>
+        </div>
+      ) : null}
 
       {open ? (
         <div
@@ -688,93 +1185,113 @@ export function MenuClient() {
               </button>
             </div>
 
+            {error ? (
+              <div className="mx-6 mt-5 rounded-[10px] border border-black bg-white px-4 py-3 text-[12px] font-bold text-black">
+                SAVE ERROR: {error}
+              </div>
+            ) : null}
+
             <div className="space-y-5 p-6">
               <section className="rounded-[14px] border border-[#c9c9c9] bg-white p-4">
-                <div className="grid gap-3 lg:grid-cols-12">
-                  <label className="lg:col-span-4">
-                    <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">DISH NAME</span>
+                <div className="grid gap-3 lg:grid-cols-5">
+                  <label className="min-w-0 text-left">
+                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">DISH NAME</span>
                     <input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black" />
                   </label>
 
-                  <label className="lg:col-span-2">
-                    <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">CATEGORY</span>
+                  <label className="min-w-0 text-left">
+                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">CATEGORY</span>
                     <select value={draft.menu_category_id} onChange={(e) => setDraft({ ...draft, menu_category_id: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black">
                       <option value="">SELECT</option>
                       {(menuData?.categories ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
                     </select>
                   </label>
 
-                  <label className="lg:col-span-3">
-                    <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">RECIPE</span>
-                    <select value={draft.recipe_id} onChange={(e) => changeRecipe(e.target.value)} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black">
-                      <option value="">SELECT RECIPE</option>
-                      {(recipeData?.recipes ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                    </select>
+                  <div className="min-w-0 text-left">
+                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">ACTIONS</span>
+                    <div className="flex h-[48px] items-center gap-2">
+                      <button type="button" disabled={saving || actionBusy !== null}
+                        onClick={async () => {
+                          // Visibility is part of the editable draft, including new recipes.
+                          // Save Changes persists it; do not call the saved-item API here.
+                          setDraft((current: any) => ({ ...current, active: current.active === false }));
+                        }}
+                        aria-label={draft.active ? "Set hidden on Menu Pricing (save to apply)" : "Set visible on Menu Pricing (save to apply)"}
+                        title={draft.active ? "Visible: click to hide, then Save Changes" : "Hidden: click to show, then Save Changes"}
+                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-black/20 bg-white text-black disabled:opacity-50">
+                        {draft.active ? <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                          : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l18 18M10.5 5.1A11 11 0 0 1 12 5c6 0 10 7 10 7a16 16 0 0 1-3 3.6M6.3 6.3C3.6 8.1 2 12 2 12s4 7 10 7c1.5 0 2.9-.4 4.1-1.1"/></svg>}
+                      </button>
+                      <button type="button" disabled={saving || actionBusy !== null}
+                        onClick={async () => {
+                          if (!editing) return;
+                          await deleteItem(editing);
+                        }}
+                        aria-label="Delete recipe menu item" title="Delete menu item"
+                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-red-300 bg-white text-red-700 disabled:opacity-50">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <label className="min-w-0 text-left">
+                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">POS NAME</span>
+                    <input disabled value="" placeholder="POS Name" title="POS Name (database field not yet configured)" className="w-full rounded-[8px] border border-[#aaa] bg-gray-50 px-3 py-3 text-left text-black" />
                   </label>
 
-                  <label className="lg:col-span-3">
-                    <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">COVER SECTION</span>
-                    <select value={draft.cover_section_id} onChange={(e) => setDraft({ ...draft, cover_section_id: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black">
-                      <option value="">SELECT</option>
-                      {(menuData?.cover_sections ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                    </select>
-                  </label>
-
-                  <label className="lg:col-span-3">
-                    <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">SELLING PRICE USD</span>
+                  <label className="min-w-0 text-left">
+                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">SELLING PRICE USD</span>
                     <input value={draft.sp_usd} onChange={(e) => setDraft({ ...draft, sp_usd: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-black text-black" />
                   </label>
 
-                  <label className="lg:col-span-2">
-                    <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">RECIPE FACTOR</span>
-                    <input value={draft.recipe_factor} onChange={(e) => setDraft({ ...draft, recipe_factor: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-black text-black" />
-                  </label>
+
                 </div>
               </section>
 
-              <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <section className="overflow-x-auto">
+                <div className="grid min-w-[1080px] grid-cols-6 gap-2">
                 {[
-                  ["SALE PRICE", moneyLbp(salePriceLbp), draft.sp_usd ? moneyUsd(Number(draft.sp_usd)) : "—"],
-                  ["TOTAL COST", moneyLbp(totalCost), "LIVE RECIPE COST"],
-                  ["FOOD COST", pct(foodCost), "COST ÷ SELLING PRICE"],
-                  ["NET PROFIT", moneyLbp(profit), `${pct(margin)} MARGIN`],
+                  ["SELLING PRICE", draft.sp_usd !== "" && draft.sp_usd != null ? moneyUsd(Number(draft.sp_usd)) : "—", moneyLbp(salePriceLbp)],
+                  ["TOTAL COST", displayUsd(totalCost), moneyLbp(totalCost)],
+                  ["UTILITY COST", displayUsd(utilityCostLbp), moneyLbp(utilityCostLbp)],
+                  ["FOOD COST %", pct(foodCost), ""],
+                  ["NET PROFIT", displayUsd(profit), moneyLbp(profit)],
+                  ["MARGIN PROFIT %", pct(margin), ""],
                 ].map(([label, value, note]) => (
-                  <div key={label} className="rounded-[12px] border border-[#c9c9c9] bg-white p-4">
-                    <div className="text-[10px] font-black uppercase text-[#444]">{label}</div>
-                    <div className="mt-2 text-[20px] font-black text-black">{value}</div>
-                    <div className="mt-1 text-[10px] font-semibold text-[#666]">{note}</div>
+                  <div key={label} className="min-w-0 rounded-[12px] border border-[#c9c9c9] bg-white p-3 text-left">
+                    <div className="text-left text-[10px] font-black uppercase text-[#444]">{label}</div>
+                    <div className={`mt-2 break-words text-left text-[18px] font-black ${label === "FOOD COST %" ? foodCostTone(foodCost) : label === "MARGIN PROFIT %" && margin != null ? foodCostTone(1 - margin) : "text-black"}`}>{value}</div>
+                    {note ? <div className="mt-1 text-left text-[10px] font-semibold text-[#666]">{note}</div> : null}
                   </div>
                 ))}
+                </div>
               </section>
 
               {recipeDraft ? (
                 <>
-                  <section className="rounded-[14px] border border-[#c9c9c9] bg-white p-4">
-                    <div className="grid gap-3 sm:grid-cols-4">
-                      <label>
-                        <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">RECIPE NAME</span>
-                        <input value={recipeDraft.name} onChange={(e) => setRecipeDraft({ ...recipeDraft, name: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black" />
-                      </label>
-
-                      <label>
-                        <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">YIELD QTY</span>
-                        <input value={recipeDraft.yield_qty} onChange={(e) => setRecipeDraft({ ...recipeDraft, yield_qty: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 text-black" />
-                      </label>
-
-                      <label>
-                        <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">YIELD UNIT</span>
-                        <input value={recipeDraft.yield_unit} onChange={(e) => setRecipeDraft({ ...recipeDraft, yield_unit: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 text-black" />
-                      </label>
-
-                      <label>
-                        <span className="mb-1 block text-[10px] font-black uppercase text-[#444]">WASTE %</span>
-                        <input value={recipeDraft.waste_pct} onChange={(e) => setRecipeDraft({ ...recipeDraft, waste_pct: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 text-black" />
-                      </label>
+                  {!recipeDraft.id && (
+                    <p className="rounded-lg border border-black/15 bg-white px-4 py-2 text-xs text-black/75">
+                      No recipe was linked to this menu item. Add its ingredients below, then Save Changes to create and link the recipe.
+                    </p>
+                  )}
+                  {renderLineTable({ title: "INGREDIENTS", lines: ingredientsWithIndex })}
+                  {renderLineTable({ title: "UTILITY COST", lines: utilityWithIndex, utilityMode: true })}
+                  {availableUtilities.length > 0 && (
+                    <div className="rounded-xl border border-black/15 bg-white px-4 py-3">
+                      <div className="mb-2 text-[11px] font-black uppercase">Available utilities ({availableUtilities.length})</div>
+                      <p className="mb-3 text-[11px] text-black/60">All remaining utilities are listed below. Add one to this recipe at QTY 1. Nothing is added to costing until you select Add Utility and save.</p>
+                      <div className="flex flex-wrap gap-2">
+                        {availableUtilities.map((utility: Row) => (
+                          <button key={utility.id} type="button"
+                            onClick={() => addSpecificUtility(utility.id)}
+                            className="rounded-md border border-black/20 bg-white px-3 py-2 text-[11px] font-bold text-black hover:bg-black hover:text-white"
+                            title={`Add ${utility.name} at QTY 1`}>
+                            + {utility.name}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </section>
-
-                  <LineTable title="INGREDIENTS" lines={ingredientsWithIndex} />
-                  <LineTable title="UTILITY & PREP COST" lines={utilityWithIndex} utilityMode />
+                  )}
                 </>
               ) : null}
             </div>

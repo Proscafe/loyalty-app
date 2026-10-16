@@ -1,139 +1,67 @@
 import { NextResponse } from "next/server";
-import { requireBoAdminApi } from "@/lib/bo/auth";
+import { requireBoAdminDb, boError, numberOrNull } from "@/lib/bo/api";
 import { createBoEngine, loadBoSnapshot } from "@/lib/bo/costing";
 
-function n(v: unknown) {
-  if (v === null || v === undefined || v === "") return null;
-  const x = Number(v);
-  return Number.isFinite(x) ? x : null;
-}
-
 export async function GET() {
-  const { supabase, error } = await requireBoAdminApi();
-  if (error) return error;
-
+  const auth = await requireBoAdminDb();
+  if (auth.error || !auth.admin) return auth.error;
   try {
-    const snapshot = await loadBoSnapshot(supabase);
+    const snapshot = await loadBoSnapshot(auth.admin);
     const engine = createBoEngine(snapshot);
-
     return NextResponse.json({
       items: snapshot.menuItems.map((row: any) => engine.menuCost(row)),
-      recipes: snapshot.recipes
-        .filter((row: any) => row.kind === "menu")
-        .map((row: any) => ({ id: row.id, name: row.name, menu_category_id: row.menu_category_id })),
+      recipes: snapshot.recipes.filter((row: any) => row.kind === "menu").map((row: any) => ({ id: row.id, name: row.name, menu_category_id: row.menu_category_id })),
       categories: snapshot.menuCategories,
       cover_sections: snapshot.coverSections,
       usd_lbp_rate: engine.rate,
       threshold: engine.threshold,
     });
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Unable to load menu costing." },
-      { status: 500 },
-    );
-  }
+  } catch (error) { return boError(error, "Unable to load menu."); }
 }
 
-export async function POST(request: Request) {
-  const { supabase, error } = await requireBoAdminApi();
-  if (error) return error;
+async function saveMenuItem(request: Request) {
+  const auth = await requireBoAdminDb();
+  if (auth.error || !auth.admin) return auth.error;
+  try {
+    const body = await request.json();
+    const id = numberOrNull(body?.id);
+    const name = String(body?.name ?? "").trim();
+    if (!name) return NextResponse.json({ error: "Menu item name is required." }, { status: 400 });
 
-  const body = await request.json();
-  const name = String(body?.name ?? "").trim();
-
-  if (!name) {
-    return NextResponse.json({ error: "Menu item name is required." }, { status: 400 });
-  }
-
-  const { data, error: insertError } = await supabase
-    .from("bo_menu_items")
-    .insert({
+    const payload = {
       name,
-      menu_category_id: n(body?.menu_category_id),
-      cover_section_id: n(body?.cover_section_id),
-      cover_sort: n(body?.cover_sort),
-      recipe_id: n(body?.recipe_id),
-      recipe_factor: n(body?.recipe_factor) ?? 1,
-      sp_usd: n(body?.sp_usd),
-      reference_cost_note: String(body?.reference_cost_note ?? "").trim() || null,
-      active: body?.active === false ? false : true,
-    })
-    .select("id")
-    .single();
+      menu_category_id: numberOrNull(body?.menu_category_id),
+      cover_section_id: numberOrNull(body?.cover_section_id),
+      recipe_id: numberOrNull(body?.recipe_id),
+      recipe_factor: numberOrNull(body?.recipe_factor) ?? 1,
+      sp_usd: numberOrNull(body?.sp_usd),
+      active: body?.active !== false,
+    };
 
-  if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
-  }
+    if (id) {
+      const { data, error } = await auth.admin.from("bo_menu_items").update({ ...payload, updated_at: new Date().toISOString() }).eq("id", id).select("*").maybeSingle();
+      if (error) throw error;
+      if (!data) return NextResponse.json({ error: "Menu item not found." }, { status: 404 });
+      return NextResponse.json({ ok: true, item: data });
+    }
 
-  return NextResponse.json({ id: data.id });
+    const { data, error } = await auth.admin.from("bo_menu_items").insert(payload).select("*").single();
+    if (error) throw error;
+    return NextResponse.json({ ok: true, item: data });
+  } catch (error) { return boError(error, "Unable to save menu item."); }
 }
 
-export async function PUT(request: Request) {
-  const { supabase, error } = await requireBoAdminApi();
-  if (error) return error;
-
-  const body = await request.json();
-  const id = Number(body?.id);
-  const name = String(body?.name ?? "").trim();
-
-  if (!Number.isInteger(id) || id <= 0 || !name) {
-    return NextResponse.json({ error: "Invalid menu item." }, { status: 400 });
-  }
-
-  const { data: old } = await supabase
-    .from("bo_menu_items")
-    .select("sp_usd")
-    .eq("id", id)
-    .maybeSingle();
-
-  const row = {
-    name,
-    menu_category_id: n(body?.menu_category_id),
-    cover_section_id: n(body?.cover_section_id),
-    cover_sort: n(body?.cover_sort),
-    recipe_id: n(body?.recipe_id),
-    recipe_factor: n(body?.recipe_factor) ?? 1,
-    sp_usd: n(body?.sp_usd),
-    reference_cost_note: String(body?.reference_cost_note ?? "").trim() || null,
-    active: body?.active === false ? false : true,
-    updated_at: new Date().toISOString(),
-  };
-
-  const { error: updateError } = await supabase
-    .from("bo_menu_items")
-    .update(row)
-    .eq("id", id);
-
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
-
-  if (old && Number(old.sp_usd ?? 0) !== Number(row.sp_usd ?? 0)) {
-    await supabase.from("bo_menu_price_history").insert({
-      menu_item_id: id,
-      old_sp_usd: old.sp_usd,
-      new_sp_usd: row.sp_usd,
-    });
-  }
-
-  return NextResponse.json({ id });
-}
+export async function POST(request: Request) { return saveMenuItem(request); }
+export async function PUT(request: Request) { return saveMenuItem(request); }
+export async function PATCH(request: Request) { return saveMenuItem(request); }
 
 export async function DELETE(request: Request) {
-  const { supabase, error } = await requireBoAdminApi();
-  if (error) return error;
-
-  const url = new URL(request.url);
-  const id = Number(url.searchParams.get("id"));
-
-  const { error: deleteError } = await supabase
-    .from("bo_menu_items")
-    .delete()
-    .eq("id", id);
-
-  if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ deleted: id });
+  const auth = await requireBoAdminDb();
+  if (auth.error || !auth.admin) return auth.error;
+  try {
+    const id = Number(new URL(request.url).searchParams.get("id"));
+    const { error } = await auth.admin.from("bo_menu_items").delete().eq("id", id);
+    if (error) throw error;
+    return NextResponse.json({ ok: true, deleted: id });
+  } catch (error) { return boError(error, "Unable to delete menu item."); }
 }

@@ -23,54 +23,52 @@ function nullable(value: unknown) {
   return Number.isFinite(x) ? x : null;
 }
 
+// Load large recipe-line tables in pages; keep the original queries for all other tables.
+async function readRecipeLines(supabase: any): Promise<AnyRow[]> {
+  const rows: AnyRow[] = [];
+  const size = 500;
+  for (let offset = 0; ; offset += size) {
+    const result = await supabase.from("bo_recipe_lines").select("*")
+      .order("sort").order("id").range(offset, offset + size - 1);
+    if (result.error) throw new Error(`bo_recipe_lines: ${result.error.message}`);
+    const page = result.data ?? [];
+    rows.push(...page);
+    if (page.length < size) return rows;
+  }
+}
+
 export async function loadBoSnapshot(supabase: any): Promise<BoSnapshot> {
-  const [
-    settingsResult,
-    ingredientResult,
-    utilityResult,
-    utilityLinesResult,
-    recipeResult,
-    recipeLinesResult,
-    menuResult,
-    menuCategoriesResult,
-    coverSectionsResult,
-  ] = await Promise.all([
+  const [settingsResult, ingredientResult, utilityResult, utilityLinesResult,
+    recipeResult, recipeLines, menuResult, menuCategoriesResult, coverSectionsResult] = await Promise.all([
     supabase.from("bo_settings").select("key,value"),
     supabase.from("bo_ingredients").select("*").order("sort").order("id"),
     supabase.from("bo_utilities").select("*").order("sort").order("id"),
     supabase.from("bo_utility_count_lines").select("*").order("sort").order("id"),
     supabase.from("bo_recipes").select("*").order("sort").order("id"),
-    supabase.from("bo_recipe_lines").select("*").order("sort").order("id"),
+    readRecipeLines(supabase),
     supabase.from("bo_menu_items").select("*").order("sort").order("id"),
     supabase.from("bo_menu_categories").select("*").order("sort").order("id"),
     supabase.from("bo_cover_sections").select("*").order("sort").order("id"),
   ]);
-
-  for (const result of [
-    settingsResult,
-    ingredientResult,
-    utilityResult,
-    utilityLinesResult,
-    recipeResult,
-    recipeLinesResult,
-    menuResult,
-    menuCategoriesResult,
-    coverSectionsResult,
-  ]) {
-    if (result.error) throw new Error(result.error.message);
+  const named = [
+    ["bo_settings", settingsResult], ["bo_ingredients", ingredientResult],
+    ["bo_utilities", utilityResult], ["bo_utility_count_lines", utilityLinesResult],
+    ["bo_recipes", recipeResult], ["bo_menu_items", menuResult],
+    ["bo_menu_categories", menuCategoriesResult], ["bo_cover_sections", coverSectionsResult],
+  ] as const;
+  for (const [name, result] of named) {
+    if (result.error) throw new Error(`${name}: ${result.error.message}`);
   }
-
   const settings = Object.fromEntries(
     (settingsResult.data ?? []).map((row: AnyRow) => [row.key, String(row.value)]),
   );
-
   return {
     settings,
     ingredients: ingredientResult.data ?? [],
     utilities: utilityResult.data ?? [],
     utilityCountLines: utilityLinesResult.data ?? [],
     recipes: recipeResult.data ?? [],
-    recipeLines: recipeLinesResult.data ?? [],
+    recipeLines,
     menuItems: menuResult.data ?? [],
     menuCategories: menuCategoriesResult.data ?? [],
     coverSections: coverSectionsResult.data ?? [],
@@ -78,7 +76,8 @@ export async function loadBoSnapshot(supabase: any): Promise<BoSnapshot> {
 }
 
 export function createBoEngine(snapshot: BoSnapshot) {
-  const rate = n(snapshot.settings.usd_lbp_rate, 90000);
+  const configuredRate = n(snapshot.settings.usd_lbp_rate, 90000);
+  const rate = configuredRate > 0 ? configuredRate : 90000;
   const threshold = n(snapshot.settings.food_cost_threshold, 0.4);
   const adjustment = n(snapshot.settings.price_adjust_pct, 0.1);
 
@@ -98,12 +97,19 @@ export function createBoEngine(snapshot: BoSnapshot) {
     countLinesByUtility.set(id, [...(countLinesByUtility.get(id) ?? []), line]);
   }
 
+  // Price is the purchase PACK price. Use the same unit-cost formula as
+  // /api/bo/fnb so Recipes, Production and Menu Pricing agree.
   function ingredientPrice(id: number | null | undefined) {
     if (!id) return null;
     const row = ingredients.get(Number(id));
     const price = nullable(row?.price);
     if (price === null) return null;
-    return row?.price_currency === "LBP" ? price : price * rate;
+    const priceLbp = row?.price_currency === "LBP" ? price : price * rate;
+    const packSize = nullable(row?.pack_size);
+    const purchaseQty = nullable(row?.purchase_qty);
+    const divisor = packSize !== null && packSize > 0 ? packSize
+      : purchaseQty !== null && purchaseQty > 0 ? purchaseQty : 1;
+    return priceLbp / divisor;
   }
 
   function utilityCost(id: number | null | undefined) {
@@ -181,7 +187,6 @@ export function createBoEngine(snapshot: BoSnapshot) {
 
     for (const line of linesByRecipe.get(id) ?? []) {
       const qty = nullable(line.qty);
-      const factor = nullable(line.factor) ?? 1;
       let sourceCost: number | null = null;
       let sourceName = line.label || "Line";
       let sourceUnit: string | null = null;
@@ -227,7 +232,7 @@ export function createBoEngine(snapshot: BoSnapshot) {
       }
 
       const lineCost =
-        qty === null || sourceCost === null ? null : qty * factor * sourceCost;
+        qty === null || sourceCost === null ? null : qty * sourceCost;
 
       if (sourceCost === null) {
         partial = true;
@@ -289,12 +294,11 @@ export function createBoEngine(snapshot: BoSnapshot) {
   function menuCost(item: AnyRow) {
     const spUsd = nullable(item.sp_usd);
     const spLbp = spUsd === null ? null : spUsd * rate;
-    const factor = nullable(item.recipe_factor) ?? 1;
     const recipe = item.recipe_id ? recipeCost(Number(item.recipe_id)) : null;
     const cost =
       recipe?.unitCost === null || recipe?.unitCost === undefined
         ? null
-        : recipe.unitCost * factor;
+        : recipe.unitCost;
 
     const foodCostPct =
       cost !== null && spLbp !== null && spLbp > 0 ? cost / spLbp : null;

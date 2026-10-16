@@ -1,128 +1,94 @@
 import { NextResponse } from "next/server";
-import { requireBoAdminApi } from "@/lib/bo/auth";
-
-function n(v: unknown) {
-  if (v === null || v === undefined || v === "") return null;
-  const x = Number(v);
-  return Number.isFinite(x) ? x : null;
-}
+import { requireBoAdminDb, boError, numberOrNull } from "@/lib/bo/api";
 
 export async function GET() {
-  const { supabase, error } = await requireBoAdminApi();
-  if (error) return error;
+  const auth = await requireBoAdminDb();
+  if (auth.error || !auth.admin) return auth.error;
 
-  const [{ data: rateRow }, ingredients, categories, suppliers] = await Promise.all([
-    supabase.from("bo_settings").select("value").eq("key", "usd_lbp_rate").maybeSingle(),
-    supabase.from("bo_ingredients").select("*,bo_ingredient_categories(name),bo_suppliers(name)").order("sort").order("id"),
-    supabase.from("bo_ingredient_categories").select("id,name,sort").order("sort").order("name"),
-    supabase.from("bo_suppliers").select("id,name").order("name"),
-  ]);
+  try {
+    const admin = auth.admin;
+    const [ingredientsResult, categoriesResult, suppliersResult, settingsResult] = await Promise.all([
+      admin.from("bo_ingredients").select("*").order("sort").order("id"),
+      admin.from("bo_ingredient_categories").select("*").order("sort").order("id"),
+      admin.from("bo_suppliers").select("*").order("name"),
+      admin.from("bo_settings").select("key,value"),
+    ]);
 
-  if (ingredients.error || categories.error || suppliers.error) {
-    return NextResponse.json(
-      { error: ingredients.error?.message || categories.error?.message || suppliers.error?.message },
-      { status: 500 },
-    );
+    if (ingredientsResult.error) throw ingredientsResult.error;
+    if (categoriesResult.error) throw categoriesResult.error;
+    if (suppliersResult.error) throw suppliersResult.error;
+    if (settingsResult.error) throw settingsResult.error;
+
+    const settings = Object.fromEntries((settingsResult.data ?? []).map((row: any) => [row.key, row.value]));
+    const rate = Number(settings.usd_lbp_rate ?? 90000) || 90000;
+    const categoryMap = new Map((categoriesResult.data ?? []).map((row: any) => [Number(row.id), row.name]));
+    const supplierMap = new Map((suppliersResult.data ?? []).map((row: any) => [Number(row.id), row.name]));
+
+    const ingredients = (ingredientsResult.data ?? []).map((row: any) => {
+      const price = numberOrNull(row.price);
+      const priceLbp = price === null ? null : row.price_currency === "LBP" ? price : price * rate;
+      const packSize = numberOrNull(row.pack_size);
+      const purchaseQty = numberOrNull(row.purchase_qty);
+      let costPerConsumptionUnit: number | null = priceLbp;
+      if (priceLbp !== null && packSize && packSize > 0) costPerConsumptionUnit = priceLbp / packSize;
+      else if (priceLbp !== null && purchaseQty && purchaseQty > 0) costPerConsumptionUnit = priceLbp / purchaseQty;
+
+      return {
+        ...row,
+        category_name: categoryMap.get(Number(row.category_id)) ?? null,
+        supplier_name: supplierMap.get(Number(row.supplier_id)) ?? null,
+        price_usd: price === null ? null : row.price_currency === "USD" ? price : price / rate,
+        price_lbp: priceLbp,
+        cost_per_consumption_unit: costPerConsumptionUnit,
+      };
+    });
+
+    return NextResponse.json({ ingredients, categories: categoriesResult.data ?? [], suppliers: suppliersResult.data ?? [], usd_lbp_rate: rate });
+  } catch (error) {
+    return boError(error, "Unable to load F&B.");
   }
-
-  const rate = Number(rateRow?.value ?? 90000) || 90000;
-  const rows = (ingredients.data ?? []).map((row: any) => {
-    const price = n(row.price);
-    const qty = n(row.purchase_qty);
-    const pack = n(row.pack_size);
-    const currency = row.price_currency === "LBP" ? "LBP" : "USD";
-    const priceLbp = price === null ? null : currency === "LBP" ? price : price * rate;
-    const priceUsd = price === null ? null : currency === "USD" ? price : price / rate;
-
-    return {
-      ...row,
-      category_name: row.bo_ingredient_categories?.name ?? null,
-      supplier_name: row.bo_suppliers?.name ?? null,
-      price_lbp: priceLbp,
-      price_usd: priceUsd,
-      total_price_lbp: priceLbp === null ? null : priceLbp * (qty ?? 1),
-      cost_per_consumption_unit:
-        priceLbp === null || pack === null || pack <= 0 ? null : priceLbp / pack,
-    };
-  });
-
-  return NextResponse.json({
-    ingredients: rows,
-    categories: categories.data ?? [],
-    suppliers: suppliers.data ?? [],
-    usd_lbp_rate: rate,
-  });
 }
 
 export async function POST(request: Request) {
-  const { supabase, error } = await requireBoAdminApi();
-  if (error) return error;
+  const auth = await requireBoAdminDb();
+  if (auth.error || !auth.admin) return auth.error;
 
-  const body = await request.json();
-  const name = String(body?.name ?? "").trim();
+  try {
+    const admin = auth.admin;
+    const body = await request.json();
+    const name = String(body?.name ?? "").trim();
+    if (!name) return NextResponse.json({ error: "Ingredient name is required." }, { status: 400 });
 
-  if (!name) {
-    return NextResponse.json({ error: "Item name is required." }, { status: 400 });
-  }
+    let supplierId = numberOrNull(body?.supplier_id);
+    const newSupplier = String(body?.new_supplier ?? "").trim();
 
-  let supplierId = n(body?.supplier_id);
-  const newSupplier = String(body?.new_supplier ?? "").trim();
-
-  if (newSupplier) {
-    const { data: existing } = await supabase
-      .from("bo_suppliers")
-      .select("id")
-      .ilike("name", newSupplier)
-      .maybeSingle();
-
-    if (existing?.id) {
-      supplierId = Number(existing.id);
-    } else {
-      const { data: added, error: supplierError } = await supabase
-        .from("bo_suppliers")
-        .insert({ name: newSupplier })
-        .select("id")
-        .single();
-
-      if (supplierError) {
-        return NextResponse.json({ error: supplierError.message }, { status: 500 });
+    if (newSupplier) {
+      const { data: existing } = await admin.from("bo_suppliers").select("id").ilike("name", newSupplier).limit(1).maybeSingle();
+      if (existing?.id) supplierId = Number(existing.id);
+      else {
+        const { data: created, error: supplierError } = await admin.from("bo_suppliers").insert({ name: newSupplier }).select("id").single();
+        if (supplierError) throw supplierError;
+        supplierId = Number(created.id);
       }
-
-      supplierId = Number(added.id);
     }
+
+    const { data, error } = await admin.from("bo_ingredients").insert({
+      name,
+      category_id: numberOrNull(body?.category_id),
+      purchase_unit: String(body?.purchase_unit ?? "").trim() || null,
+      purchase_qty: numberOrNull(body?.purchase_qty),
+      price: numberOrNull(body?.price),
+      price_currency: body?.price_currency === "LBP" ? "LBP" : "USD",
+      supplier_id: supplierId,
+      brand: String(body?.brand ?? "").trim() || null,
+      pack_size: numberOrNull(body?.pack_size),
+      consumption_unit: String(body?.consumption_unit ?? "").trim() || null,
+      notes: String(body?.notes ?? "").trim() || null,
+    }).select("*").single();
+
+    if (error) throw error;
+    return NextResponse.json({ ok: true, ingredient: data });
+  } catch (error) {
+    return boError(error, "Unable to add ingredient.");
   }
-
-  const row = {
-    category_id: n(body?.category_id),
-    name,
-    purchase_unit: String(body?.purchase_unit ?? "").trim() || null,
-    purchase_qty: n(body?.purchase_qty),
-    price: n(body?.price),
-    price_currency: body?.price_currency === "LBP" ? "LBP" : "USD",
-    supplier_id: supplierId,
-    brand: String(body?.brand ?? "").trim() || null,
-    pack_size: n(body?.pack_size),
-    consumption_unit: String(body?.consumption_unit ?? "").trim() || null,
-    notes: String(body?.notes ?? "").trim() || null,
-  };
-
-  const { data, error: insertError } = await supabase
-    .from("bo_ingredients")
-    .insert(row)
-    .select("id")
-    .single();
-
-  if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
-  }
-
-  await supabase.from("bo_ingredient_price_history").insert({
-    ingredient_id: data.id,
-    old_price: null,
-    new_price: row.price,
-    currency: row.price_currency,
-    source: "created",
-  });
-
-  return NextResponse.json({ id: data.id });
 }
