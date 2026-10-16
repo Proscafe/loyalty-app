@@ -107,7 +107,7 @@ export async function GET(request: Request) {
       .filter((row: any) => !kind || row.kind === kind)
       .map((row: any) => {
         const costing = engine.recipeCost(Number(row.id));
-        const costByLineId = new Map(
+        const costByLineId = new Map<number, any>(
           (costing.lines ?? []).map((line: any) => [Number(line.id), line]),
         );
 

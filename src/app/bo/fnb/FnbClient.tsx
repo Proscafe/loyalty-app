@@ -45,25 +45,25 @@ export function FnbClient() {
 
   useEffect(() => { void load(); }, []);
 
-  const brands = useMemo(
+  const brands = useMemo<string[]>(
     () =>
       Array.from(
-        new Set(
+        new Set<string>(
           (data?.ingredients ?? [])
             .map((row: Row) => String(row.brand ?? "").trim())
-            .filter(Boolean),
+            .filter((value: string) => Boolean(value)),
         ),
       ).sort(),
     [data],
   );
 
-  const units = useMemo(
+  const units = useMemo<string[]>(
     () =>
       Array.from(
-        new Set(
+        new Set<string>(
           (data?.ingredients ?? [])
             .map((row: Row) => String(row.purchase_unit ?? "").trim())
-            .filter(Boolean),
+            .filter((value: string) => Boolean(value)),
         ),
       ).sort(),
     [data],
