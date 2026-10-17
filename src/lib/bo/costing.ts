@@ -277,11 +277,13 @@ export function createBoEngine(snapshot: BoSnapshot) {
     }
 
     if (recipe.yield_mode === "sum_qty") {
-      yieldQty = (linesByRecipe.get(id) ?? []).reduce((sum, line) => {
-        if (!line.in_yield) return sum;
-        const qty = nullable(line.qty);
-        return sum + (qty ?? 0);
-      }, 0);
+      const included = (linesByRecipe.get(id) ?? []).filter((line) => line.in_yield === true);
+      // Legacy imports may have a manually saved production yield but no
+      // in_yield flags. Keep that saved yield instead of replacing it with 0.
+      // Do not add mixed ingredient units together to guess a production yield.
+      if (included.length) {
+        yieldQty = included.reduce((sum, line) => sum + (nullable(line.qty) ?? 0), 0);
+      }
     }
 
     // Legacy menu recipes may have sum_qty enabled but no lines marked in_yield.

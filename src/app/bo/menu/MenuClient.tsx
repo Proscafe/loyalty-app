@@ -432,8 +432,9 @@ export function MenuClient() {
       return;
     }
 
+    const copyName = `${String(row.name ?? "Recipe").trim()} (Copy)`;
     const nextDraft = {
-      name: row.name ?? "",
+      name: copyName,
       menu_category_id: row.menu_category_id ? String(row.menu_category_id) : "",
       cover_section_id: row.cover_section_id ? String(row.cover_section_id) : "",
       recipe_id: "",
@@ -441,11 +442,13 @@ export function MenuClient() {
       sp_usd: row.sp_usd ?? "",
       active: true, // Every newly created recipe is visible on Menu Pricing by default.
     };
-    setEditing(row);
+    // A copy is a NEW menu item, not an edit of the source item.
+    // Clearing the item ID is essential; clearing only recipe_id overwrites the original.
+    setEditing({ id: null, name: copyName, active: true });
     setDraft(nextDraft);
     setRecipeDraft({
       id: null,
-      name: String(sourceRecipe?.name || row.name || "New recipe"),
+      name: copyName,
       kind: "menu",
       menu_category_id: nextDraft.menu_category_id,
       yield_qty: sourceRecipe?.yield_qty ?? "1",
@@ -605,13 +608,20 @@ export function MenuClient() {
       const cost = line.sub_basis === "batch"
         ? asNumber(source?.ingredient_batch_cost_lbp ?? source?.costing?.ingredientBatchCost ?? fromFullRecipe?.costing?.ingredientBatchCost)
         : asNumber(source?.ingredient_unit_cost_lbp ?? source?.costing?.ingredientUnitCost ?? fromFullRecipe?.costing?.ingredientUnitCost);
-      // A missing cost means no usable yield or unresolved source costs in
-      // the linked recipe. Do not silently substitute full cost (utilities).
+      // A total production batch price cannot substitute for ingredients-only
+      // unit cost. Show why a missing ingredient cost cannot yet be calculated.
+      const issues: string[] = source?.costing?.issues ?? fromFullRecipe?.costing?.issues ?? [];
+      const reason = !source && !fromFullRecipe
+        ? "Linked recipe not found in Recipes API"
+        : cost === null && line.sub_basis !== "batch" && !(Number(source?.usable_yield) > 0)
+          ? "Missing valid saved production yield"
+          : cost === null ? (issues.join("; ") || "Ingredient-only source cost is unavailable") : "";
 
       return {
         name: source?.name ?? "SELECT PREP / SAUCE",
         unit: source?.yield_unit || "—",
         cost,
+        reason,
       };
     }
 
@@ -1056,7 +1066,7 @@ export function MenuClient() {
                     </td>
 
                     <td className="px-3 py-2 text-right font-black tabular-nums">
-                      {meta.cost === null || !(Number(menuData?.usd_lbp_rate) > 0) ? "—" : moneyUsd(meta.cost / Number(menuData.usd_lbp_rate))}
+                      <span title={line.line_type === "recipe" && meta.cost === null ? String((meta as Row).reason || "Linked recipe cost unavailable") : undefined} className={line.line_type === "recipe" && meta.cost === null ? "text-amber-700 underline decoration-dotted cursor-help" : ""}>{meta.cost === null || !(Number(menuData?.usd_lbp_rate) > 0) ? "—" : moneyUsd(meta.cost / Number(menuData.usd_lbp_rate))}</span>
                     </td>
 
                     <td className="px-3 py-2 text-right font-black tabular-nums">
@@ -1278,12 +1288,12 @@ export function MenuClient() {
                 <button type="button" key={row.id} onClick={() => startNewRecipeForItem(row)}
                   className="flex w-full items-center justify-between gap-3 border-b border-black/10 px-3 py-3 text-left text-sm hover:bg-gray-100 last:border-0">
                   <span className="font-semibold">{row.name}</span>
-                  <span className="shrink-0 text-xs text-black/50">{row.recipe_id ? "Copy existing recipe" : "Start empty recipe"}</span>
+                  <span className="shrink-0 text-xs text-black/50">{row.recipe_id ? "Create independent copy" : "Create new recipe"}</span>
                 </button>
               ))}
               {searchableMenuItems.length === 0 ? <p className="p-4 text-sm text-black/60">No matching menu items.</p> : null}
             </div>
-            <p className="mt-3 text-xs text-black/60">Select an item to copy its existing ingredients and utilities into a new recipe, type a new name, or start blank. New recipes are visible on Menu Pricing by default.</p>
+            <p className="mt-3 text-xs text-black/60">Select an existing item to create a separate copy with its own menu item and recipe IDs. Rename the copy before saving if needed. The original is not modified.</p>
           </div>
         </div>
       ) : null}
