@@ -53,6 +53,7 @@ export function RecipeManager({
   const [targetYield, setTargetYield] = useState("");
   const [yieldSaving, setYieldSaving] = useState(false);
   const [yieldSaved, setYieldSaved] = useState(false);
+  const [yieldCalcWarning, setYieldCalcWarning] = useState("");
   const [currency, setCurrency] = useState<"USD" | "LBP">("USD");
   const [collapsed, setCollapsed] = useState(false);
   const [sortColumn, setSortColumn] = useState<"name" | "yield" | "cost" | "items">("name");
@@ -237,6 +238,26 @@ export function RecipeManager({
   };
   const formatQty = (value: number | null) => value === null ? "—" : Number(value.toFixed(6)).toString();
   // Batch size is preview-only. No changes to the draft or saved quantities.
+
+  // Explicit estimation only: raw quantities may have different physical units.
+  // Do not silently overwrite the saved yield or modify ingredient quantities.
+  function calculateYieldFromQuantities() {
+    const lines: Row[] = draft?.lines || [];
+    const quantities = lines.map((line) => ({ qty: n(line.qty), unit: String(source(line).unit || "").trim().toUpperCase() }))
+      .filter((line): line is { qty: number; unit: string } => line.qty !== null && line.qty > 0);
+    if (!quantities.length) {
+      setError("Enter at least one positive ingredient quantity to calculate Total Yield.");
+      return;
+    }
+    const sum = quantities.reduce((acc, line) => acc + line.qty, 0);
+    const units = [...new Set(quantities.map(line => line.unit || "UNKNOWN"))];
+    setDraft((previous: Row | null) => previous ? { ...previous, yield_qty: Number(sum.toFixed(6)).toString(), yield_mode: "fixed" } : previous);
+    setYieldSaved(false);
+    setError("");
+    setYieldCalcWarning(units.length > 1
+      ? `Estimated sum only: Qty entries mix ${units.join(", ")}. Convert to the same unit and account for cooking loss before saving a finished yield.`
+      : "Qty sum is an estimate. Confirm the actual finished yield before saving.");
+  }
 
   // Persist yield separately so an existing batch yield can be corrected even
   // when an unrelated recipe-line picker is temporarily invalid.
@@ -444,52 +465,55 @@ export function RecipeManager({
 
             <div className="space-y-5 p-6">
               <section className="rounded-[14px] border border-[#c9c9c9] bg-white p-4">
-                <div className="grid gap-3 sm:grid-cols-4">
-                  <input
-                    required
-                    placeholder="RECIPE NAME"
-                    value={draft.name}
-                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                    className="rounded-[8px] border border-[#aaa] px-3 py-1.5 font-bold text-black sm:col-span-1"
-                  />
-                  <label className="flex flex-col gap-1 text-[10px] font-black uppercase text-black/70">
-                    TOTAL YIELD
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.2fr)_minmax(0,.85fr)_minmax(0,1fr)]">
+                  <label className="flex min-w-0 flex-col gap-1 text-[10px] font-black uppercase text-black/70">
+                    PRODUCTION NAME
                     <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      inputMode="decimal"
-                      aria-label="Total Yield"
-                      placeholder="0"
-                      value={draft.yield_qty}
-                      onChange={(e) => { setYieldSaved(false); setDraft({ ...draft, yield_qty: e.target.value, yield_mode: "fixed" }); }}
-                      className="w-full rounded-[8px] border border-[#aaa] bg-white px-3 py-2 text-[13px] font-bold text-black"
+                      required
+                      placeholder="RECIPE NAME"
+                      value={draft.name}
+                      onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                      className="min-h-[43px] w-full rounded-[8px] border border-[#aaa] px-3 py-2 text-[13px] font-bold text-black"
                     />
                   </label>
-                  <select
-                    aria-label="Yield unit"
-                    value={draft.yield_unit ?? ""}
-                    onChange={(e) => { setYieldSaved(false); setDraft({ ...draft, yield_unit: e.target.value, yield_mode: "fixed" }); }}
-                    className="rounded-[8px] border border-[#aaa] bg-white px-3 py-1.5 text-black"
-                  >
-                    <option value="">SELECT UNIT</option>
-                    {draft.yield_unit && !PRODUCTION_UNITS.includes(draft.yield_unit) && (
-                      <option value={draft.yield_unit}>{draft.yield_unit}</option>
-                    )}
-                    {PRODUCTION_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
-                  </select>
-                  {editing && (
-                    <div className="flex items-center gap-2 sm:col-span-2">
-                      <button type="button" onClick={() => void saveYieldOnly()} disabled={yieldSaving || saving}
-                        className="rounded-[8px] bg-black px-4 py-3 text-[11px] font-black uppercase text-white disabled:opacity-50">
-                        {yieldSaving ? "SAVING YIELD..." : "SAVE YIELD"}
+                  <label className="flex min-w-0 flex-col gap-1 text-[10px] font-black uppercase text-black/70">
+                    TOTAL YIELD
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        aria-label="Total Yield"
+                        placeholder="0"
+                        value={draft.yield_qty}
+                        onChange={(e) => { setYieldSaved(false); setYieldCalcWarning(""); setDraft({ ...draft, yield_qty: e.target.value, yield_mode: "fixed" }); }}
+                        className="min-h-[43px] min-w-0 w-full flex-1 rounded-[8px] border border-[#aaa] bg-white px-3 py-2 text-left text-[13px] font-bold text-black"
+                      />
+                      <button type="button" onClick={calculateYieldFromQuantities} title="Calculate total from Qty column (estimate)" aria-label="Calculate Total Yield from Qty" className="flex h-[43px] w-[43px] shrink-0 items-center justify-center rounded-[8px] border border-black/20 bg-white text-black hover:bg-gray-100">
+                        <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8M8 10h2M14 10h2M8 14h2M14 14h2M8 18h2M14 18h2"/></svg>
                       </button>
-                      {yieldSaved && <span className="text-[11px] font-bold text-green-700" role="status">Yield saved</span>}
-                    </div>
-                  )}
-                  <select aria-label="Production type" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })} className="rounded-[8px] border border-[#aaa] px-3 py-3 text-black">
-                    <option value="prep">PREPARATION</option><option value="sauce">SAUCE</option>
-                  </select>
+                      <button type="button" onClick={() => void saveYieldOnly()} disabled={!editing || yieldSaving || saving} title={editing ? "Save Total Yield" : "Save production first"} aria-label="Save Total Yield" className="flex h-[43px] w-[43px] shrink-0 items-center justify-center rounded-[8px] bg-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40">
+                        {yieldSaving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>}
+                      </button>
+                    </span>
+                    {yieldSaved && <span role="status" className="text-[10px] font-bold normal-case text-green-700">Yield saved</span>}
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-1 text-[10px] font-black uppercase text-black/70">
+                    YIELD UNIT
+                    <select aria-label="Yield unit" value={draft.yield_unit ?? ""} onChange={(e) => { setYieldSaved(false); setYieldCalcWarning(""); setDraft({ ...draft, yield_unit: e.target.value, yield_mode: "fixed" }); }} className="min-h-[43px] w-full rounded-[8px] border border-[#aaa] bg-white px-3 py-2 text-[13px] text-black">
+                      <option value="">SELECT UNIT</option>
+                      {draft.yield_unit && !PRODUCTION_UNITS.includes(draft.yield_unit) && <option value={draft.yield_unit}>{draft.yield_unit}</option>}
+                      {PRODUCTION_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-1 text-[10px] font-black uppercase text-black/70">
+                    PRODUCTION TYPE
+                    <select aria-label="Production type" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })} className="min-h-[43px] w-full rounded-[8px] border border-[#aaa] bg-white px-3 py-2 text-[13px] text-black">
+                      <option value="prep">PREPARATION</option><option value="sauce">SAUCE</option>
+                    </select>
+                  </label>
+                  {yieldCalcWarning && <div role="status" className="rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-semibold normal-case text-amber-900 lg:col-span-4">{yieldCalcWarning}</div>}
                   <label className="sm:col-span-4 text-[11px] font-bold text-black/70">
                     NOTES
                     <textarea
@@ -609,7 +633,7 @@ export function RecipeManager({
                             </td>
 
                             <td className="p-2">
-                              <input value={line.qty} onChange={(e) => updateLine(index, { qty: e.target.value })} className="w-[84px] rounded-[7px] border border-[#aaa] px-2 py-2 text-right font-bold" />
+                              <input value={line.qty} onChange={(e) => updateLine(index, { qty: e.target.value })} className="w-[84px] rounded-[7px] border border-[#aaa] px-2 py-2 text-left font-bold" />
                             </td>
 
                             <td className="p-2 font-semibold text-[#555]">{meta.unit}</td>
