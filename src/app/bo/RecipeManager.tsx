@@ -51,7 +51,8 @@ export function RecipeManager({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [targetYield, setTargetYield] = useState("");
-  const [autoYield, setAutoYield] = useState(true);
+  const [yieldSaving, setYieldSaving] = useState(false);
+  const [yieldSaved, setYieldSaved] = useState(false);
   const [currency, setCurrency] = useState<"USD" | "LBP">("USD");
   const [collapsed, setCollapsed] = useState(false);
   const [sortColumn, setSortColumn] = useState<"name" | "yield" | "cost" | "items">("name");
@@ -113,7 +114,7 @@ export function RecipeManager({
       lines: [],
     });
     setTargetYield("");
-    setAutoYield(true);
+    setYieldSaved(false);
     setOpen(true);
     setError("");
   }
@@ -142,7 +143,7 @@ export function RecipeManager({
       })),
     });
     setTargetYield("");
-    setAutoYield(true);
+    setYieldSaved(false);
     setOpen(true);
     setError("");
   }
@@ -217,20 +218,15 @@ export function RecipeManager({
   function total(line: Row) {
     const meta = source(line);
     const qty = n(line.qty);
-    const factor = n(line.factor) ?? 1;
-
+    // The source cost is already per displayed consumption unit.
+    // Legacy recipe-line factor values must NOT multiply it again.
     if (meta.cost === null || qty === null) return null;
-    return meta.cost * qty * factor;
+    return meta.cost * qty;
   }
 
   const batchCost = (draft?.lines || []).reduce((sum: number, line: Row) => sum + (total(line) ?? 0), 0);
-  // Yield uses the sum of recipe ingredient quantities as requested.
-  // NOTE: mixed KG/L/PCS quantities are not a physical mass or volume.
-  // The user can override the value for the actual production yield.
-  const ingredientQtySum = (draft?.lines || []).reduce((sum: number, line: Row) => {
-    if (line.line_type !== "ingredient" && line.line_type !== "recipe") return sum;
-    return sum + (n(line.qty) ?? 0);
-  }, 0);
+  // Total Yield is the actual finished batch output, not the sum of raw inputs.
+  // Never infer it from mixed KG, L, POR and PCS input quantities.
   const originalYield = n(draft?.yield_qty);
   const requestedYield = n(targetYield);
   const scaleRatio = originalYield !== null && originalYield > 0 && requestedYield !== null && requestedYield > 0
@@ -242,16 +238,43 @@ export function RecipeManager({
   const formatQty = (value: number | null) => value === null ? "—" : Number(value.toFixed(6)).toString();
   // Batch size is preview-only. No changes to the draft or saved quantities.
 
-  // Auto-fill the yield from ingredient/preparation QTY values until manually overridden.
-  useEffect(() => {
-    if (!draft || !autoYield) return;
-    const current = n(draft.yield_qty);
-    if (current !== null && Math.abs(current - ingredientQtySum) < 0.0000001) return;
-    if ((draft?.lines || []).length === 0) return;
-    setDraft((prev: any) => prev ? { ...prev, yield_qty: formatQty(ingredientQtySum) } : prev);
-  }, [ingredientQtySum, autoYield, open]);
-
-
+  // Persist yield separately so an existing batch yield can be corrected even
+  // when an unrelated recipe-line picker is temporarily invalid.
+  async function saveYieldOnly() {
+    const recipeId = Number(editing?.id);
+    const yieldQty = n(draft?.yield_qty);
+    if (!Number.isSafeInteger(recipeId) || recipeId <= 0) {
+      setError("Save the new production first, then you can update its yield separately.");
+      return;
+    }
+    if (yieldQty === null || yieldQty <= 0) {
+      setError("Total Yield must be a number greater than zero.");
+      return;
+    }
+    setYieldSaving(true);
+    setYieldSaved(false);
+    setError("");
+    try {
+      const response = await fetch("/api/bo/recipes/yield", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: recipeId,
+          yield_qty: yieldQty,
+          yield_unit: draft.yield_unit,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to save Total Yield.");
+      setDraft((prev: Row | null) => prev ? { ...prev, yield_qty: result.yield_qty, yield_unit: result.yield_unit, yield_mode: "fixed" } : prev);
+      setYieldSaved(true);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save Total Yield.");
+    } finally {
+      setYieldSaving(false);
+    }
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -262,7 +285,7 @@ export function RecipeManager({
       const res = await fetch("/api/bo/recipes", {
         method: editing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, id: editing?.id }),
+        body: JSON.stringify({ ...draft, yield_mode: "fixed", id: editing?.id }),
       });
 
       const json = await res.json();
@@ -439,14 +462,14 @@ export function RecipeManager({
                       aria-label="Total Yield"
                       placeholder="0"
                       value={draft.yield_qty}
-                      onChange={(e) => { setAutoYield(false); setDraft({ ...draft, yield_qty: e.target.value }); }}
+                      onChange={(e) => { setYieldSaved(false); setDraft({ ...draft, yield_qty: e.target.value, yield_mode: "fixed" }); }}
                       className="w-full rounded-[8px] border border-[#aaa] bg-white px-3 py-2 text-[13px] font-bold text-black"
                     />
                   </label>
                   <select
                     aria-label="Yield unit"
                     value={draft.yield_unit ?? ""}
-                    onChange={(e) => setDraft({ ...draft, yield_unit: e.target.value })}
+                    onChange={(e) => { setYieldSaved(false); setDraft({ ...draft, yield_unit: e.target.value, yield_mode: "fixed" }); }}
                     className="rounded-[8px] border border-[#aaa] bg-white px-3 py-1.5 text-black"
                   >
                     <option value="">SELECT UNIT</option>
@@ -455,6 +478,15 @@ export function RecipeManager({
                     )}
                     {PRODUCTION_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
                   </select>
+                  {editing && (
+                    <div className="flex items-center gap-2 sm:col-span-2">
+                      <button type="button" onClick={() => void saveYieldOnly()} disabled={yieldSaving || saving}
+                        className="rounded-[8px] bg-black px-4 py-3 text-[11px] font-black uppercase text-white disabled:opacity-50">
+                        {yieldSaving ? "SAVING YIELD..." : "SAVE YIELD"}
+                      </button>
+                      {yieldSaved && <span className="text-[11px] font-bold text-green-700" role="status">Yield saved</span>}
+                    </div>
+                  )}
                   <select aria-label="Production type" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })} className="rounded-[8px] border border-[#aaa] px-3 py-3 text-black">
                     <option value="prep">PREPARATION</option><option value="sauce">SAUCE</option>
                   </select>
