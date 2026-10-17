@@ -629,6 +629,25 @@ export function MenuClient() {
     .map((line: Row, index: number) => ({ line, index }))
     .filter(({ line }) => line.line_type === "utility" || line.line_type === "fixed");
 
+  // Legacy workbook rows have a label but no source ID. They must remain
+  // visible until a user explicitly repairs or removes them.
+  const unresolvedWithIndex = recipeLines
+    .map((line: Row, index: number) => ({ line, index }))
+    .filter(({ line }) => !["ingredient", "recipe", "utility", "fixed"].includes(String(line.line_type)));
+
+  function repairUnresolved(index: number, type: "ingredient" | "recipe" | "utility" | "fixed") {
+    updateLine(index, {
+      line_type: type,
+      section: type === "utility" || type === "fixed" ? "utility" : "primary",
+      ingredient_id: "",
+      sub_recipe_id: "",
+      utility_id: "",
+      fixed_price: "",
+      // Preserve original source labels/formulas and notes for reference.
+    });
+    setError("");
+  }
+
   // Show the entire utility catalog, without modifying the saved recipe.
   // Utilities previously removed from this recipe remain removed until explicitly added.
   const assignedUtilityIds = new Set(
@@ -752,6 +771,12 @@ export function MenuClient() {
 
     try {
       if (!String(draft.name || "").trim()) throw new Error("Enter the recipe/item name before saving.");
+      const unresolved = (recipeDraft?.lines ?? []).filter((line: Row) =>
+        !["ingredient", "recipe", "utility", "fixed"].includes(String(line.line_type))
+      );
+      if (unresolved.length) {
+        throw new Error(`${unresolved.length} imported unresolved item(s) need attention. In UNRESOLVED ITEMS, link each item to a valid source or explicitly remove it before saving. No rows were deleted.`);
+      }
       if (!recipeDraft?.lines?.length && !editing?.id) throw new Error("Add at least one ingredient or utility before saving a new recipe.");
       let menuItemId = Number(editing?.id) || null;
       if (!menuItemId) {
@@ -1372,6 +1397,66 @@ export function MenuClient() {
                   )}
                   {renderLineTable({ title: "INGREDIENTS", lines: ingredientsWithIndex })}
                   {renderLineTable({ title: "UTILITY COST", lines: utilityWithIndex, utilityMode: true })}
+                  {unresolvedWithIndex.length > 0 && (
+                    <section className="overflow-hidden rounded-[14px] border border-amber-300 bg-white">
+                      <div className="border-b border-amber-200 bg-amber-50 px-4 py-3">
+                        <h3 className="text-[12px] font-black uppercase text-amber-950">
+                          UNRESOLVED ITEMS ({unresolvedWithIndex.length}) — ACTION REQUIRED
+                        </h3>
+                        <p className="mt-1 text-[11px] text-amber-950">
+                          These rows were imported without a valid source. They are not included in costing.
+                          Choose a source type and then select the correct item in its table, or remove the row explicitly.
+                          Other recipe rows will not be silently removed.
+                        </p>
+                      </div>
+                      <div className="space-y-3 p-4">
+                        {unresolvedWithIndex.map(({ line, index }) => (
+                          <div key={`${line.id ?? "new"}-${index}`} className="rounded-xl border border-amber-200 bg-amber-50/30 p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-black text-black">{String(line.label || line.sourceName || `Imported row ${index + 1}`)}</p>
+                                <p className="mt-1 text-xs text-gray-700">
+                                  Recipe row {index + 1} · Qty {String(line.qty ?? "—")} · Source not linked
+                                  {line.id ? ` · Saved line #${line.id}` : ""}
+                                </p>
+                                {line.note ? <p className="mt-1 text-xs text-gray-600">{String(line.note)}</p> : null}
+                                {line.source_formula ? <p className="mt-1 break-all font-mono text-[10px] text-gray-500">Original formula: {String(line.source_formula)}</p> : null}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <label className="flex items-center gap-2 text-[11px] font-bold text-black">
+                                  REPAIR AS
+                                  <select
+                                    value=""
+                                    onChange={(e) => {
+                                      const next = e.target.value;
+                                      if (["ingredient", "recipe", "utility", "fixed"].includes(next))
+                                        repairUnresolved(index, next as "ingredient" | "recipe" | "utility" | "fixed");
+                                    }}
+                                    className="rounded-lg border border-black/25 bg-white px-3 py-2 text-xs font-semibold text-black"
+                                  >
+                                    <option value="">Choose type...</option>
+                                    <option value="utility">Utility</option>
+                                    <option value="ingredient">Ingredient</option>
+                                    <option value="recipe">Prep / Sauce</option>
+                                    <option value="fixed">Fixed Cost</option>
+                                  </select>
+                                </label>
+                                <button type="button"
+                                  onClick={() => {
+                                    if (window.confirm(`Remove imported unresolved item “${String(line.label || line.sourceName || "Unknown")}” from this recipe? The deletion will take effect when you save.`)) {
+                                      removeLine(index);
+                                      setError("");
+                                    }
+                                  }}
+                                  className="rounded-lg border border-red-300 bg-white px-3 py-2 text-[11px] font-black text-red-700 hover:bg-red-50"
+                                >REMOVE</button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   {availableUtilities.length > 0 && (
                     <div className="rounded-xl border border-black/15 bg-white px-4 py-3">
                       <div className="mb-2 text-[11px] font-black uppercase">Available utilities ({availableUtilities.length})</div>
