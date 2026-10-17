@@ -149,7 +149,7 @@ export function CoverClient() {
 
   const allSections = useMemo(() => {
     if (!data) return [] as Section[];
-    return [...(data.sections || [])].sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true }))
+    return [...(data.sections || [])]
       .concat(data.unsectioned?.length ? [{ id: "none", name: "UNCATEGORIZED", items: data.unsectioned }] : []);
   }, [data]);
   const sections = useMemo(() => allSections.map(section => ({
@@ -396,7 +396,7 @@ export function CoverClient() {
       </label>
       <label className="text-[11px] font-bold text-black/70">Menu Category
         <select className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={category} onChange={e => setCategory(e.target.value)}>
-          <option value="all">All categories</option>{allSections.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+          <option value="all">All categories</option>{[...allSections].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true })).map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
         </select>
       </label>
       <label className="text-[11px] font-bold text-black/70">Price status

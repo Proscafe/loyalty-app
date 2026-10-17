@@ -45,13 +45,27 @@ export async function persistBoRecipeLines(
   for (let i = 0; i < rows.length; i++) {
     const expected = rows[i];
     const actual = saved[i];
-    const fields = ["line_type", "ingredient_id", "sub_recipe_id", "utility_id", "qty", "needs_review"];
+    const fields = ["line_type", "ingredient_id", "sub_recipe_id", "utility_id", "qty", "needs_review", ...(expected.line_type === "recipe" ? ["sub_cost_basis"] : [])];
+    // `rows` are the normalized values written to the DB; never compare against
+    // the draft (`incoming`), which may omit newly introduced fields.
     const mismatch = fields.find(field => {
+      if (field === "sub_cost_basis") {
+        // The UI may not submit this legacy optional field. Newly linked
+        // recipes are always ingredients-only; normalize both sides.
+        const expectedBasis = "ingredients"; // All linked recipe costs exclude utility/fixed costs.
+        const actualBasis = actual?.sub_cost_basis ?? "full";
+        return String(actualBasis) !== String(expectedBasis);
+      }
       if (field === "qty") return Math.abs(Number(actual?.qty ?? 0) - Number(expected?.qty ?? 0)) > 0.0000001;
       if (field === "needs_review") return (actual?.needs_review === true) !== (expected?.needs_review === true);
       return String(actual?.[field] ?? "") !== String(expected?.[field] ?? "");
     });
-    if (mismatch) throw new Error(`Recipe row ${i + 1} (${expected.label}) did not save its ${mismatch}: expected ${JSON.stringify(expected[mismatch])}, database has ${JSON.stringify(actual?.[mismatch])}.`);
+    if (mismatch) {
+      if (mismatch === "sub_cost_basis") {
+        throw new Error(`Recipe row ${i + 1} (${expected.label}) has cost basis ${JSON.stringify(actual?.sub_cost_basis)} in Supabase; expected "ingredients". Confirm the linked-recipe SQL migration is installed and deploy all save-route files together.`);
+      }
+      throw new Error(`Recipe row ${i + 1} (${expected.label}) did not save its ${mismatch}: expected ${JSON.stringify(expected[mismatch])}, database has ${JSON.stringify(actual?.[mismatch])}.`);
+    }
   }
   return saved;
 }

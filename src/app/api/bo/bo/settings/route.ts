@@ -19,18 +19,20 @@ function dbError(error: any) {
 }
 
 // Read every page, not just Supabase's default first 1,000 rows.
-// Categories are always returned alphabetically, regardless of legacy sort values.
+// Menu categories use Settings-managed sort order. Other lists stay alphabetical.
 async function readAll(supabase: any, table: string, columns: string) {
   const rows: any[] = [];
   const pageSize = 500;
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await supabase.from(table)
-      .select(columns).order("id", { ascending: true }).range(offset, offset + pageSize - 1);
+      .select(columns).order(table === "bo_settings" ? "key" : "id", { ascending: true }).range(offset, offset + pageSize - 1);
     if (error) throw error;
     rows.push(...(data ?? []));
     if ((data ?? []).length < pageSize) break;
   }
-  return rows.sort((a, b) => String(a.name ?? a.key ?? "").localeCompare(String(b.name ?? b.key ?? ""), undefined, { sensitivity: "base", numeric: true }));
+  return table === "bo_menu_categories"
+    ? rows.sort((a, b) => (Number(a.sort ?? 0) - Number(b.sort ?? 0)) || (Number(a.id) - Number(b.id)))
+    : rows.sort((a, b) => String(a.name ?? a.key ?? "").localeCompare(String(b.name ?? b.key ?? ""), undefined, { sensitivity: "base", numeric: true }));
 }
 
 export async function GET() {
@@ -77,12 +79,40 @@ export async function POST(request: Request) {
   let body: any;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON." }, { status: 400 }); }
   if (body?.action === "inspect_delete" || body?.action === "transfer_delete") return performCategoryTransfer(supabase, body);
+  if (body?.action === "reorder_menu_category") return reorderMenuCategory(supabase, body);
   const table = getTable(body?.section);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!table || !name || name.length > 160) return NextResponse.json({ error: "Select a valid list and enter a name (1–160 characters)." }, { status: 400 });
   const { data, error: writeError } = await supabase.from(table).insert({ name }).select("id,name").single();
   if (writeError) return dbError(writeError);
   return NextResponse.json({ ok: true, item: data }, { status: 201 });
+}
+
+// Settings owns the display order for Menu Pricing and Recipes.
+// Re-numbering is idempotent and also normalizes old duplicate sort values.
+async function reorderMenuCategory(supabase: any, body: any) {
+  const id = Number(body?.id);
+  const direction = body?.direction;
+  if (!Number.isSafeInteger(id) || id <= 0 || (direction !== "up" && direction !== "down")) {
+    return NextResponse.json({ error: "Invalid category or move direction." }, { status: 400 });
+  }
+  try {
+    const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort");
+    const index = categories.findIndex((row: any) => Number(row.id) === id);
+    if (index < 0) return NextResponse.json({ error: "Category not found." }, { status: 404 });
+    const other = index + (direction === "up" ? -1 : 1);
+    if (other < 0 || other >= categories.length) return NextResponse.json({ error: "Category is already at the end of the list." }, { status: 400 });
+    [categories[index], categories[other]] = [categories[other], categories[index]];
+    for (let i = 0; i < categories.length; i++) {
+      if (Number(categories[i].sort) === (i + 1) * 10) continue;
+      const { error } = await supabase.from("bo_menu_categories")
+        .update({ sort: (i + 1) * 10 }).eq("id", categories[i].id);
+      if (error) throw error;
+    }
+    return NextResponse.json({ ok: true, menu_categories: await readAll(supabase, "bo_menu_categories", "id,name,sort") });
+  } catch (e) {
+    return NextResponse.json({ error: `Could not save category order: ${e instanceof Error ? e.message : String(e)}. Refresh Settings before retrying.` }, { status: 500 });
+  }
 }
 
 export async function PATCH(request: Request) {
@@ -94,6 +124,29 @@ export async function PATCH(request: Request) {
   const id = Number(body?.id);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!table || !Number.isSafeInteger(id) || id <= 0 || !name || name.length > 160) return NextResponse.json({ error: "Invalid list item or name." }, { status: 400 });
+  // A category can be renamed and moved to an exact position in one save.
+  if (body?.section === "menu_categories" && body?.position !== undefined) {
+    const position = Number(body.position);
+    if (!Number.isSafeInteger(position)) return NextResponse.json({ error: "Position must be a whole number." }, { status: 400 });
+    try {
+      const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort");
+      if (position < 1 || position > categories.length) return NextResponse.json({ error: `Position must be between 1 and ${categories.length}.` }, { status: 400 });
+      const current = categories.findIndex((category: any) => Number(category.id) === id);
+      if (current < 0) return NextResponse.json({ error: "Category not found." }, { status: 404 });
+      const [selected] = categories.splice(current, 1);
+      selected.name = name;
+      categories.splice(position - 1, 0, selected);
+      // Stage at unique temporary positions so old order values cannot collide.
+      // Updates are sequential; errors are reported, not silently ignored.
+      for (let i = 0; i < categories.length; i++) {
+        const { error: moveError } = await supabase.from("bo_menu_categories")
+          .update({ sort: (i + 1) * 10, ...(Number(categories[i].id) === id ? { name } : {}) })
+          .eq("id", categories[i].id);
+        if (moveError) throw moveError;
+      }
+      return NextResponse.json({ ok: true, item: { id, name }, position });
+    } catch (e) { return dbError(e); }
+  }
   const { data, error: writeError } = await supabase.from(table).update({ name }).eq("id", id).select("id,name").maybeSingle();
   if (writeError) return dbError(writeError);
   if (!data) return NextResponse.json({ error: "Entry not found or update not permitted." }, { status: 404 });

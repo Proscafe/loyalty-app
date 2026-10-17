@@ -1,3 +1,4 @@
+import { persistBoRecipeLines } from "@/lib/bo/persistRecipeLines";
 import { NextResponse } from "next/server";
 import { boError, numberOrNull, requireBoAdminDb } from "@/lib/bo/api";
 
@@ -48,6 +49,7 @@ async function buildRows(admin: any, recipeId: number, incoming: any[]) {
       ingredient_id: line.line_type === "ingredient" ? numberOrNull(line.ingredient_id) : null,
       sub_recipe_id: line.line_type === "recipe" ? numberOrNull(line.sub_recipe_id) : null,
       sub_basis: line.sub_basis === "batch" ? "batch" : "unit",
+      sub_cost_basis: line.line_type === "recipe" ? "ingredients" : "full",
       utility_id: line.line_type === "utility" ? numberOrNull(line.utility_id) : null,
       qty: numberOrNull(line.qty) ?? 0,
       factor: numberOrNull(line.factor) ?? 1,
@@ -94,23 +96,7 @@ export async function POST(request: Request) {
       if (!savedRecipe) throw new Error("Recipe not found.");
 
       const rows = await buildRows(admin, recipeId, recipe.lines);
-      const { data: oldLines, error: oldError } = await admin.from("bo_recipe_lines").select("*").eq("recipe_id", recipeId).order("sort").order("id");
-      if (oldError) throw oldError;
-      const { error: deleteError } = await admin.from("bo_recipe_lines").delete().eq("recipe_id", recipeId);
-      if (deleteError) throw deleteError;
-      if (rows.length) {
-        const { error: insertError } = await admin.from("bo_recipe_lines").insert(rows);
-        if (insertError) {
-          if ((oldLines ?? []).length) {
-            const restore = (oldLines ?? []).map(({ id: _id, ...line }: any) => line);
-            await admin.from("bo_recipe_lines").insert(restore);
-          }
-          throw new Error(`Recipe items were not saved: ${insertError.message}`);
-        }
-      }
-      const { data: verify, error: verifyError } = await admin.from("bo_recipe_lines").select("id").eq("recipe_id", recipeId);
-      if (verifyError) throw verifyError;
-      if ((verify ?? []).length !== rows.length) throw new Error(`Recipe save verification failed: ${verify?.length ?? 0}/${rows.length} rows.`);
+      await persistBoRecipeLines(admin, recipeId, recipe.lines, rows);
     }
 
     const name = String(item.name ?? "").trim();

@@ -42,6 +42,7 @@ export function SettingsClient() {
   const [viewing, setViewing] = useState<{ section: ListKey; item: Item; counts?: Record<string, number>; total?: number } | null>(null);
   const [editingItem, setEditingItem] = useState<{ section: ListKey; item: Item } | null>(null);
   const [editName, setEditName] = useState("");
+  const [editPosition, setEditPosition] = useState("1");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -49,7 +50,7 @@ export function SettingsClient() {
     const result = await apiJson(await fetch("/api/bo/settings", { cache: "no-store" })) as SettingsResponse;
     setData({ ...result,
       ingredient_categories: [...(result.ingredient_categories ?? [])].sort(alphabetically),
-      menu_categories: [...(result.menu_categories ?? [])].sort(alphabetically),
+      menu_categories: [...(result.menu_categories ?? [])],
       suppliers: [...(result.suppliers ?? [])].sort(alphabetically),
     });
     if (updateRate) setRate(String(result.settings?.usd_lbp_rate ?? ""));
@@ -79,6 +80,8 @@ export function SettingsClient() {
     let name = "";
     if (action === "create") name = newNames[section].trim();
     if (action === "rename") name = editName.trim();
+    const position = action === "rename" && section === "menu_categories" ? Number(editPosition) : undefined;
+    if (position !== undefined && (!Number.isSafeInteger(position) || position < 1 || position > (data?.menu_categories.length ?? 0))) { setError(`Position must be between 1 and ${data?.menu_categories.length ?? 0}.`); return; }
     if (action !== "delete" && !name) { setError("Enter a name before saving."); return; }
     if (action === "delete" && section !== "suppliers" && item) {
       setBusy(true); setError(""); setMessage("");
@@ -96,17 +99,36 @@ export function SettingsClient() {
     if (action === "delete" && !window.confirm(`Delete “${item?.name}”? If it is used by existing items, deletion will be blocked.`)) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      await apiJson(await fetch("/api/bo/settings", {
+      const saved = await apiJson(await fetch("/api/bo/settings", {
         method: action === "create" ? "POST" : action === "rename" ? "PATCH" : "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ section, id: item?.id, name }),
+        body: JSON.stringify({ section, id: item?.id, name, ...(position !== undefined ? { position } : {}) }),
       }));
       await load();
+      if (action === "rename" && section === "menu_categories" && position !== undefined) {
+        const verified = (saved.menu_categories ?? []).findIndex((row: Item) => Number(row.id) === Number(item?.id)) + 1;
+        if (verified !== position) throw new Error(`Requested position ${position} was not verified. Please refresh Settings.`);
+      }
       if (action === "create") setNewNames(current => ({ ...current, [section]: "" }));
       if (action === "rename") setEditingItem(null);
-      setMessage(action === "create" ? `“${name}” added.` : action === "rename" ? `Name changed to “${name}”.` : `“${item?.name}” deleted.`);
+      setMessage(action === "create" ? `“${name}” added.` : action === "rename" ? `“${name}” saved${position !== undefined ? ` at position ${position}` : ""}.` : `“${item?.name}” deleted.`);
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to update list."); }
     finally { setBusy(false); }
+  }
+
+  async function moveMenuCategory(item: Item, direction: "up" | "down") {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await apiJson(await fetch("/api/bo/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reorder_menu_category", id: item.id, direction }),
+      }));
+      await load();
+      setMessage(`“${item.name}” moved ${direction}. Menu Pricing will show this order after refresh.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to reorder Menu Categories.");
+      await load().catch(() => {});
+    } finally { setBusy(false); }
   }
 
   async function openView(section: ListKey, item: Item) {
@@ -171,15 +193,15 @@ export function SettingsClient() {
             </div>}
             {viewing.section === "suppliers" && <p className="text-xs text-black/60">Supplier details are read-only here. Use Edit to rename this supplier.</p>}
           </div>
-          <div className="flex justify-end gap-2 border-t border-black/10 px-5 py-4"><button type="button" onClick={() => setViewing(null)} className="rounded-lg border border-black/20 px-4 py-2.5 text-xs font-bold">CLOSE</button><button type="button" onClick={() => { setEditName(viewing.item.name); setEditingItem({ section: viewing.section, item: viewing.item }); setViewing(null); }} className="rounded-lg bg-black px-4 py-2.5 text-xs font-bold text-white">EDIT</button></div>
+          <div className="flex justify-end gap-2 border-t border-black/10 px-5 py-4"><button type="button" onClick={() => setViewing(null)} className="rounded-lg border border-black/20 px-4 py-2.5 text-xs font-bold">CLOSE</button><button type="button" onClick={() => { setEditName(viewing.item.name); setEditPosition(String((data?.menu_categories ?? []).findIndex(x => x.id === viewing.item.id) + 1)); setEditingItem({ section: viewing.section, item: viewing.item }); setViewing(null); }} className="rounded-lg bg-black px-4 py-2.5 text-xs font-bold text-white">EDIT</button></div>
         </div>
       </div>}
 
       {editingItem && <div className="fixed inset-0 z-[160] flex items-center justify-center bg-black/50 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setEditingItem(null); }}>
         <form role="dialog" aria-modal="true" aria-label={`Edit ${editingItem.item.name}`} onSubmit={e => { e.preventDefault(); void mutate("rename", editingItem.section, editingItem.item); }} className="w-full max-w-[500px] overflow-hidden rounded-2xl border border-black/15 bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-black/10 px-5 py-4"><div><p className="text-[10px] font-bold uppercase tracking-wide text-black/50">{SECTIONS.find(s => s.key === editingItem.section)?.title}</p><h2 className="mt-1 text-xl font-black">Edit name</h2></div><button type="button" aria-label="Close edit" onClick={() => setEditingItem(null)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/15 text-lg">×</button></div>
-          <div className="p-5"><label className="block text-xs font-bold uppercase text-black/70">Name<input autoFocus maxLength={160} value={editName} onChange={e => setEditName(e.target.value)} className="mt-2 w-full rounded-lg border border-black/25 bg-white px-3 py-3 text-sm font-medium text-black outline-none focus:border-black" /></label></div>
-          <div className="flex justify-end gap-2 border-t border-black/10 px-5 py-4"><button type="button" disabled={busy} onClick={() => setEditingItem(null)} className="rounded-lg border border-black/20 px-4 py-2.5 text-xs font-bold">CANCEL</button><button type="submit" disabled={busy || !editName.trim() || editName.trim() === editingItem.item.name} className="rounded-lg bg-black px-4 py-2.5 text-xs font-bold text-white disabled:opacity-40">{busy ? "SAVING..." : "SAVE CHANGES"}</button></div>
+          <div className="flex items-center justify-between border-b border-black/10 px-5 py-4"><div><p className="text-[10px] font-bold uppercase tracking-wide text-black/50">{SECTIONS.find(s => s.key === editingItem.section)?.title}</p><h2 className="mt-1 text-xl font-black">Edit {editingItem.section === "menu_categories" ? "menu category" : "name"}</h2></div><button type="button" aria-label="Close edit" onClick={() => setEditingItem(null)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/15 text-lg">×</button></div>
+          <div className="p-5"><label className="block text-xs font-bold uppercase text-black/70">Name<input autoFocus maxLength={160} value={editName} onChange={e => setEditName(e.target.value)} className="mt-2 w-full rounded-lg border border-black/25 bg-white px-3 py-3 text-sm font-medium text-black outline-none focus:border-black" /></label>{editingItem.section === "menu_categories" && <label className="mt-4 block text-xs font-bold uppercase text-black/70">Display position <span className="font-normal normal-case text-black/50">(1 = first; {data?.menu_categories.length ?? 0} = last)</span><input type="number" min={1} max={data?.menu_categories.length ?? 0} step={1} value={editPosition} onChange={e => setEditPosition(e.target.value)} className="mt-2 w-full rounded-lg border border-black/25 bg-white px-3 py-3 text-sm font-medium text-black outline-none focus:border-black" /></label>}</div>
+          <div className="flex justify-end gap-2 border-t border-black/10 px-5 py-4"><button type="button" disabled={busy} onClick={() => setEditingItem(null)} className="rounded-lg border border-black/20 px-4 py-2.5 text-xs font-bold">CANCEL</button><button type="submit" disabled={busy || !editName.trim() || (editName.trim() === editingItem.item.name && (editingItem.section !== "menu_categories" || Number(editPosition) === (data?.menu_categories.findIndex(x => x.id === editingItem.item.id) ?? -1) + 1))} className="rounded-lg bg-black px-4 py-2.5 text-xs font-bold text-white disabled:opacity-40">{busy ? "SAVING..." : "SAVE CHANGES"}</button></div>
         </form>
       </div>}
 
@@ -241,14 +263,20 @@ export function SettingsClient() {
               <input aria-label={`New ${title.toLowerCase()} name`} value={newNames[key]} onChange={e => setNewNames(previous => ({ ...previous, [key]: e.target.value }))} placeholder="Add new..." className="min-w-0 flex-1 rounded-lg border border-black/20 bg-white px-3 py-2.5 text-xs text-black outline-none focus:border-black" />
               <button type="submit" disabled={busy || !newNames[key].trim()} className="shrink-0 rounded-lg bg-black px-3 py-2.5 text-xs font-bold text-white disabled:opacity-40">ADD</button>
             </form>
+            {key === "menu_categories" && <p className="mb-2 text-[11px] text-black/60">Edit a category and enter its exact position (for example, 2). Other categories shift automatically. Save once; Menu Pricing cards follow this order.</p>}
             <div className="max-h-[460px] space-y-1.5 overflow-y-auto">
-              {(data?.[key] ?? []).map(item => (
+              {(data?.[key] ?? []).map((item, index) => (
                 <div key={item.id} className="flex items-center gap-2 rounded-lg border border-black/5 bg-gray-50 px-3 py-2">
+                  {key === "menu_categories" && <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-black/10 bg-white text-[11px] font-bold tabular-nums text-black/70">{index + 1}</span>}
                   <span className="min-w-0 flex-1 break-words text-xs font-medium text-black">{item.name}</span>
+                  {key === "menu_categories" && <div className="flex shrink-0 flex-col gap-0.5">
+                    <button type="button" disabled={busy || index === 0} onClick={() => void moveMenuCategory(item, "up")} aria-label={`Move ${item.name} up`} title="Move category up" className="flex h-5 w-7 items-center justify-center rounded border border-black/15 bg-white text-xs font-bold disabled:opacity-25">↑</button>
+                    <button type="button" disabled={busy || index === (data?.menu_categories.length ?? 0) - 1} onClick={() => void moveMenuCategory(item, "down")} aria-label={`Move ${item.name} down`} title="Move category down" className="flex h-5 w-7 items-center justify-center rounded border border-black/15 bg-white text-xs font-bold disabled:opacity-25">↓</button>
+                  </div>}
                   <button type="button" disabled={busy} onClick={() => void openView(key, item)} title={`View ${item.name}`} aria-label={`View ${item.name}`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-black/20 bg-white text-black hover:bg-gray-100 disabled:opacity-40">
                     <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
                   </button>
-                  <button type="button" disabled={busy} onClick={() => { setEditName(item.name); setEditingItem({ section: key, item }); }} title={`Edit ${item.name}`} aria-label={`Edit ${item.name}`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-black/20 bg-white text-black hover:bg-gray-100 disabled:opacity-40">
+                  <button type="button" disabled={busy} onClick={() => { setEditName(item.name); setEditPosition(String(index + 1)); setEditingItem({ section: key, item }); }} title={`Edit ${item.name}`} aria-label={`Edit ${item.name}`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-black/20 bg-white text-black hover:bg-gray-100 disabled:opacity-40">
                     <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"/></svg>
                   </button>
                   <button type="button" disabled={busy} onClick={() => void mutate("delete", key, item)} title={`Delete ${item.name}`} aria-label={`Delete ${item.name}`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40">

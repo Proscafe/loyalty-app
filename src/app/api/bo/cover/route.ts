@@ -35,17 +35,47 @@ export async function GET() {
     const snapshot = await loadBoSnapshot(supabase);
     const engine = createBoEngine(snapshot);
 
-    const sections = snapshot.coverSections.map((section: any) => ({
-      ...section,
-      items: snapshot.menuItems
-        .filter((item: any) => Number(item.cover_section_id) === Number(section.id) && item.active !== false)
-        .sort((a: any, b: any) => Number(a.cover_sort ?? 0) - Number(b.cover_sort ?? 0))
+    // Menu Pricing shares the exact Menu Categories managed in Settings and Recipes.
+    // Legacy cover_section_id must not determine the displayed category.
+    // Load the entire authoritative list directly, avoiding the snapshot's default page limit.
+    const menuCategories: any[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const { data: page, error: categoryError } = await supabase.from("bo_menu_categories")
+        .select("id,name,sort").order("id", { ascending: true }).range(offset, offset + 499);
+      if (categoryError) throw databaseError("Unable to load Menu Categories", categoryError);
+      menuCategories.push(...(page ?? []));
+      if ((page ?? []).length < 500) break;
+    }
+    menuCategories.sort((a: any, b: any) => (Number(a.sort ?? 0) - Number(b.sort ?? 0)) || (Number(a.id) - Number(b.id)));
+    const knownCategoryIds = new Set(menuCategories.map((category: any) => String(category.id)));
+    const visibleMenuItems = snapshot.menuItems.filter((item: any) => item.active !== false);
+    const sections = menuCategories
+      .map((category: any) => ({
+      ...category,
+      items: visibleMenuItems
+        .filter((item: any) => String(item.menu_category_id) === String(category.id))
+        .sort((a: any, b: any) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
         .map((item: any) => engine.menuCost(item)),
     }));
 
-    const unsectioned = snapshot.menuItems
-      .filter((item: any) => !item.cover_section_id && item.active !== false)
+    const unsectioned = visibleMenuItems
+      .filter((item: any) => !item.menu_category_id || !knownCategoryIds.has(String(item.menu_category_id)))
       .map((item: any) => engine.menuCost(item));
+
+    // A flag belongs to a saved recipe line; expose it for Menu Pricing.
+    const flaggedRecipeIds = new Set(
+      snapshot.recipeLines
+        .filter((line: any) => line.needs_review === true)
+        .map((line: any) => Number(line.recipe_id)),
+    );
+    sections.forEach((section: any) => {
+      section.items = section.items.map((item: any) => ({
+        ...item, needs_review: flaggedRecipeIds.has(Number(item.recipe_id)),
+      }));
+    });
+    unsectioned.forEach((item: any) => {
+      item.needs_review = flaggedRecipeIds.has(Number(item.recipe_id));
+    });
 
     const { data: storedComparisons, error: compareError } = await comparisonDb()
       .from("bo_menu_price_comparisons")

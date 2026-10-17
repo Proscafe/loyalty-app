@@ -24,6 +24,7 @@ const EMPTY_LINE = {
   ingredient_id: "",
   sub_recipe_id: "",
   sub_basis: "unit",
+  sub_cost_basis: "ingredients",
   utility_id: "",
   qty: "",
   factor: "1",
@@ -197,7 +198,7 @@ export function MenuClient() {
   }
 
   const categoryGroups = useMemo(() => {
-    const categories: Row[] = [...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true }));
+    const categories: Row[] = menuData?.categories ?? [];
     const matching = (menuData?.items ?? []).filter((row: Row) => {
       const needle = search.trim().toLowerCase();
       return (!needle || String(row.name).toLowerCase().includes(needle) || String(row.recipe?.name ?? "").toLowerCase().includes(needle))
@@ -335,7 +336,19 @@ export function MenuClient() {
 
   const ingredients: Row[] = recipeData?.ingredients ?? [];
   const utilities: Row[] = recipeData?.utilities ?? [];
-  const allRecipes: Row[] = recipeData?.all_recipes ?? [];
+  // Menu-item titles are authoritative for one-to-one linked menu recipes.
+  // Use their current names in linked-recipe pickers and costing rows even if
+  // legacy bo_recipes.name or stored line labels have not been updated yet.
+  const linkedMenuNames = new Map<string, string[]>();
+  for (const item of (menuData?.items ?? menuData?.menuItems ?? []) as Row[]) {
+    if (!item.recipe_id || !String(item.name ?? "").trim()) continue;
+    const id = String(item.recipe_id);
+    linkedMenuNames.set(id, [...(linkedMenuNames.get(id) ?? []), String(item.name).trim()]);
+  }
+  const allRecipes: Row[] = (recipeData?.all_recipes ?? []).map((recipe: Row) => {
+    const names = linkedMenuNames.get(String(recipe.id)) ?? [];
+    return { ...recipe, name: names.length === 1 ? names[0] : (recipe.display_name || recipe.name) };
+  });
 
   function buildRecipeDraft(recipe: Row | null, item?: Row) {
     if (!recipe) {
@@ -371,6 +384,7 @@ export function MenuClient() {
         ...line,
         ingredient_id: line.ingredient_id ? String(line.ingredient_id) : "",
         sub_recipe_id: line.sub_recipe_id ? String(line.sub_recipe_id) : "",
+        sub_cost_basis: "ingredients",
         utility_id: line.utility_id ? String(line.utility_id) : "",
         qty: line.qty ?? "",
         factor: "1", // Legacy hidden factors are retired when this recipe is saved.
@@ -446,6 +460,7 @@ export function MenuClient() {
         recipe_id: undefined,
         ingredient_id: line.ingredient_id ? String(line.ingredient_id) : "",
         sub_recipe_id: line.sub_recipe_id ? String(line.sub_recipe_id) : "",
+        sub_cost_basis: "ingredients",
         utility_id: line.utility_id ? String(line.utility_id) : "",
         qty: line.qty ?? "",
         factor: "1",
@@ -582,10 +597,16 @@ export function MenuClient() {
       const source = allRecipes.find(
         (x: Row) => String(x.id) === String(line.sub_recipe_id),
       );
-      const cost =
-        line.sub_basis === "batch"
-          ? asNumber(source?.batch_cost_lbp)
-          : asNumber(source?.unit_cost_lbp);
+      // Linked Prep / Sauce costs never include their own utility or fixed costs.
+      // The Recipes API supplies these fields from the shared costing engine.
+      const fromFullRecipe = (recipeData?.recipes ?? []).find(
+        (r: Row) => String(r.id) === String(line.sub_recipe_id),
+      );
+      const cost = line.sub_basis === "batch"
+        ? asNumber(source?.ingredient_batch_cost_lbp ?? source?.costing?.ingredientBatchCost ?? fromFullRecipe?.costing?.ingredientBatchCost)
+        : asNumber(source?.ingredient_unit_cost_lbp ?? source?.costing?.ingredientUnitCost ?? fromFullRecipe?.costing?.ingredientUnitCost);
+      // A missing cost means no usable yield or unresolved source costs in
+      // the linked recipe. Do not silently substitute full cost (utilities).
 
       return {
         name: source?.name ?? "SELECT PREP / SAUCE",
@@ -989,14 +1010,16 @@ export function MenuClient() {
                           }
                         />
                       ) : line.line_type === "recipe" ? (
+                        <div className="min-w-[180px]">
                         <SearchablePicker
                           value={line.sub_recipe_id}
                           options={prepRecipeOptions}
                           placeholder="TYPE PREP / SAUCE NAME..."
                           onChange={(value) =>
-                            updateLine(index, { sub_recipe_id: value })
+                            updateLine(index, { sub_recipe_id: value, sub_cost_basis: "ingredients" })
                           }
                         />
+                        </div>
                       ) : line.line_type === "utility" ? (
                         <SearchablePicker
                           value={line.utility_id}
@@ -1118,7 +1141,7 @@ export function MenuClient() {
           className="min-w-[170px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs" />
         <select aria-label="Category filter" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="min-w-[150px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
           <option value="all">All categories</option>
-          {[...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true })).map((cat: Row) => <option key={cat.id} value={String(cat.id)}>{cat.name}</option>)}
+          {(menuData?.categories ?? []).map((cat: Row) => <option key={cat.id} value={String(cat.id)}>{cat.name}</option>)}
           <option value="none">Uncategorized</option>
         </select>
         <select aria-label="Visibility filter" value={visibilityFilter} onChange={e => setVisibilityFilter(e.target.value)} className="min-w-[160px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
@@ -1147,7 +1170,7 @@ export function MenuClient() {
           <select aria-label="Destination category" value={bulkCategory} disabled={bulkBusy} onChange={e => setBulkCategory(e.target.value)}
             className="max-w-[190px] rounded-md border border-black/20 bg-white px-2 py-2">
             <option value="">Move to category…</option>
-            {[...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true })).map((category: Row) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}
+            {(menuData?.categories ?? []).map((category: Row) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}
             <option value="none">Uncategorized</option>
           </select>
           <button type="button" onClick={() => void runBulk("category")} disabled={!selectedItems.length || !bulkCategory || bulkBusy}
@@ -1318,7 +1341,7 @@ export function MenuClient() {
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">CATEGORY</span>
                     <select value={draft.menu_category_id} onChange={(e) => setDraft({ ...draft, menu_category_id: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black">
                       <option value="">SELECT</option>
-                      {[...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true })).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      {(menuData?.categories ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
                     </select>
                   </label>
 

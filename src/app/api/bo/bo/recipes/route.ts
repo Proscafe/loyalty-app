@@ -1,3 +1,4 @@
+import { persistBoRecipeLines } from "@/lib/bo/persistRecipeLines";
 import { NextResponse } from "next/server";
 import { requireBoAdminDb, boError, numberOrNull } from "@/lib/bo/api";
 import { createBoEngine, loadBoSnapshot } from "@/lib/bo/costing";
@@ -57,6 +58,7 @@ async function buildRows(admin: any, recipeId: number, incoming: any[]) {
       ingredient_id: line.line_type === "ingredient" ? numberOrNull(line.ingredient_id) : null,
       sub_recipe_id: line.line_type === "recipe" ? numberOrNull(line.sub_recipe_id) : null,
       sub_basis: line.sub_basis === "batch" ? "batch" : "unit",
+      sub_cost_basis: line.line_type === "recipe" ? "ingredients" : "full",
       utility_id: line.line_type === "utility" ? numberOrNull(line.utility_id) : null,
       qty: numberOrNull(line.qty) ?? 0,
       factor: numberOrNull(line.factor) ?? 1,
@@ -125,7 +127,7 @@ export async function GET(request: Request) {
       recipes,
       ingredients: snapshot.ingredients.map((row: any) => ({ id: row.id, name: row.name, purchase_unit: row.purchase_unit, consumption_unit: row.consumption_unit, unit_cost_lbp: engine.ingredientPrice(Number(row.id)) })),
       utilities: snapshot.utilities.map((row: any) => ({ id: row.id, name: row.name, unit_label: row.unit_label, unit_cost_lbp: engine.utilityCost(Number(row.id)) })),
-      all_recipes: snapshot.recipes.map((row: any) => { const c = engine.recipeCost(Number(row.id)); return { id: row.id, name: row.name, kind: row.kind, yield_unit: row.yield_unit, unit_cost_lbp: c.unitCost, batch_cost_lbp: c.batchCost }; }),
+      all_recipes: snapshot.recipes.map((row: any) => { const c = engine.recipeCost(Number(row.id)); return { id: row.id, name: row.name, kind: row.kind, yield_unit: row.yield_unit, unit_cost_lbp: c.unitCost, batch_cost_lbp: c.batchCost, ingredient_unit_cost_lbp: c.ingredientUnitCost, ingredient_batch_cost_lbp: c.ingredientBatchCost, usable_yield: c.usableYield, costing: { ingredientUnitCost: c.ingredientUnitCost, ingredientBatchCost: c.ingredientBatchCost, partial: c.partial } }; }),
       menu_categories: snapshot.menuCategories,
     });
   } catch (error) { return boError(error, "Unable to load recipes."); }
@@ -168,25 +170,7 @@ async function saveRecipe(request: Request) {
 
     if (!recipeId) throw new Error("Recipe id was not created.");
     const rows = await buildRows(admin, recipeId, body?.lines);
-    const { data: oldLines, error: oldError } = await admin.from("bo_recipe_lines").select("*").eq("recipe_id", recipeId).order("sort").order("id");
-    if (oldError) throw oldError;
-    const { error: deleteError } = await admin.from("bo_recipe_lines").delete().eq("recipe_id", recipeId);
-    if (deleteError) throw deleteError;
-
-    if (rows.length) {
-      const { error: insertError } = await admin.from("bo_recipe_lines").insert(rows);
-      if (insertError) {
-        if ((oldLines ?? []).length) {
-          const restore = (oldLines ?? []).map(({ id: _id, ...line }: any) => line);
-          await admin.from("bo_recipe_lines").insert(restore);
-        }
-        throw new Error(`Recipe items were not saved: ${insertError.message}`);
-      }
-    }
-
-    const { data: verify, error: verifyError } = await admin.from("bo_recipe_lines").select("id").eq("recipe_id", recipeId);
-    if (verifyError) throw verifyError;
-    if ((verify ?? []).length !== rows.length) throw new Error(`Save verification failed: ${verify?.length ?? 0}/${rows.length} rows.`);
+    await persistBoRecipeLines(admin, recipeId, body?.lines, rows);
 
     return NextResponse.json({ ok: true, id: recipeId, saved_lines: rows.length });
   } catch (error) { return boError(error, "Unable to save recipe."); }

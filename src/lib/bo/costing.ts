@@ -158,6 +158,8 @@ export function createBoEngine(snapshot: BoSnapshot) {
         id,
         batchCost: null,
         unitCost: null,
+        ingredientBatchCost: null,
+        ingredientUnitCost: null,
         usableYield: null,
         partial: true,
         issues: [`Circular recipe: ${[...stack, id].join(" → ")}`],
@@ -172,6 +174,8 @@ export function createBoEngine(snapshot: BoSnapshot) {
         id,
         batchCost: null,
         unitCost: null,
+        ingredientBatchCost: null,
+        ingredientUnitCost: null,
         usableYield: null,
         partial: true,
         issues: ["Recipe not found"],
@@ -180,6 +184,7 @@ export function createBoEngine(snapshot: BoSnapshot) {
     }
 
     let batchCost = 0;
+    let ingredientBatchCost = 0;
     let partial = false;
     const issues: string[] = [];
     const outputLines: any[] = [];
@@ -188,6 +193,7 @@ export function createBoEngine(snapshot: BoSnapshot) {
     for (const line of linesByRecipe.get(id) ?? []) {
       const qty = nullable(line.qty);
       let sourceCost: number | null = null;
+      let ingredientSourceCost: number | null = null;
       let sourceName = line.label || "Line";
       let sourceUnit: string | null = null;
       let sourceKind = line.line_type;
@@ -200,6 +206,7 @@ export function createBoEngine(snapshot: BoSnapshot) {
       if (line.line_type === "ingredient") {
         const source = ingredients.get(Number(line.ingredient_id));
         sourceCost = ingredientPrice(line.ingredient_id);
+        ingredientSourceCost = sourceCost;
         sourceName = source?.name || line.label || "Ingredient";
         sourceUnit = source?.consumption_unit || source?.purchase_unit || null;
       } else if (line.line_type === "utility") {
@@ -220,7 +227,14 @@ export function createBoEngine(snapshot: BoSnapshot) {
       } else if (line.line_type === "recipe") {
         const source = recipes.get(Number(line.sub_recipe_id));
         const sub = recipeCost(Number(line.sub_recipe_id), nextStack);
-        sourceCost = line.sub_basis === "batch" ? sub.batchCost : sub.unitCost;
+        // Always use ingredient costs for linked recipes to avoid applying
+        // utilities/fixed overhead both in the prep and again in the parent.
+        sourceCost = line.sub_basis === "batch"
+          ? sub.ingredientBatchCost
+          : sub.ingredientUnitCost;
+        // Parent ingredient-only cost must exclude utilities and fixed costs at every depth.
+        ingredientSourceCost = line.sub_basis === "batch"
+          ? sub.ingredientBatchCost : sub.ingredientUnitCost;
         sourceName = source?.name || line.label || "Sub-recipe";
         sourceUnit = source?.yield_unit || null;
         sourceKind = source?.kind || "recipe";
@@ -240,6 +254,9 @@ export function createBoEngine(snapshot: BoSnapshot) {
       }
 
       if (lineCost !== null) batchCost += lineCost;
+      if (qty !== null && ingredientSourceCost !== null) {
+        ingredientBatchCost += qty * ingredientSourceCost;
+      }
 
       outputLines.push({
         ...line,
@@ -252,6 +269,12 @@ export function createBoEngine(snapshot: BoSnapshot) {
     }
 
     let yieldQty = nullable(recipe.yield_qty);
+    // Legacy menu recipes are single portions. A missing/zero legacy yield
+    // must not hide their ingredient cost when used as a linked recipe.
+    // Explicit prep/sauce yields are never guessed.
+    if ((yieldQty === null || yieldQty <= 0) && recipe.kind === "menu" && recipe.yield_mode !== "sum_qty") {
+      yieldQty = 1;
+    }
 
     if (recipe.yield_mode === "sum_qty") {
       yieldQty = (linesByRecipe.get(id) ?? []).reduce((sum, line) => {
@@ -259,6 +282,12 @@ export function createBoEngine(snapshot: BoSnapshot) {
         const qty = nullable(line.qty);
         return sum + (qty ?? 0);
       }, 0);
+    }
+
+    // Legacy menu recipes may have sum_qty enabled but no lines marked in_yield.
+    // A menu dish is one serving in that case; do not invent yields for prep/sauce.
+    if ((yieldQty === null || yieldQty <= 0) && recipe.kind === "menu") {
+      yieldQty = 1;
     }
 
     const waste = Math.min(0.99, Math.max(0, n(recipe.waste_pct, 0)));
@@ -273,12 +302,17 @@ export function createBoEngine(snapshot: BoSnapshot) {
     const unitCost =
       usableYield && usableYield > 0 ? batchCost / usableYield : null;
 
+    const ingredientUnitCost = usableYield && usableYield > 0
+      ? ingredientBatchCost / usableYield : null;
+
     const result = {
       id,
       name: recipe.name,
       kind: recipe.kind,
       batchCost,
       unitCost,
+      ingredientBatchCost,
+      ingredientUnitCost,
       usableYield,
       yieldUnit: recipe.yield_unit ?? null,
       partial,
