@@ -149,7 +149,7 @@ export function CoverClient() {
 
   const allSections = useMemo(() => {
     if (!data) return [] as Section[];
-    return [...(data.sections || []), ...(data.unsectioned?.length ? [{ id: "none", name: "UNSECTIONED", items: data.unsectioned }] : [])];
+    return [...(data.sections || []), ...(data.unsectioned?.length ? [{ id: "none", name: "UNCATEGORIZED", items: data.unsectioned }] : [])];
   }, [data]);
   const sections = useMemo(() => allSections.map(section => ({
     ...section,
@@ -159,7 +159,7 @@ export function CoverClient() {
       const matchesStatus = filter === "all" || (filter === "missing" && !positivePrice(item.sp_usd)) || (filter === "over" && Boolean(item.over_threshold));
       return matchesText && matchesCategory && matchesStatus;
     }),
-  })).filter(section => section.items.length > 0), [allSections, search, category, filter]);
+  })).filter(section => section.items.length > 0 || (search.trim() === "" && filter === "all" && (category === "all" || String(section.id) === category))), [allSections, search, category, filter]);
 
 
   function storePending() {
@@ -393,9 +393,9 @@ export function CoverClient() {
       <label className="text-[11px] font-bold text-black/70">Search item
         <input className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={search} onChange={e => setSearch(e.target.value)} placeholder="Item name" />
       </label>
-      <label className="text-[11px] font-bold text-black/70">Section
+      <label className="text-[11px] font-bold text-black/70">Menu Category
         <select className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={category} onChange={e => setCategory(e.target.value)}>
-          <option value="all">All sections</option>{allSections.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+          <option value="all">All categories</option>{allSections.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
         </select>
       </label>
       <label className="text-[11px] font-bold text-black/70">Price status
@@ -436,7 +436,8 @@ export function CoverClient() {
             <span aria-hidden="true" className="text-base">{collapsed[String(section.id)] ? "+" : "−"}</span>
           </button>
         </h2>
-        {!collapsed[String(section.id)] && <div id={`pricing-section-${section.id}`} className="overflow-x-auto"><table className="w-full min-w-[1140px] border-collapse text-left text-[12px]">
+        {!collapsed[String(section.id)] && section.items.length === 0 && <div className="px-4 py-5 text-xs text-black/50">No visible menu items in this category yet.</div>}
+        {!collapsed[String(section.id)] && section.items.length > 0 && <div id={`pricing-section-${section.id}`} className="overflow-x-auto"><table className="w-full min-w-[1140px] border-collapse text-left text-[12px]">
           <thead className="bg-[#ebebeb] text-[10px] uppercase text-black/70"><tr>
             <th className="sticky left-0 z-10 w-[195px] border-b border-black/10 bg-[#ebebeb] px-3 py-2">{sortHeader("name", "Items")}</th>
             <th className="border-b border-black/10 px-2 py-2 text-right">{sortHeader("sp_usd", "Selling Price $")}</th>
