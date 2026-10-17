@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { moneyLbp, moneyUsd, pct } from "../format";
 import { downloadMenuPricingXlsx } from "./downloadMenuPricingXlsx";
@@ -55,24 +55,38 @@ const inputStyle = "w-full min-w-[80px] rounded-md border border-black/20 bg-whi
 function PriceInput({ value, disabled, onSave, decimals = 2 }: {
   value: number | null | undefined;
   disabled?: boolean;
-  onSave: (value: string) => Promise<boolean>;
+  onSave: (value: string) => boolean;
   decimals?: number;
 }) {
   const format = (v: number | null | undefined) => v === null || v === undefined ? "" : decimals === 0 ? String(Math.round(v)) : String(Number(v.toFixed(decimals)));
   const [draft, setDraft] = useState(format(value));
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { if (!busy) setDraft(format(value)); }, [value, busy]);
-  const save = async () => {
-    if (busy || draft === format(value)) return;
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setDraft(format(value)); }, [value, focused]);
+  const save = () => {
+    setFocused(false);
+    if (draft === format(value)) return;
     const n = draft.trim() === "" ? null : Number(draft.replace(/,/g, ""));
     if (n !== null && (!Number.isFinite(n) || n < 0)) { setDraft(format(value)); return; }
-    setBusy(true);
-    try { if (!(await onSave(n === null ? "" : String(n)))) setDraft(format(value)); }
-    finally { setBusy(false); }
+    if (!onSave(n === null ? "" : String(n))) setDraft(format(value));
   };
-  return <input aria-label="Selling price" inputMode="decimal" className={inputStyle} value={draft} disabled={disabled || busy}
-    onChange={e => setDraft(e.target.value)} onBlur={() => void save()}
+  return <input aria-label="Selling price" inputMode="decimal" className={inputStyle} value={draft} disabled={disabled}
+    onFocus={() => setFocused(true)} onChange={e => setDraft(e.target.value)} onBlur={save}
     onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setDraft(format(value)); e.currentTarget.blur(); } }} />;
+}
+
+function withUpdatedPrice(item: Item, usd: number | null, rate: number): Item {
+  const lbp = usd === null ? null : usd * rate;
+  const cost = item.cost_lbp;
+  return {
+    ...item, sp_usd: usd, sp_lbp: lbp,
+    food_cost_pct: lbp && cost !== null ? cost / lbp : null,
+    gross_profit_lbp: lbp !== null && cost !== null ? lbp - cost : null,
+    margin_pct: lbp && cost !== null ? (lbp - cost) / lbp : null,
+  };
+}
+function applyPendingPrice(item: Item, pending: Record<string, { usd: number | null }>, rate: number): Item {
+  const entry = pending[`price:${item.id}`];
+  return entry ? withUpdatedPrice(item, entry.usd, rate) : item;
 }
 
 export function CoverClient() {
@@ -82,8 +96,15 @@ export function CoverClient() {
   const [category, setCategory] = useState("all");
   const [filter, setFilter] = useState<Filter>("all");
   const [error, setError] = useState("");
-  const [savingId, setSavingId] = useState<number | null>(null);
-  const [savingComparison, setSavingComparison] = useState<number | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const pendingRef = useRef<Record<string, { id: number; kind: "price" | "comparison"; usd: number | null; revision: number }>>({});
+  const revisionRef = useRef(0);
+  const saveRunningRef = useRef(false);
+  const loadedRef = useRef(false);
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+  const draftsStorageKey = "pros-bo-menu-pricing-pending-v1";
   const [increaseMode, setIncreaseMode] = useState<IncreaseMode>("percent");
   const [increase, setIncrease] = useState("0");
   const [estimates, setEstimates] = useState<Record<number, string>>({});
@@ -100,8 +121,27 @@ export function CoverClient() {
       const res = await fetch("/api/bo/cover", { cache: "no-store" });
       const json = await readApiResponse(res);
       if (!res.ok) throw new Error(json?.error || "Unable to load Menu Pricing.");
-      setData(json);
-      setEstimates(Object.fromEntries(Object.entries(json.comparisons || {}).map(([id, usd]) => [id, String(viewCurrency === "LBP" ? Math.round(Number(usd) * Number(json.rate)) : usd)])));
+      // Restore only queued edits: do not overwrite them with the server snapshot.
+      let pending: typeof pendingRef.current = {};
+      try {
+        const raw = window.localStorage.getItem(draftsStorageKey);
+        const parsed = raw ? JSON.parse(raw) : {};
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          for (const [key, row] of Object.entries(parsed)) {
+            const entry = row as any;
+            if (!entry || !Number.isInteger(entry.id) || entry.id <= 0 || !["price", "comparison"].includes(entry.kind) || (entry.usd !== null && (!Number.isFinite(entry.usd) || entry.usd < 0))) continue;
+            pending[key] = { id: entry.id, kind: entry.kind, usd: entry.usd, revision: ++revisionRef.current };
+          }
+        }
+      } catch { /* Browser storage may be unavailable. */ }
+      pendingRef.current = pending;
+      setPendingCount(Object.keys(pending).length);
+      setSaveStatus(Object.keys(pending).length ? "pending" : "saved");
+      const merged: Payload = { ...json, sections: (json.sections || []).map((section: Section) => ({ ...section, items: section.items.map((item: Item) => applyPendingPrice(item, pending, Number(json.rate))) })), unsectioned: (json.unsectioned || []).map((item: Item) => applyPendingPrice(item, pending, Number(json.rate))), comparisons: { ...json.comparisons } };
+      for (const row of Object.values(pending)) if (row.kind === "comparison") merged.comparisons![String(row.id)] = row.usd as number;
+      setData(merged);
+      setEstimates(Object.fromEntries(Object.entries(merged.comparisons || {}).filter(([, usd]) => usd !== null && usd !== undefined).map(([id, usd]) => [id, String(viewCurrency === "LBP" ? Math.round(Number(usd) * Number(json.rate)) : usd)])));
+      loadedRef.current = true;
       setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to load Menu Pricing."); }
   }
@@ -122,55 +162,106 @@ export function CoverClient() {
   })).filter(section => section.items.length > 0), [allSections, search, category, filter]);
 
 
-  async function updatePrice(id: number, field: "usd" | "lbp", value: string): Promise<boolean> {
-    if (savingId !== null) { setError("Wait until the previous price finishes saving."); return false; }
+  function storePending() {
+    const entries = pendingRef.current;
+    setPendingCount(Object.keys(entries).length);
+    try {
+      if (Object.keys(entries).length) window.localStorage.setItem(draftsStorageKey, JSON.stringify(entries));
+      else window.localStorage.removeItem(draftsStorageKey);
+    } catch { /* Save still works if storage is blocked/full. */ }
+  }
+
+  function queueChange(id: number, kind: "price" | "comparison", usd: number | null) {
+    const key = `${kind}:${id}`;
+    pendingRef.current[key] = { id, kind, usd, revision: ++revisionRef.current };
+    storePending();
+    setSaveStatus("pending");
+  }
+
+  function updatePrice(id: number, field: "usd" | "lbp", value: string): boolean {
     if (field === "lbp" && rate <= 0) { setError("Set a valid exchange rate in Settings before editing LBP prices."); return false; }
     const amount = value === "" ? null : Number(value);
     const usd = amount === null ? null : field === "lbp" ? amount / rate : amount;
     if (usd !== null && (!Number.isFinite(usd) || usd < 0)) { setError("Enter a valid non-negative price."); return false; }
-    setSavingId(id);
+    const existing = [...(data?.sections || []).flatMap(section => section.items), ...(data?.unsectioned || [])].find(item => item.id === id);
+    if (existing && (existing.sp_usd === usd || (existing.sp_usd !== null && usd !== null && Math.abs(Number(existing.sp_usd) - usd) < 0.0000001))) return true;
+    queueChange(id, "price", usd);
+    setData(previous => previous ? {
+      ...previous,
+      sections: previous.sections.map(section => ({ ...section, items: section.items.map(item => item.id === id ? withUpdatedPrice(item, usd, rate) : item) })),
+      unsectioned: previous.unsectioned.map(item => item.id === id ? withUpdatedPrice(item, usd, rate) : item),
+    } : previous);
     setError("");
-    try {
-      const res = await fetch("/api/bo/cover", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, sp_usd: usd }),
-      });
-      const json = await readApiResponse(res);
-      if (!res.ok) throw new Error(json?.error || "Unable to save selling price.");
-      const checkRes = await fetch("/api/bo/cover", { cache: "no-store" });
-      const check = await readApiResponse(checkRes);
-      if (!checkRes.ok) throw new Error(check?.error || "Unable to verify saved price.");
-      const saved = [...(check.sections || []).flatMap((s: Section) => s.items || []), ...(check.unsectioned || [])]
-        .find((item: Item) => Number(item.id) === id);
-      if (!saved || (usd === null ? saved.sp_usd !== null : Math.abs(Number(saved.sp_usd) - usd) > 0.0001))
-        throw new Error("The server accepted the update, but the saved price could not be verified. Refresh and check this item.");
-      setData(check);
-      return true;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to save selling price.");
-      return false;
-    } finally { setSavingId(null); }
+    return true;
   }
 
-  async function saveComparison(id: number, draft: string): Promise<boolean> {
-    if (savingComparison !== null) return false;
+  function saveComparison(id: number, draft: string): boolean {
     const amount = draft.trim() === "" ? null : Number(draft.replace(/,/g, ""));
     if (amount !== null && (!Number.isFinite(amount) || amount < 0)) { setError("Compare Price must be zero or greater."); return false; }
     if (viewCurrency === "LBP" && rate <= 0) { setError("A valid exchange rate is required."); return false; }
     const usd = amount === null ? null : viewCurrency === "LBP" ? amount / rate : amount;
-    setSavingComparison(id);
+    const previous = data?.comparisons?.[String(id)];
+    const current = previous === null || previous === undefined ? null : Number(previous);
+    if (current === usd || (current !== null && usd !== null && Math.abs(current - usd) < 0.0000001)) return true;
+    queueChange(id, "comparison", usd);
+    setData(previous => previous ? { ...previous, comparisons: { ...previous.comparisons, [String(id)]: usd as number } } : previous);
     setError("");
-    try {
-      const response = await fetch("/api/bo/cover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, compare_sp_usd: usd }) });
-      const payload = await readApiResponse(response);
-      if (!response.ok) throw new Error(payload.error || "Unable to save Compare Price.");
-      setData(previous => previous ? { ...previous, comparisons: { ...previous.comparisons, [String(id)]: usd as number } } : previous);
-      return true;
-    } catch (e) { setError(e instanceof Error ? e.message : "Unable to save Compare Price."); return false; }
-    finally { setSavingComparison(null); }
+    return true;
   }
+
+  async function saveAll() {
+    if (saveRunningRef.current || Object.keys(pendingRef.current).length === 0) return;
+    saveRunningRef.current = true;
+    setSaveStatus("saving");
+    setError("");
+    const snapshot = Object.values(pendingRef.current).map(row => ({ ...row }));
+    let failed = false;
+    try {
+      // Use the existing API; one request per changed record, rather than per keystroke/blur.
+      for (const row of snapshot) {
+        try {
+          const response = await fetch("/api/bo/cover", {
+            method: row.kind === "price" ? "PUT" : "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(row.kind === "price" ? { id: row.id, sp_usd: row.usd } : { id: row.id, compare_sp_usd: row.usd }),
+          });
+          await readApiResponse(response);
+          const key = `${row.kind}:${row.id}`;
+          if (pendingRef.current[key]?.revision === row.revision) delete pendingRef.current[key];
+          storePending();
+        } catch (e) {
+          failed = true;
+          setError(e instanceof Error ? e.message : "Unable to save some pricing changes. Please retry.");
+          break; // Preserve all unsaved rows for retry.
+        }
+      }
+      if (!failed) setLastSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    } finally {
+      saveRunningRef.current = false;
+      setSaveStatus(failed ? "error" : Object.keys(pendingRef.current).length ? "pending" : "saved");
+    }
+  }
+  saveRef.current = saveAll;
+  useEffect(() => {
+    const interval = window.setInterval(() => { if (loadedRef.current) void saveRef.current(); }, 60_000);
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        window.setTimeout(() => { void saveRef.current(); }, 0);
+      }
+    };
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (Object.keys(pendingRef.current).length > 0) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => { window.clearInterval(interval); window.removeEventListener("keydown", onKey); window.removeEventListener("beforeunload", onBeforeUnload); };
+  }, []);
+
   async function resetScenarios() {
-    if (savingComparison !== null) { setError("Please wait until Compare Price finishes saving."); return; }
+    if (saveRunningRef.current) { setError("Wait for the current save to finish."); return; }
+    if (Object.values(pendingRef.current).some(row => row.kind === "comparison")) { setError("Save your pending Compare Prices before resetting them."); return; }
     if (!window.confirm("Clear all saved Compare Prices and reset the New Price adjustment? Selling prices will not change.")) return;
     setError("");
     try {
@@ -265,11 +356,20 @@ export function CoverClient() {
   const visibleIds = sections.map(section => String(section.id));
   const allCollapsed = visibleIds.length > 0 && visibleIds.every(id => collapsed[id]);
   return <BOFrame active="/bo/cover" title="MENU PRICING" subtitle={`Selling prices, food cost and price scenarios · Exchange rate ${moneyLbp(rate)} LBP/USD`}>
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3">
+      <div className="flex items-center gap-2 text-[12px] font-semibold" aria-live="polite">
+        <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
+        <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
+        {lastSavedAt && !pendingCount && <span className="font-normal text-black/50">at {lastSavedAt}</span>}
+        <span className="hidden font-normal text-black/45 sm:inline">· Autosave every 60 seconds · Ctrl+S / Cmd+S</span>
+      </div>
+      <button type="button" onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.setTimeout(() => { void saveRef.current(); }, 0); }} disabled={saveStatus === "saving" || (!pendingCount && saveStatus !== "error")} className="rounded-lg bg-black px-4 py-2 text-[12px] font-bold text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40">{saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Retry Save" : "Save Changes"}</button>
+    </div>
     {error && <div role="alert" className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-800">{error}</div>}
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-3 py-2">
       <div className="flex items-center gap-2 text-[12px] font-semibold"><span>Display values in</span>
         <div role="group" aria-label="Display currency" className="inline-flex overflow-hidden rounded-lg border border-black/20">
-          {(["LBP", "USD"] as const).map(currency => <button key={currency} type="button" aria-pressed={viewCurrency === currency} onClick={() => { setViewCurrency(currency); setEstimates(Object.fromEntries(Object.entries(data?.comparisons || {}).filter(([, v]) => v !== null).map(([id, usd]) => [id, String(currency === "LBP" ? Math.round(Number(usd) * rate) : usd)]))); }} className={`px-4 py-1.5 text-[12px] ${viewCurrency === currency ? "bg-black text-white" : "bg-white text-black"}`}>{currency}</button>)}
+          {(["LBP", "USD"] as const).map(currency => <button key={currency} type="button" aria-pressed={viewCurrency === currency} onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); setViewCurrency(currency); setEstimates(Object.fromEntries(Object.entries(data?.comparisons || {}).filter(([, v]) => v !== null).map(([id, usd]) => [id, String(currency === "LBP" ? Math.round(Number(usd) * rate) : usd)]))); }} className={`px-4 py-1.5 text-[12px] ${viewCurrency === currency ? "bg-black text-white" : "bg-white text-black"}`}>{currency}</button>)}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 text-[11px]">
@@ -371,15 +471,15 @@ export function CoverClient() {
                     {(item.needs_review === true || item.recipe?.lines?.some(line => line.needs_review === true)) && <span className="inline-flex shrink-0 items-center text-amber-700" title="Recipe contains items needing review" aria-label="Needs review"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 2a1 1 0 0 1 1 1v1c5-3 8 3 13 0v12c-5 3-8-3-13 0v5a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Z"/></svg></span>}
                   </span>
                 </td>
-                <td className="w-[102px] px-2 py-1"><PriceInput value={item.sp_usd} disabled={savingId !== null} onSave={v => updatePrice(item.id, "usd", v)} /></td>
-                <td className="w-[123px] px-2 py-1"><PriceInput value={item.sp_lbp} decimals={0} disabled={savingId !== null || rate <= 0} onSave={v => updatePrice(item.id, "lbp", v)} /></td>
+                <td className="w-[102px] px-2 py-1"><PriceInput value={item.sp_usd} onSave={v => updatePrice(item.id, "usd", v)} /></td>
+                <td className="w-[123px] px-2 py-1"><PriceInput value={item.sp_lbp} decimals={0} disabled={rate <= 0} onSave={v => updatePrice(item.id, "lbp", v)} /></td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{asCurrency(item.cost_lbp)}</td>
                 <td className={`px-2 py-1.5 text-right font-bold tabular-nums ${tone(item.food_cost_pct)}`}>{positivePrice(item.sp_usd) ? displayPct(item.food_cost_pct) : "—"}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{positivePrice(item.sp_usd) ? asCurrency(item.gross_profit_lbp) : "—"}</td>
                 <td className={`px-2 py-1.5 text-right font-bold tabular-nums ${tone(item.margin_pct, true)}`}>{positivePrice(item.sp_usd) ? displayPct(item.margin_pct) : "—"}</td>
                 <td className="bg-gray-50 px-2 py-1.5 text-right font-bold tabular-nums">{raised === null ? "—" : asCurrency(raised)}</td>
                 <td className={`bg-gray-50 px-2 py-1.5 text-right font-bold tabular-nums ${newCostTone}`}>{displayPct(raisedCost)}</td>
-                <td className="w-[120px] px-2 py-1"><input aria-label={`Compare selling price for ${item.name} in ${viewCurrency}`} inputMode="decimal" placeholder={`Enter ${viewCurrency}`} className={inputStyle} value={estimate ?? ""} disabled={savingComparison === item.id} onChange={e => setEstimates(prev => ({ ...prev, [item.id]: e.target.value }))} onBlur={e => { void saveComparison(item.id, e.currentTarget.value); }} onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} /></td>
+                <td className="w-[120px] px-2 py-1"><input aria-label={`Compare selling price for ${item.name} in ${viewCurrency}`} inputMode="decimal" placeholder={`Enter ${viewCurrency}`} className={inputStyle} value={estimate ?? ""} onChange={e => setEstimates(prev => ({ ...prev, [item.id]: e.target.value }))} onBlur={e => { saveComparison(item.id, e.currentTarget.value); }} onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} /></td>
                 <td className={`px-2 py-1.5 text-right font-bold tabular-nums ${comparisonTone}`}>{displayPct(comparedCost)}</td>
               </tr>;
             })}
