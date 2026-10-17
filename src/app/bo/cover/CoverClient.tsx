@@ -149,7 +149,8 @@ export function CoverClient() {
 
   const allSections = useMemo(() => {
     if (!data) return [] as Section[];
-    return [...(data.sections || []), ...(data.unsectioned?.length ? [{ id: "none", name: "UNCATEGORIZED", items: data.unsectioned }] : [])];
+    return [...(data.sections || [])].sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true }))
+      .concat(data.unsectioned?.length ? [{ id: "none", name: "UNCATEGORIZED", items: data.unsectioned }] : []);
   }, [data]);
   const sections = useMemo(() => allSections.map(section => ({
     ...section,

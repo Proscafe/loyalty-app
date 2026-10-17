@@ -197,7 +197,7 @@ export function MenuClient() {
   }
 
   const categoryGroups = useMemo(() => {
-    const categories: Row[] = menuData?.categories ?? [];
+    const categories: Row[] = [...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true }));
     const matching = (menuData?.items ?? []).filter((row: Row) => {
       const needle = search.trim().toLowerCase();
       return (!needle || String(row.name).toLowerCase().includes(needle) || String(row.recipe?.name ?? "").toLowerCase().includes(needle))
@@ -1118,7 +1118,7 @@ export function MenuClient() {
           className="min-w-[170px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs" />
         <select aria-label="Category filter" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="min-w-[150px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
           <option value="all">All categories</option>
-          {(menuData?.categories ?? []).map((cat: Row) => <option key={cat.id} value={String(cat.id)}>{cat.name}</option>)}
+          {[...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true })).map((cat: Row) => <option key={cat.id} value={String(cat.id)}>{cat.name}</option>)}
           <option value="none">Uncategorized</option>
         </select>
         <select aria-label="Visibility filter" value={visibilityFilter} onChange={e => setVisibilityFilter(e.target.value)} className="min-w-[160px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
@@ -1147,7 +1147,7 @@ export function MenuClient() {
           <select aria-label="Destination category" value={bulkCategory} disabled={bulkBusy} onChange={e => setBulkCategory(e.target.value)}
             className="max-w-[190px] rounded-md border border-black/20 bg-white px-2 py-2">
             <option value="">Move to category…</option>
-            {(menuData?.categories ?? []).map((category: Row) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}
+            {[...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true })).map((category: Row) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}
             <option value="none">Uncategorized</option>
           </select>
           <button type="button" onClick={() => void runBulk("category")} disabled={!selectedItems.length || !bulkCategory || bulkBusy}
@@ -1318,7 +1318,7 @@ export function MenuClient() {
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">CATEGORY</span>
                     <select value={draft.menu_category_id} onChange={(e) => setDraft({ ...draft, menu_category_id: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black">
                       <option value="">SELECT</option>
-                      {(menuData?.categories ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      {[...(menuData?.categories ?? [])].sort((a: Row, b: Row) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true })).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
                     </select>
                   </label>
 

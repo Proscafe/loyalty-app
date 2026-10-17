@@ -39,7 +39,9 @@ export async function GET() {
     // Legacy cover_section_id must not determine the displayed category.
     const knownCategoryIds = new Set(snapshot.menuCategories.map((category: any) => String(category.id)));
     const visibleMenuItems = snapshot.menuItems.filter((item: any) => item.active !== false);
-    const sections = snapshot.menuCategories.map((category: any) => ({
+    const sections = [...snapshot.menuCategories]
+      .sort((a: any, b: any) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true }))
+      .map((category: any) => ({
       ...category,
       items: visibleMenuItems
         .filter((item: any) => String(item.menu_category_id) === String(category.id))

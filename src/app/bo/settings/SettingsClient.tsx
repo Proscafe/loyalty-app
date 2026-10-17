@@ -12,6 +12,8 @@ type SettingsResponse = {
   suppliers: Item[];
 };
 
+const alphabetically = (a: Item, b: Item) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true });
+
 const SECTIONS: { key: ListKey; title: string }[] = [
   { key: "ingredient_categories", title: "INGREDIENT CATEGORIES" },
   { key: "menu_categories", title: "MENU CATEGORIES" },
@@ -45,7 +47,11 @@ export function SettingsClient() {
 
   const load = useCallback(async (updateRate = false) => {
     const result = await apiJson(await fetch("/api/bo/settings", { cache: "no-store" })) as SettingsResponse;
-    setData(result);
+    setData({ ...result,
+      ingredient_categories: [...(result.ingredient_categories ?? [])].sort(alphabetically),
+      menu_categories: [...(result.menu_categories ?? [])].sort(alphabetically),
+      suppliers: [...(result.suppliers ?? [])].sort(alphabetically),
+    });
     if (updateRate) setRate(String(result.settings?.usd_lbp_rate ?? ""));
   }, []);
 
