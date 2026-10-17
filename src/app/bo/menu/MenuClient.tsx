@@ -57,6 +57,9 @@ export function MenuClient() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<Row | null>(null);
+  const [moveKind, setMoveKind] = useState<"prep" | "sauce">("prep");
+  const [moveBusy, setMoveBusy] = useState(false);
   const [newRecipePickerOpen, setNewRecipePickerOpen] = useState(false);
   const [newRecipeSearch, setNewRecipeSearch] = useState("");
   const [unitCosts, setUnitCosts] = useState<Record<string, number>>({});
@@ -153,6 +156,28 @@ export function MenuClient() {
       await load(); setOpen(false); setNotice(`${row.name} deleted.`);
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to delete menu item."); }
     finally { setActionBusy(null); }
+  }
+
+  async function moveToProduction() {
+    if (!moveTarget || moveBusy) return;
+    const row = moveTarget;
+    setMoveBusy(true); setError(""); setNotice("");
+    try {
+      const res = await fetch("/api/bo/menu/move-to-production", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ menu_item_id: Number(row.id), kind: moveKind }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.ok) throw new Error(payload.error || "Unable to move recipe.");
+      setMoveTarget(null); setOpen(false); setSelectedIds(prev => prev.filter(id => id !== Number(row.id)));
+      await load();
+      setNotice(`Moved “${row.name}” to ${moveKind === "sauce" ? "Sauces" : "Prep"}. Its recipe ingredients and costs were preserved.`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to move recipe."); }
+    finally { setMoveBusy(false); }
+  }
+
+  function requestMove(row: Row) {
+    setMoveKind("prep"); setMoveTarget(row); setError("");
   }
 
   function hasFlaggedLines(row: Row) {
@@ -686,6 +711,40 @@ export function MenuClient() {
       label: x.name,
     }));
 
+  async function saveDishName() {
+    const name = String(draft.name ?? "").trim();
+    if (!name) { setError("Enter a dish name before saving."); return; }
+    const menuItemId = Number(editing?.id);
+    if (!menuItemId) {
+      setError("For a new menu item, use Save Changes to create it first.");
+      return;
+    }
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/bo/menu/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: menuItemId, name }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Unable to rename this dish.");
+      }
+      setEditing((previous: Row | null) => previous ? { ...previous, name } : previous);
+      setDraft((previous: any) => ({ ...previous, name }));
+      // Keep the open recipe draft in sync; no ingredient rows are modified.
+      setRecipeDraft((previous: any) => previous ? { ...previous, name } : previous);
+      await load();
+      setNotice(`Dish renamed to “${name}”.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to rename dish.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -1102,7 +1161,7 @@ export function MenuClient() {
                 checked={selectedIds.includes(Number(row.id))} disabled={bulkBusy}
                 onClick={e => selectRow(Number(row.id), e.shiftKey)}
                 readOnly /></td>
-              <td className="px-3 py-1.5 font-bold"><span className="inline-flex items-center gap-2">{row.name}{hasFlaggedLines(row) && <span title="Recipe has items needing review" aria-label="Needs review" className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.6"><path d="M5 21V4m0 1c4-3 7 3 12 0v11c-5 3-8-3-12 0" /></svg>Review</span>}</span></td>
+              <td className="px-3 py-1.5 font-bold"><span className="inline-flex items-center gap-2"><button type="button" onClick={() => startEdit(row)} className="text-left font-bold hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-black" title={`Edit ${row.name}`}>{row.name}</button>{hasFlaggedLines(row) && <span title="Recipe has items needing review" aria-label="Needs review" className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.6"><path d="M5 21V4m0 1c4-3 7 3 12 0v11c-5 3-8-3-12 0" /></svg>Review</span>}</span></td>
               <td className="px-2 py-1.5 text-right tabular-nums">{moneyUsd(row.sp_usd)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{moneyLbp(row.sp_lbp)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{moneyLbp(row.cost_lbp)}</td>
@@ -1125,6 +1184,31 @@ export function MenuClient() {
         </section>)}
       </div>
 
+      {moveTarget && (
+        <div role="presentation" className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 p-4" onClick={() => { if (!moveBusy) setMoveTarget(null); }}>
+          <section role="dialog" aria-modal="true" aria-label="Move recipe to production" onClick={e => e.stopPropagation()}
+            className="w-full max-w-[470px] overflow-hidden rounded-2xl border border-black/15 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-black/10 px-6 py-5">
+              <div><p className="mb-1 text-[10px] font-black uppercase tracking-wider text-gray-500">RECIPE MANAGEMENT</p><h3 className="text-xl font-black uppercase text-black">MOVE TO PRODUCTION</h3></div>
+              <button type="button" disabled={moveBusy} onClick={() => setMoveTarget(null)} aria-label="Close move dialog" className="rounded-lg border border-black/20 px-3 py-1.5 text-lg text-black">×</button>
+            </div>
+            <div className="space-y-4 p-6 text-black">
+              <p className="text-sm">Move <strong>{moveTarget.name}</strong> out of Recipes and Menu Pricing into the production library.</p>
+              <label className="block text-[11px] font-black uppercase">Destination
+                <select value={moveKind} onChange={e => setMoveKind(e.target.value as "prep" | "sauce")}
+                  disabled={moveBusy} className="mt-2 w-full rounded-lg border border-black/25 bg-white px-3 py-3 text-sm font-bold text-black">
+                  <option value="prep">Prep</option><option value="sauce">Sauces</option>
+                </select>
+              </label>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">The menu item and its selling price will be removed from Menu Pricing. The recipe, ingredients, quantities, costs and review flags are retained. This cannot be undone with one click.</div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-black/10 px-6 py-4">
+              <button type="button" disabled={moveBusy} onClick={() => setMoveTarget(null)} className="rounded-lg border border-black/20 px-4 py-2.5 text-xs font-bold text-black">CANCEL</button>
+              <button type="button" disabled={moveBusy} onClick={() => void moveToProduction()} className="rounded-lg bg-black px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{moveBusy ? "MOVING..." : `MOVE TO ${moveKind === "prep" ? "PREP" : "SAUCES"}`}</button>
+            </div>
+          </section>
+        </div>
+      )}
       {newRecipePickerOpen ? (
         <div role="presentation" className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4" onClick={() => setNewRecipePickerOpen(false)}>
           <div role="dialog" aria-modal="true" aria-label="Choose menu item for new recipe" onClick={event => event.stopPropagation()}
@@ -1197,6 +1281,12 @@ export function MenuClient() {
                   <label className="min-w-0 text-left">
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">DISH NAME</span>
                     <input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black" />
+                    {Number(editing?.id) > 0 && String(draft.name ?? "").trim() !== String(editing?.name ?? "").trim() ? (
+                      <button type="button" disabled={saving} onClick={saveDishName}
+                        className="mt-2 w-full rounded-[8px] bg-black px-3 py-2 text-[11px] font-black uppercase text-white disabled:opacity-50">
+                        {saving ? "Saving..." : "Save Name Only"}
+                      </button>
+                    ) : null}
                   </label>
 
                   <label className="min-w-0 text-left">
@@ -1221,6 +1311,12 @@ export function MenuClient() {
                         className="flex h-11 w-11 items-center justify-center rounded-lg border border-black/20 bg-white text-black disabled:opacity-50">
                         {draft.active ? <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
                           : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l18 18M10.5 5.1A11 11 0 0 1 12 5c6 0 10 7 10 7a16 16 0 0 1-3 3.6M6.3 6.3C3.6 8.1 2 12 2 12s4 7 10 7c1.5 0 2.9-.4 4.1-1.1"/></svg>}
+                      </button>
+                      <button type="button" disabled={saving || actionBusy !== null || !editing?.id}
+                        onClick={() => { if (editing?.id) requestMove(editing); }}
+                        aria-label="Move recipe to Prep or Sauces" title="Move recipe to Prep or Sauces"
+                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-black/20 bg-white text-black hover:bg-gray-100 disabled:opacity-50">
+                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
                       </button>
                       <button type="button" disabled={saving || actionBusy !== null}
                         onClick={async () => {
