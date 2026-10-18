@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { BOFrame } from "../BOFrame";
+import { downloadAllProductionPdf } from "../downloadAllProductionPdf";
+import { downloadAllMenuRecipesPdf } from "../downloadAllMenuRecipesPdf";
 
 type ListKey = "ingredient_categories" | "menu_categories" | "suppliers";
 type Item = { id: number; name: string; sort?: number | null };
@@ -33,6 +35,13 @@ async function apiJson(response: Response) {
 export function SettingsClient() {
   const [data, setData] = useState<SettingsResponse | null>(null);
   const [rate, setRate] = useState("");
+  const [lbpRounding, setLbpRounding] = useState("1");
+  const [usdRounding, setUsdRounding] = useState("0.01");
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [recipeDownloadsOpen, setRecipeDownloadsOpen] = useState(false);
+  const [productionDownloadsOpen, setProductionDownloadsOpen] = useState(false);
+  const [greenThreshold, setGreenThreshold] = useState("30");
+  const [amberThreshold, setAmberThreshold] = useState("35");
   const [newNames, setNewNames] = useState<Record<ListKey, string>>({ ingredient_categories: "", menu_categories: "", suppliers: "" });
   const [busy, setBusy] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<ListKey, boolean>>({ ingredient_categories: false, menu_categories: false, suppliers: false });
@@ -45,6 +54,41 @@ export function SettingsClient() {
   const [editPosition, setEditPosition] = useState("1");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [selectedRecipeCategories, setSelectedRecipeCategories] = useState<number[]>([]);
+  const [pdfBusy, setPdfBusy] = useState<"priced" | "plain" | "recipes-priced" | "recipes-plain" | null>(null);
+
+  async function exportProductionPdf(withPrices: boolean) {
+    setPdfBusy(withPrices ? "priced" : "plain"); setError("");
+    try {
+      const response = await fetch("/api/bo/recipes", { cache: "no-store" });
+      const result = await apiJson(response);
+      await downloadAllProductionPdf(result, withPrices);
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to export Production PDF."); }
+    finally { setPdfBusy(null); }
+  }
+
+  async function exportMenuRecipesPdf(withPrices: boolean) {
+    if (!selectedRecipeCategories.length) { setError("Select at least one menu category before exporting recipes."); return; }
+    setPdfBusy(withPrices ? "recipes-priced" : "recipes-plain"); setError("");
+    try {
+      const [recipesResponse, menuResponse] = await Promise.all([
+        fetch("/api/bo/recipes", { cache: "no-store" }),
+        fetch("/api/bo/menu", { cache: "no-store" }),
+      ]);
+      const recipesData = await apiJson(recipesResponse);
+      const menuData = await apiJson(menuResponse);
+      await downloadAllMenuRecipesPdf({
+        recipes: recipesData.recipes ?? [],
+        all_recipes: recipesData.all_recipes ?? recipesData.recipes ?? [],
+        ingredients: recipesData.ingredients ?? [],
+        items: menuData.items ?? menuData.menuItems ?? [],
+        categories: data?.menu_categories ?? menuData.categories ?? [],
+        utilities: recipesData.utilities ?? [],
+        rate: Number(menuData.usd_lbp_rate ?? recipesData.usd_lbp_rate ?? data?.settings?.usd_lbp_rate ?? 0),
+      }, withPrices, "menu", selectedRecipeCategories);
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to export menu recipes."); }
+    finally { setPdfBusy(null); }
+  }
 
   const load = useCallback(async (updateRate = false) => {
     const result = await apiJson(await fetch("/api/bo/settings", { cache: "no-store" })) as SettingsResponse;
@@ -53,7 +97,14 @@ export function SettingsClient() {
       menu_categories: [...(result.menu_categories ?? [])],
       suppliers: [...(result.suppliers ?? [])].sort(alphabetically),
     });
-    if (updateRate) setRate(String(result.settings?.usd_lbp_rate ?? ""));
+    setSelectedRecipeCategories(prev => prev.length ? prev.filter(id => (result.menu_categories ?? []).some((c: Item) => Number(c.id) === id)) : (result.menu_categories ?? []).map((c: Item) => Number(c.id)));
+    if (updateRate) {
+      setRate(String(result.settings?.usd_lbp_rate ?? ""));
+      setLbpRounding(String(result.settings?.lbp_rounding ?? "1"));
+      setUsdRounding(String(result.settings?.usd_rounding ?? "0.01"));
+      setGreenThreshold(String(Number(result.settings?.food_cost_threshold ?? "0.30") * 100));
+      setAmberThreshold(String(Number(result.settings?.bar_cost_threshold ?? "0.35") * 100));
+    }
   }, []);
 
   useEffect(() => {
@@ -64,14 +115,21 @@ export function SettingsClient() {
     e.preventDefault();
     const value = Number(rate.replace(/,/g, ""));
     if (!Number.isFinite(value) || value <= 0) { setError("Enter a valid USD to LBP exchange rate greater than zero."); return; }
+    const green = Number(greenThreshold), amber = Number(amberThreshold);
+    if (!Number.isFinite(green) || !Number.isFinite(amber) || green < 0 || green > amber || amber > 100) { setError("Food-cost guide: Good must be less than or equal to Watch. For example, Good 30% and Watch 35% (not Good 40% and Watch 30%)."); return; }
     setBusy(true); setError(""); setMessage("");
     try {
       await apiJson(await fetch("/api/bo/settings", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: { usd_lbp_rate: String(value) } }),
+        body: JSON.stringify({ settings: { usd_lbp_rate: String(value), lbp_rounding: lbpRounding, usd_rounding: usdRounding, food_cost_threshold: String(green / 100), bar_cost_threshold: String(amber / 100) } }),
       }));
       await load(true);
-      setMessage("Exchange rate saved successfully.");
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("pros_bo_currency_rounding", JSON.stringify({ lbp: Number(lbpRounding), usd: Number(usdRounding) }));
+        window.dispatchEvent(new Event("pros-bo-rounding-changed"));
+        window.localStorage.setItem("pros_bo_food_cost_thresholds", JSON.stringify({ good: green / 100, watch: amber / 100 }));
+      }
+      setMessage("Exchange rate and display rounding preferences saved. Refresh other open tabs to apply.");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save exchange rate."); }
     finally { setBusy(false); }
   }
@@ -173,8 +231,81 @@ export function SettingsClient() {
           <span className="mb-2 block text-left text-[11px] font-bold uppercase text-black/70">USD → LBP RATE</span>
           <input inputMode="decimal" value={rate} onChange={e => setRate(e.target.value)} placeholder="90000" className="w-full rounded-lg border border-black/20 bg-white px-3 py-3 text-sm font-semibold text-black outline-none focus:border-black" />
         </label>
-        <button type="submit" disabled={busy} className="rounded-lg bg-black px-5 py-3 text-xs font-bold uppercase text-white hover:bg-black/80 disabled:opacity-50">{busy ? "SAVING..." : "SAVE RATE"}</button>
+        <label className="w-full max-w-[260px] text-left">
+          <span className="mb-2 block text-left text-[11px] font-bold uppercase text-black/70">LBP DISPLAY ROUNDING</span>
+          <select value={lbpRounding} onChange={e => setLbpRounding(e.target.value)} className="w-full rounded-lg border border-black/20 bg-white px-3 py-3 text-sm font-semibold text-black">
+            <option value="1">Exact LBP (1)</option>
+            <option value="100">Nearest 100 LBP</option>
+            <option value="500">Nearest 500 LBP</option>
+            <option value="1000">Nearest 1,000 LBP</option>
+            <option value="5000">Nearest 5,000 LBP</option>
+            <option value="10000">Nearest 10,000 LBP</option>
+          </select>
+
+        </label>
+        <label className="w-full max-w-[260px] text-left">
+          <span className="mb-2 block text-left text-[11px] font-bold uppercase text-black/70">USD DISPLAY ROUNDING</span>
+          <select value={usdRounding} onChange={e => setUsdRounding(e.target.value)} className="w-full rounded-lg border border-black/20 bg-white px-3 py-3 text-sm font-semibold text-black">
+            <option value="0.01">Nearest $0.01</option>
+            <option value="0.05">Nearest $0.05</option>
+            <option value="0.1">Nearest $0.10</option>
+            <option value="0.5">Nearest $0.50</option>
+            <option value="1">Nearest $1.00</option>
+          </select>
+        </label>
+        <button type="submit" disabled={busy} className="rounded-lg bg-black px-5 py-3 text-xs font-bold uppercase text-white hover:bg-black/80 disabled:opacity-50">{busy ? "SAVING..." : "SAVE SETTINGS"}</button>
+        <div className="w-full border-t border-black/10 pt-3">
+          <div className="mb-2 text-[11px] font-bold uppercase text-black/70">Food-cost guide</div>
+          <div className="flex flex-wrap items-end gap-4 text-xs">
+            <label className="font-semibold text-emerald-700">Good ≤ <input type="number" min="0" max={amberThreshold} step="1" value={greenThreshold} onChange={e => setGreenThreshold(e.target.value)} className="ml-1 w-16 rounded-lg border border-black/20 bg-white px-2 py-2 text-black" /> %</label>
+            <label className="font-semibold text-amber-700">Watch ≤ <input type="number" min={greenThreshold} max="100" step="1" value={amberThreshold} onChange={e => setAmberThreshold(e.target.value)} className="ml-1 w-16 rounded-lg border border-black/20 bg-white px-2 py-2 text-black" /> %</label>
+            <span className="pb-2 font-semibold text-red-700">High &gt; {amberThreshold || "35"}%</span>
+
+          </div>
+        </div>
       </form>
+
+      <section className="mb-4 rounded-2xl border border-black/10 bg-white p-4 sm:p-5" aria-label="Production PDF exports">
+        <button type="button" onClick={() => setProductionDownloadsOpen(v => !v)} aria-expanded={productionDownloadsOpen} className="flex w-full items-center justify-between gap-2 text-left"><span><h2 className="text-sm font-black uppercase text-black">Production Downloads</h2><span className="mt-1 block text-xs font-normal text-black/60">Export preparations and sauces with or without prices.</span></span><span className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/20 text-lg font-bold">{productionDownloadsOpen ? "−" : "+"}</span></button>
+        {productionDownloadsOpen && <div className="mt-3"><p className="mb-3 text-xs text-black/60">Download all preparations and sauces in one PDF, including ingredients, quantities, yields and notes.</p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button type="button" disabled={pdfBusy !== null} onClick={() => void exportProductionPdf(true)} className="rounded-lg bg-black px-4 py-3 text-xs font-bold text-white disabled:opacity-40">{pdfBusy === "priced" ? "GENERATING..." : "DOWNLOAD PDF WITH PRICES"}</button>
+          <button type="button" disabled={pdfBusy !== null} onClick={() => void exportProductionPdf(false)} className="rounded-lg border border-black/20 bg-white px-4 py-3 text-xs font-bold text-black disabled:opacity-40">{pdfBusy === "plain" ? "GENERATING..." : "DOWNLOAD PDF WITHOUT PRICES"}</button>
+        </div>
+        </div>}
+      </section>
+
+      <section className="mb-4 rounded-2xl border border-black/10 bg-white p-4 sm:p-6" aria-label="Menu Recipes PDF exports">
+        <button type="button" aria-expanded={recipeDownloadsOpen} onClick={() => setRecipeDownloadsOpen(v => !v)} className="flex w-full items-center justify-between gap-4 rounded-xl px-1 py-3 text-left hover:bg-gray-50">
+          <span><span className="block text-base font-black uppercase text-black">Recipe Downloads</span><span className="mt-1 block text-xs text-black/60">Export selected active menu recipes with or without prices. Priced PDFs include utility costs.</span></span>
+          <span className="shrink-0 rounded-lg border border-black/15 bg-white px-3 py-2 text-xs font-bold">{recipeDownloadsOpen ? "−" : "+"}</span>
+        </button>
+        {recipeDownloadsOpen && <div className="pt-3">
+        <div className="mb-4 rounded-xl border border-black/10 bg-gray-50 p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-black">
+              <input type="checkbox" className="h-4 w-4 accent-black" checked={!!data?.menu_categories.length && selectedRecipeCategories.length === data.menu_categories.length}
+                onChange={e => setSelectedRecipeCategories(e.target.checked ? (data?.menu_categories ?? []).map(c => Number(c.id)) : [])} />
+              SELECT ALL CATEGORIES
+            </label>
+            <span className="text-xs text-black/60">{selectedRecipeCategories.length} of {data?.menu_categories.length ?? 0} selected</span>
+          </div>
+          <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-4">
+            {[...(data?.menu_categories ?? [])].sort(alphabetically).map(category =>
+              <label key={category.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-gray-100">
+                <input type="checkbox" className="h-4 w-4 shrink-0 accent-black" checked={selectedRecipeCategories.includes(Number(category.id))}
+                  onChange={e => setSelectedRecipeCategories(prev => e.target.checked ? [...prev, Number(category.id)] : prev.filter(id => id !== Number(category.id)))} />
+                <span>{category.name}</span>
+              </label>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button type="button" disabled={pdfBusy !== null || !selectedRecipeCategories.length} onClick={() => void exportMenuRecipesPdf(true)} className="rounded-lg bg-black px-4 py-3 text-xs font-bold text-white disabled:opacity-40">{pdfBusy === "recipes-priced" ? "GENERATING..." : "DOWNLOAD ALL RECIPES WITH PRICES"}</button>
+          <button type="button" disabled={pdfBusy !== null || !selectedRecipeCategories.length} onClick={() => void exportMenuRecipesPdf(false)} className="rounded-lg border border-black/20 bg-white px-4 py-3 text-xs font-bold text-black disabled:opacity-40">{pdfBusy === "recipes-plain" ? "GENERATING..." : "DOWNLOAD ALL RECIPES WITHOUT PRICES"}</button>
+        </div>
+        </div>}
+      </section>
 
       {viewing && <div className="fixed inset-0 z-[160] flex items-center justify-center bg-black/50 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setViewing(null); }}>
         <div role="dialog" aria-modal="true" aria-label={`View ${viewing.item.name}`} className="w-full max-w-[540px] overflow-hidden rounded-2xl border border-black/15 bg-white shadow-2xl">
@@ -227,20 +358,22 @@ export function SettingsClient() {
         </div>
       </div>}
 
+      <section className="mb-4 rounded-2xl border border-black/10 bg-white p-4 sm:p-5" aria-label="Setup management">
+        <button type="button" onClick={() => setSetupOpen(v => !v)} aria-expanded={setupOpen} aria-controls="bo-settings-setup" className="flex w-full items-center justify-between rounded-lg px-1 py-2 text-left hover:bg-gray-50">
+          <span><span className="block text-base font-black uppercase text-black">Setup</span><span className="mt-1 block text-xs font-normal normal-case text-black/60">Manage ingredient categories, menu categories and suppliers.</span></span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/20 bg-white text-lg font-bold" aria-hidden="true">{setupOpen ? "−" : "+"}</span>
+        </button>
+        {setupOpen && <div id="bo-settings-setup" className="pt-4">
       <div className="mb-3 flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={() => setCollapsedSections({ ingredient_categories: !allSectionsCollapsed, menu_categories: !allSectionsCollapsed, suppliers: !allSectionsCollapsed })}
           aria-label={allSectionsCollapsed ? "Expand all settings sections" : "Collapse all settings sections"}
           title={allSectionsCollapsed ? "Expand all sections" : "Collapse all sections"}
-          className="inline-flex items-center gap-2 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs font-bold text-black hover:bg-gray-100"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-black/20 bg-white text-lg font-bold text-black hover:bg-gray-100"
         >
-          {allSectionsCollapsed ? "EXPAND ALL" : "COLLAPSE ALL"}
-          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            {allSectionsCollapsed && <path d="M12 7v10" />}
-            <path d="M7 12h10" />
-          </svg>
+          {allSectionsCollapsed ? "+" : "−"}
+
         </button>
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-3">
@@ -290,6 +423,8 @@ export function SettingsClient() {
           </section>
         ))}
       </div>
+        </div>}
+      </section>
     </BOFrame>
   );
 }

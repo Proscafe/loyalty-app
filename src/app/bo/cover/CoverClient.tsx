@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { moneyLbp, moneyUsd, pct } from "../format";
 import { downloadMenuPricingXlsx } from "./downloadMenuPricingXlsx";
+import { downloadBoTablePdf } from "../downloadBoTablePdf";
 
 type Item = {
   id: number;
@@ -59,19 +60,30 @@ function PriceInput({ value, disabled, onSave, decimals = 2 }: {
   onSave: (value: string) => boolean;
   decimals?: number;
 }) {
-  const format = (v: number | null | undefined) => v === null || v === undefined ? "" : decimals === 0 ? String(Math.round(v)) : String(Number(v.toFixed(decimals)));
-  const [draft, setDraft] = useState(format(value));
+  const format = (v: number | null | undefined, roundedDisplay = false) => {
+    if (v === null || v === undefined) return "";
+    if (decimals === 0) {
+      const stored = Math.round(v);
+      if (!roundedDisplay || typeof window === "undefined") return String(stored);
+      try { const step = Number(JSON.parse(localStorage.getItem("pros_bo_currency_rounding") || "{}").lbp || 1); return String(Math.round(stored / step) * step); } catch { return String(stored); }
+    }
+    if (roundedDisplay && typeof window !== "undefined") {
+      try { const step = Number(JSON.parse(localStorage.getItem("pros_bo_currency_rounding") || "{}").usd || 0.01); return (Math.round(v / step) * step).toFixed(2); } catch { /* use exact */ }
+    }
+    return String(Number(v.toFixed(decimals)));
+  };
+  const [draft, setDraft] = useState(format(value, true));
   const [focused, setFocused] = useState(false);
-  useEffect(() => { if (!focused) setDraft(format(value)); }, [value, focused]);
+  useEffect(() => { if (!focused) setDraft(format(value, true)); }, [value, focused]);
   const save = () => {
     setFocused(false);
-    if (draft === format(value)) return;
+    if (draft === format(value) || draft === format(value, true)) { setDraft(format(value, true)); return; }
     const n = draft.trim() === "" ? null : Number(draft.replace(/,/g, ""));
     if (n !== null && (!Number.isFinite(n) || n < 0)) { setDraft(format(value)); return; }
     if (!onSave(n === null ? "" : String(n))) setDraft(format(value));
   };
   return <input aria-label="Selling price" inputMode="decimal" className={inputStyle} value={draft} disabled={disabled}
-    onFocus={() => setFocused(true)} onChange={e => setDraft(e.target.value)} onBlur={save}
+    onFocus={() => { setDraft(format(value)); setFocused(true); }} onChange={e => setDraft(e.target.value)} onBlur={save}
     onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setDraft(format(value)); e.currentTarget.blur(); } }} />;
 }
 
@@ -164,6 +176,15 @@ export function CoverClient() {
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to load Menu Pricing."); }
   }
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void fetch("/api/bo/settings", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(body => {
+      if (!body?.settings) return;
+      const green = Number(body.settings.food_cost_threshold);
+      const amber = Number(body.settings.bar_cost_threshold);
+      if (Number.isFinite(green) && green > 0 && green <= 1) setGreenLimit(green * 100);
+      if (Number.isFinite(amber) && amber > 0 && amber <= 1) setAmberLimit(amber * 100);
+    }).catch(() => {});
+  }, []);
 
   const allSections = useMemo(() => {
     if (!data) return [] as Section[];
@@ -417,36 +438,68 @@ export function CoverClient() {
     }
     downloadMenuPricingXlsx(rows, viewCurrency);
   };
+  const exportPdf = async () => {
+    const groups = sortedSections.map(section => ({
+      title: section.name,
+      rows: section.items.map(item => {
+        const dividingRate = data?.rate || rate || 0;
+        const costUsd = dividingRate > 0 && item.cost_lbp != null ? `$${(Number(item.cost_lbp) / dividingRate).toFixed(2)}` : "—";
+        const profitUsd = dividingRate > 0 && item.gross_profit_lbp != null ? `$${(Number(item.gross_profit_lbp) / dividingRate).toFixed(2)}` : "—";
+        return [item.name, item.sp_usd == null ? "—" : `$${Number(item.sp_usd).toFixed(2)}`,
+          item.sp_lbp == null ? "—" : Math.round(Number(item.sp_lbp)).toLocaleString("en-US"),
+          costUsd, item.food_cost_pct == null ? "—" : `${(Number(item.food_cost_pct) * 100).toFixed(1)}%`,
+          profitUsd, item.margin_pct == null ? "—" : `${(Number(item.margin_pct) * 100).toFixed(1)}%`];
+      }),
+    }));
+    await downloadBoTablePdf({ title: "MENU PRICING", subtitle: "Current visible pricing report · USD / LBP",
+      columns: ["ITEM", "SELLING USD", "SELLING LBP", "COST USD", "FOOD COST %", "PROFIT USD", "MARGIN %"],
+      groups, fileName: "pros-menu-pricing.pdf" });
+  };
   const visibleIds = sections.map(section => String(section.id));
   const allCollapsed = visibleIds.length > 0 && visibleIds.every(id => collapsed[id]);
-  return <BOFrame active="/bo/cover" title="MENU PRICING" subtitle={`Selling prices, food cost and price scenarios · Exchange rate ${moneyLbp(rate)} LBP/USD`}>
-    <div ref={saveBarSlotRef} className="pros-bo-save-slot relative mb-3 min-h-[60px]">
-    <div style={saveBarDock ? { position: "fixed", top: 82, left: saveBarDock.left, width: saveBarDock.width } : undefined} className={`pros-bo-save-bar flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${saveBarDock ? "z-[70] shadow-lg" : ""}`}>
-      <div className="flex items-center gap-2 text-[12px] font-semibold" aria-live="polite">
-        <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
-        <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
-        {lastSavedAt && !pendingCount && <span className="font-normal text-black/50">at {lastSavedAt}</span>}
-        <span className="hidden font-normal text-black/45 sm:inline">· Autosave every 60 seconds · Ctrl+S / Cmd+S</span>
+  return <BOFrame active="/bo/cover" title="MENU PRICING" subtitle={`Selling prices, food cost and price scenarios · Exchange rate ${rate.toLocaleString("en-US")} LBP/USD`}>
+    <div ref={saveBarSlotRef} className="sticky top-[82px] z-[70]">
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white p-3">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <div className="relative min-w-[190px] max-w-[360px] flex-1"><input aria-label="Search item" className="w-full rounded-md border border-black/20 bg-white px-3 py-2 pr-9 text-[12px] font-normal text-black" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search Item" />{search && <button type="button" aria-label="Clear item search" title="Clear search" onClick={() => setSearch("")} className="absolute inset-y-0 right-1 flex w-8 items-center justify-center rounded text-black/60 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-800">✕</button>}</div>
+        <div className="flex items-center gap-2 self-end pb-[10px] text-[12px] font-semibold" aria-live="polite">
+          <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
+          <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
+        </div>
       </div>
-      <button type="button" onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.setTimeout(() => { void saveRef.current(); }, 0); }} disabled={saveStatus === "saving" || (!pendingCount && saveStatus !== "error")} className="rounded-lg bg-black px-4 py-2 text-[12px] font-bold text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40">{saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Retry Save" : "Save Changes"}</button>
+      <button type="button" onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.setTimeout(() => { void saveRef.current(); }, 0); }} disabled={saveStatus === "saving" || (!pendingCount && saveStatus !== "error")} className="rounded-lg bg-black px-4 py-2 text-[12px] font-bold text-white disabled:opacity-40">{saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Retry Save" : "Save Changes"}</button>
     </div>
     </div>
     {error && <div role="alert" className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-800">{error}</div>}
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-3 py-2">
-      <div className="flex items-center gap-2 text-[12px] font-semibold"><span>Display values in</span>
-        <div role="group" aria-label="Display currency" className="inline-flex overflow-hidden rounded-lg border border-black/20">
+    <div className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-black/10 bg-white p-3">
+      <label className="min-w-[170px] flex-1 text-[11px] font-bold text-black/70">Menu Category
+        <select className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={category} onChange={e => setCategory(e.target.value)}>
+          <option value="all">All categories</option>{[...allSections].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true })).map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+        </select>
+      </label>
+      <label className="min-w-[150px] flex-1 text-[11px] font-bold text-black/70">Price status
+        <select className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={filter} onChange={e => setFilter(e.target.value as Filter)}>
+          <option value="all">All items</option><option value="missing">Missing selling price</option><option value="over">Above food cost target</option>
+        </select>
+      </label>
+      <label className="min-w-[200px] flex-1 text-[11px] font-bold text-black/70">Price adjustment scenario
+        <div className="mt-1 flex gap-1"><input inputMode="decimal" className="min-w-0 flex-1 rounded-md border border-black/20 px-2 py-2 text-[12px]" value={increase} onChange={e => setIncrease(e.target.value)} placeholder="e.g. -1 or 5" />
+          <select aria-label="Increase type" className="w-[94px] rounded-md border border-black/20 px-1 text-[12px]" value={increaseMode} onChange={e => setIncreaseMode(e.target.value as IncreaseMode)}>
+            <option value="percent">%</option><option value="usd">USD</option><option value="lbp">LBP</option>
+          </select></div>
+      </label>
+
+      <div className="flex items-center gap-2 pb-1" role="group" aria-label="Display currency">
+        <div className="inline-flex overflow-hidden rounded-lg border border-black/20">
           {(["LBP", "USD"] as const).map(currency => <button key={currency} type="button" aria-pressed={viewCurrency === currency} onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); setViewCurrency(currency); setEstimates(Object.fromEntries(Object.entries(data?.comparisons || {}).filter(([, v]) => v !== null).map(([id, usd]) => [id, String(currency === "LBP" ? Math.round(Number(usd) * rate) : usd)]))); }} className={`px-4 py-1.5 text-[12px] ${viewCurrency === currency ? "bg-black text-white" : "bg-white text-black"}`}>{currency}</button>)}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3 text-[11px]">
-        <span className="font-semibold">Food-cost guide</span>
-        <label className="flex items-center gap-1 text-emerald-700">Good ≤ <input aria-label="Green food cost percentage threshold" type="number" min="0" max={amberLimit} step="1" className="w-12 rounded border border-black/20 p-1 text-right text-black" value={greenLimit} onChange={e => setGreenLimit(Math.min(amberLimit, Math.max(0, Number(e.target.value) || 0)))} />%</label>
-        <label className="flex items-center gap-1 text-amber-700">Watch ≤ <input aria-label="Amber food cost percentage threshold" type="number" min={greenLimit} max="100" step="1" className="w-12 rounded border border-black/20 p-1 text-right text-black" value={amberLimit} onChange={e => setAmberLimit(Math.max(greenLimit, Math.min(100, Number(e.target.value) || 0)))} />%</label>
-        <span className="font-semibold text-red-700">High &gt; {amberLimit}%</span>
+      <div className="flex items-center gap-2 pb-1">
+        <button type="button" onClick={() => { void exportPdf().catch(e => setError(e instanceof Error ? e.message : "PDF export failed")); }} title="Download branded Menu Pricing PDF" aria-label="Download Menu Pricing PDF" className="inline-flex h-8 items-center rounded-md border border-black/20 bg-white px-3 text-[11px] font-bold text-black hover:bg-gray-100">PDF</button>
         <button type="button" onClick={exportExcel} aria-label="Download menu pricing as Excel" title="Download Excel (.xlsx)" className="inline-flex h-8 items-center gap-1 rounded-md border border-black/20 bg-white px-2 text-[11px] font-bold text-black hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 16v4h16v-4"/></svg> Excel
         </button>
-        <span className="mx-1 h-5 border-l border-black/15" aria-hidden="true" />
+
         <button type="button" onClick={resetScenarios} title="Reset New Price and Compare Price scenarios" aria-label="Reset all price scenarios" className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-black/20 bg-white text-black hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
         </button>
@@ -454,27 +507,6 @@ export function CoverClient() {
           {allCollapsed ? <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 7v10M7 12h10"/></svg> : <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h10"/></svg>}
         </button>
       </div>
-    </div>
-    <div className="mb-3 grid gap-2 rounded-xl border border-black/10 bg-white p-3 sm:grid-cols-2 xl:grid-cols-4">
-      <label className="text-[11px] font-bold text-black/70">Search item
-        <input className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={search} onChange={e => setSearch(e.target.value)} placeholder="Item name" />
-      </label>
-      <label className="text-[11px] font-bold text-black/70">Menu Category
-        <select className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={category} onChange={e => setCategory(e.target.value)}>
-          <option value="all">All categories</option>{[...allSections].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true })).map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-        </select>
-      </label>
-      <label className="text-[11px] font-bold text-black/70">Price status
-        <select className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={filter} onChange={e => setFilter(e.target.value as Filter)}>
-          <option value="all">All items</option><option value="missing">Missing selling price</option><option value="over">Above food cost target</option>
-        </select>
-      </label>
-      <label className="text-[11px] font-bold text-black/70">Price adjustment scenario
-        <div className="mt-1 flex gap-1"><input inputMode="decimal" className="min-w-0 flex-1 rounded-md border border-black/20 px-2 py-2 text-[12px]" value={increase} onChange={e => setIncrease(e.target.value)} placeholder="e.g. -1 or 5" />
-          <select aria-label="Increase type" className="w-[94px] rounded-md border border-black/20 px-1 text-[12px]" value={increaseMode} onChange={e => setIncreaseMode(e.target.value as IncreaseMode)}>
-            <option value="percent">%</option><option value="usd">USD</option><option value="lbp">LBP</option>
-          </select></div>
-      </label>
     </div>
     {viewItem && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-3" onMouseDown={e => { if (e.target === e.currentTarget) setViewItem(null); }}>
       <div role="dialog" aria-modal="true" aria-label={`${viewItem.name} recipe preview`} className="flex max-h-[92vh] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -490,12 +522,12 @@ export function CoverClient() {
           </div>
           {viewItem.recipe?.lines?.length ? <div className="space-y-4">
             {([
-              { title: 'INGREDIENTS & PREP / SAUCES', lines: viewItem.recipe.lines.filter(line => line.line_type !== 'utility' && line.line_type !== 'fixed') },
+              { title: 'INGREDIENTS', lines: viewItem.recipe.lines.filter(line => line.line_type !== 'utility' && line.line_type !== 'fixed') },
               { title: 'UTILITY COST', lines: viewItem.recipe.lines.filter(line => line.line_type === 'utility' || line.line_type === 'fixed') },
             ]).map(group => <section key={group.title} className="overflow-hidden rounded-xl border border-black/15">
               <h3 className="sticky top-0 z-20 border-b border-black/10 bg-[#e7e7e7] px-4 py-3 text-[12px] font-black text-black">{group.title}</h3>
-              <div className="max-h-[340px] overflow-auto"><table className="w-full min-w-[540px] text-left"><thead className="sticky top-0 z-10 bg-gray-50 text-[11px] text-black/70"><tr><th className="p-2">Item</th><th className="p-2">Type</th><th className="p-2 text-right">QTY</th><th className="p-2">Unit</th><th className="p-2 text-right">Cost</th><th className="p-2">Review</th></tr></thead><tbody>
-                {group.lines.length ? group.lines.map((line,i) => <tr key={line.id ?? i} className="border-t border-black/10"><td className="p-2">{line.sourceName || 'Item'}</td><td className="p-2">{line.line_type === 'recipe' ? 'prep / sauce' : line.line_type}</td><td className="p-2 text-right">{line.qty ?? '—'}</td><td className="p-2">{line.sourceUnit ?? '—'}</td><td className="p-2 text-right">{asCurrency(line.lineCost)}</td><td className="p-2">{line.needs_review ? <span className="font-bold text-amber-700">⚑ Check</span> : '—'}</td></tr>) : <tr><td colSpan={6} className="p-4 text-center text-black/50">No items in this section</td></tr>}
+              <div className="max-h-[340px] overflow-auto"><table className="w-full min-w-[450px] text-left"><thead className="sticky top-0 z-10 bg-gray-50 text-[11px] text-black/70"><tr><th className="p-2">Item</th><th className="p-2 text-right">QTY</th><th className="p-2">Unit</th><th className="p-2 text-right">Cost</th><th className="p-2">Review</th></tr></thead><tbody>
+                {group.lines.length ? group.lines.map((line,i) => <tr key={line.id ?? i} className="border-t border-black/10"><td className="p-2">{line.sourceName || 'Item'}</td><td className="p-2 text-right">{line.qty ?? '—'}</td><td className="p-2">{line.sourceUnit ?? '—'}</td><td className="p-2 text-right">{asCurrency(line.lineCost)}</td><td className="p-2">{line.needs_review ? <span className="font-bold text-amber-700">⚑ Check</span> : '—'}</td></tr>) : <tr><td colSpan={5} className="p-4 text-center text-black/50">No items in this section</td></tr>}
               </tbody></table></div>
             </section>)}
           </div> : <p className="rounded-lg border p-4 text-black/60">No linked recipe lines are available.</p>}

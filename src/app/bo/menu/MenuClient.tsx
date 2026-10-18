@@ -5,6 +5,7 @@ import { BOFrame } from "../BOFrame";
 import { SearchablePicker } from "../SearchablePicker";
 import { moneyLbp, moneyUsd, pct } from "../format";
 import { downloadProductionRecipePdf } from "../downloadProductionRecipePdf";
+import { RecipePhotoEditor } from "./RecipePhotoEditor";
 
 type Row = Record<string, any>;
 
@@ -68,14 +69,52 @@ export function MenuClient() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkCategory, setBulkCategory] = useState("");
   const selectionAnchor = useRef<number | null>(null);
+  const [photoIds, setPhotoIds] = useState<Set<number>>(new Set());
+  const [photoPreview, setPhotoPreview] = useState<{ name: string; url: string } | null>(null);
+  const [photoLoading, setPhotoLoading] = useState<number | null>(null);
+  async function refreshPhotoIds(rows?: Row[]) {
+    const items: Row[] = rows ?? (menuData?.items ?? menuData?.menuItems ?? []);
+    const ids = [...new Set(items.map(row => Number(row.id)).filter(id => Number.isSafeInteger(id) && id > 0))];
+    if (!ids.length) { setPhotoIds(new Set()); return; }
+    try {
+      const found: number[] = [];
+      for (let i = 0; i < ids.length; i += 100) {
+        const response = await fetch("/api/bo/recipe-photos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(i, i + 100) }),
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Unable to check recipe photos.");
+        const payload = await response.json();
+        found.push(...(payload.ids ?? []).map(Number));
+      }
+      setPhotoIds(new Set<number>(found));
+    } catch {
+      // Keep other recipe operations usable if photo availability is inaccessible.
+    }
+  }
+  async function viewPhoto(row: Row) {
+    const id = Number(row.id);
+    if (!photoIds.has(id) || photoLoading !== null) return;
+    setPhotoLoading(id);
+    try {
+      const res = await fetch(`/api/bo/recipe-photo?item_id=${id}`, { cache: "no-store" });
+      const result = await res.json();
+      if (!res.ok || !result.url) throw new Error(result.error || "Photo no longer available.");
+      setPhotoPreview({ name: String(row.name), url: String(result.url) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to open photo.");
+      void refreshPhotoIds();
+    } finally { setPhotoLoading(null); }
+  }
 
   async function load() {
     setError("");
     try {
-      const [menuRes, recipeRes, unitRes] = await Promise.all([
+      const [menuRes, recipeRes] = await Promise.all([
         fetch("/api/bo/menu", { cache: "no-store" }),
         fetch("/api/bo/recipes", { cache: "no-store" }),
-        fetch("/api/bo/ingredient-unit-costs", { cache: "no-store" }),
       ]);
 
       const readJson = async (res: Response, label: string) => {
@@ -96,14 +135,15 @@ export function MenuClient() {
       ]);
       setMenuData(menuJson);
       setRecipeData(recipeJson);
+      void refreshPhotoIds(menuJson?.items ?? menuJson?.menuItems ?? []);
 
-      try {
-        const unitJson = await readJson(unitRes, "Ingredient unit costs API");
-        setUnitCosts(unitJson?.costs || {});
-      } catch (unitError) {
-        setUnitCosts({});
-        setError(unitError instanceof Error ? unitError.message : "Unable to load ingredient unit costs.");
-      }
+      // Ingredient unit costs are already supplied by /api/bo/recipes.
+      // The old optional /api/bo/ingredient-unit-costs endpoint 404'd,
+      // displaying a permanent warning despite successful main data loading.
+      setUnitCosts(Object.fromEntries((recipeJson?.ingredients ?? [])
+        .filter((ingredient: any) => ingredient?.unit_cost_lbp != null)
+        .map((ingredient: any) => [String(ingredient.id), Number(ingredient.unit_cost_lbp)])));
+
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load Recipes.");
     }
@@ -112,6 +152,7 @@ export function MenuClient() {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => { if (!open) void refreshPhotoIds(); }, [open]);
 
   // Open the editor when arriving from Menu Pricing's read-only preview.
   useEffect(() => {
@@ -188,11 +229,11 @@ export function MenuClient() {
     return (recipe?.lines ?? []).some((line: Row) => line.needs_review === true);
   }
 
-  function downloadRecipe(row: Row) {
+  async function downloadRecipe(row: Row) {
     const recipe = (recipeData?.recipes ?? []).find((x: Row) => String(x.id) === String(row.recipe_id));
     if (!recipe) { setError(`No linked recipe is available for ${row.name}.`); return; }
-    downloadProductionRecipePdf(recipe, {
-      ingredients: recipeData?.ingredients ?? [], utilities: recipeData?.utilities ?? [],
+    await downloadProductionRecipePdf(recipe, {
+      menuItemId: Number(row.id), displayName: String(row.name), ingredients: recipeData?.ingredients ?? [], utilities: recipeData?.utilities ?? [],
       allRecipes: recipeData?.all_recipes ?? [], rate: Number(menuData?.usd_lbp_rate) || 0,
     });
   }
@@ -1274,8 +1315,8 @@ export function MenuClient() {
               <th className="px-2 py-2 text-right">{sortHeader("cost_lbp", "Cost LBP")}</th>
               <th className="px-2 py-2 text-right">{sortHeader("food_cost_pct", "Food Cost %")}</th>
               <th className="px-2 py-2 text-right">{sortHeader("profit_usd", "Profit USD")}</th>
-              <th className="px-2 py-2 text-right">{sortHeader("profit_lbp", "Profit LBP")}</th>
-              <th className="px-2 py-2 text-right">Actions</th>
+              <th className="px-2 py-2 pr-5 text-right">{sortHeader("profit_lbp", "Profit LBP")}</th>
+              <th className="py-2 pl-5 pr-2 text-left">Actions</th>
             </tr></thead>
             <tbody>{group.items.map((row: Row) => <tr key={row.id} className="border-t border-black/10">
               <td className="w-9 px-2 py-1.5"><input type="checkbox" aria-label={`Select ${row.name}`}
@@ -1288,11 +1329,19 @@ export function MenuClient() {
               <td className="px-2 py-1.5 text-right tabular-nums">{moneyLbp(row.cost_lbp)}</td>
               <td className={`px-2 py-1.5 text-right font-bold tabular-nums ${foodCostTone(row.food_cost_pct)}`}>{row.sp_usd > 0 ? pct(row.food_cost_pct) : "—"}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{row.sp_usd > 0 && Number(menuData?.usd_lbp_rate) > 0 ? moneyUsd(Number(row.gross_profit_lbp ?? 0) / Number(menuData.usd_lbp_rate)) : "—"}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{row.sp_usd > 0 ? moneyLbp(row.gross_profit_lbp) : "—"}</td>
-              <td className="px-2 py-1.5"><div className="flex items-center justify-end gap-1.5">
+              <td className="py-1.5 pl-2 pr-5 text-right tabular-nums">{row.sp_usd > 0 ? moneyLbp(row.gross_profit_lbp) : "—"}</td>
+              <td className="py-1.5 pl-5 pr-2"><div className="flex items-center justify-start gap-1.5">
                 <button type="button" disabled={actionBusy !== null} onClick={() => toggleVisibility(row)} title={row.active === false ? "Show on Menu Pricing" : "Hide from Menu Pricing"}
                   aria-label={`${row.active === false ? "Show" : "Hide"} ${row.name} on Menu Pricing`} className={`flex h-9 w-9 items-center justify-center rounded-md border hover:bg-gray-100 disabled:opacity-50 ${row.active === false ? "border-red-300 text-red-700" : "border-black/20"}`}>
                   <svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>{row.active === false && <path d="M3 3l18 18"/>}</svg>
+                </button>
+                <button type="button" onClick={() => void viewPhoto(row)} disabled={!photoIds.has(Number(row.id)) || photoLoading !== null}
+                  title={photoIds.has(Number(row.id)) ? "View recipe photo" : "No recipe photo uploaded"}
+                  aria-label={`View photo for ${row.name}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-black/20 bg-white hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30">
+                  <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+                  </svg>
                 </button>
                 <button type="button" onClick={() => downloadRecipe(row)} title="Download recipe" aria-label={`Download ${row.name}`} className="flex h-9 w-9 items-center justify-center rounded-md border border-black/20 hover:bg-gray-100">
                   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 16v4h16v-4"/></svg>
@@ -1304,6 +1353,21 @@ export function MenuClient() {
           </table></div>}
         </section>)}
       </div>
+
+      {photoPreview && (
+        <div role="presentation" className="fixed inset-0 z-[500] flex items-center justify-center bg-black/75 p-3 sm:p-6" onClick={() => setPhotoPreview(null)}>
+          <section role="dialog" aria-modal="true" aria-label={`Recipe photo: ${photoPreview.name}`} onClick={e => e.stopPropagation()}
+            className="w-full max-w-[760px] overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
+              <h3 className="min-w-0 truncate text-sm font-black text-black">{photoPreview.name}</h3>
+              <button type="button" onClick={() => setPhotoPreview(null)} aria-label="Close photo" className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/15 text-xl">×</button>
+            </div>
+            <div className="flex max-h-[78vh] items-center justify-center bg-gray-100 p-3">
+              <img src={photoPreview.url} alt={`Photo of ${photoPreview.name}`} className="max-h-[74vh] max-w-full rounded-lg object-contain" />
+            </div>
+          </section>
+        </div>
+      )}
 
       {moveTarget && (
         <div role="presentation" className="fixed inset-0 z-[300] flex items-center justify-center bg-black/55 p-4" onClick={() => { if (!moveBusy) setMoveTarget(null); }}>
@@ -1363,13 +1427,13 @@ export function MenuClient() {
 
       {open ? (
         <div
-          className="pros-bo-editor-overlay fixed inset-0 z-[100] overflow-y-auto bg-black/40 p-3 backdrop-blur-sm sm:p-5"
+          className="fixed inset-0 z-[100] overflow-y-auto bg-black/40 p-3 backdrop-blur-sm sm:p-5"
           onClick={() => setOpen(false)}
         >
           <form
             onSubmit={save}
             onClick={(e) => e.stopPropagation()}
-            className="pros-bo-editor-dialog mx-auto my-2 w-full max-w-[1460px] overflow-hidden rounded-[20px] border border-[#c7c7c7] bg-[#f5f5f5] shadow-2xl"
+            className="mx-auto my-2 w-full max-w-[1460px] overflow-hidden rounded-[20px] border border-[#c7c7c7] bg-[#f5f5f5] shadow-2xl"
           >
             <div className="sticky top-0 z-30 flex items-start justify-between border-b border-[#d0d0d0] bg-white px-6 py-5">
               <div>
@@ -1398,29 +1462,30 @@ export function MenuClient() {
 
             <div className="space-y-5 p-6">
               <section className="rounded-[14px] border border-[#c9c9c9] bg-white p-4">
-                <div className="grid gap-3 lg:grid-cols-5">
-                  <label className="min-w-0 text-left">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_322px] lg:items-stretch">
+                  <div className="grid w-full min-w-0 content-start grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-[minmax(0,340px)_minmax(0,190px)_minmax(0,1fr)] lg:h-full lg:grid-rows-[auto_auto_1fr]">
+                    <div className="min-w-0 sm:max-w-[340px]">
+<label className="min-w-0 text-left">
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">DISH NAME</span>
-                    <input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black" />
+                    <input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-2.5 font-bold text-black" />
                     {Number(editing?.id) > 0 && String(draft.name ?? "").trim() !== String(editing?.name ?? "").trim() ? (
                       <button type="button" disabled={saving} onClick={saveDishName}
                         className="mt-2 w-full rounded-[8px] bg-black px-3 py-2 text-[11px] font-black uppercase text-white disabled:opacity-50">
                         {saving ? "Saving..." : "Save Name Only"}
                       </button>
                     ) : null}
-                  </label>
-
-                  <label className="min-w-0 text-left">
-                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">CATEGORY</span>
-                    <select value={draft.menu_category_id} onChange={(e) => setDraft({ ...draft, menu_category_id: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-bold text-black">
-                      <option value="">SELECT</option>
-                      {(menuData?.categories ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                    </select>
-                  </label>
-
-                  <div className="min-w-0 text-left">
+                    </label>
+                    </div>
+                    <div className="min-w-0 sm:max-w-[190px]">
+<label className="min-w-0 text-left">
+                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">SELLING PRICE USD</span>
+                    <input value={draft.sp_usd} onChange={(e) => setDraft({ ...draft, sp_usd: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-2.5 font-black text-black" />
+                    </label>
+                    </div>
+                    <div className="min-w-0">
+                    <div className="min-w-0 text-left">
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">ACTIONS</span>
-                    <div className="flex h-[48px] items-center gap-2">
+                    <div className="flex h-[43px] items-center gap-2">
                       <button type="button" disabled={saving || actionBusy !== null}
                         onClick={async () => {
                           // Visibility is part of the editable draft, including new recipes.
@@ -1429,15 +1494,21 @@ export function MenuClient() {
                         }}
                         aria-label={draft.active ? "Set hidden on Menu Pricing (save to apply)" : "Set visible on Menu Pricing (save to apply)"}
                         title={draft.active ? "Visible: click to hide, then Save Changes" : "Hidden: click to show, then Save Changes"}
-                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-black/20 bg-white text-black disabled:opacity-50">
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-black/20 bg-white text-black disabled:opacity-50">
                         {draft.active ? <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
                           : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l18 18M10.5 5.1A11 11 0 0 1 12 5c6 0 10 7 10 7a16 16 0 0 1-3 3.6M6.3 6.3C3.6 8.1 2 12 2 12s4 7 10 7c1.5 0 2.9-.4 4.1-1.1"/></svg>}
                       </button>
                       <button type="button" disabled={saving || actionBusy !== null || !editing?.id}
                         onClick={() => { if (editing?.id) requestMove(editing); }}
                         aria-label="Move recipe to Prep or Sauces" title="Move recipe to Prep or Sauces"
-                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-black/20 bg-white text-black hover:bg-gray-100 disabled:opacity-50">
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-black/20 bg-white text-black hover:bg-gray-100 disabled:opacity-50">
                         <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+                      </button>
+                      <button type="button" disabled={saving || !editing?.recipe_id}
+                        onClick={() => { if (editing) downloadRecipe(editing); }}
+                        aria-label="Download recipe PDF" title="Download recipe PDF"
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-black/20 bg-white text-black hover:bg-gray-100 disabled:opacity-50">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 16v4h16v-4"/></svg>
                       </button>
                       <button type="button" disabled={saving || actionBusy !== null}
                         onClick={async () => {
@@ -1445,44 +1516,50 @@ export function MenuClient() {
                           await deleteItem(editing);
                         }}
                         aria-label="Delete recipe menu item" title="Delete menu item"
-                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-red-300 bg-white text-red-700 disabled:opacity-50">
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-red-300 bg-white text-red-700 disabled:opacity-50">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg>
                       </button>
+                      </div>
                     </div>
-                  </div>
-
-                  <label className="min-w-0 text-left">
+                    </div>
+                    <div className="min-w-0 sm:max-w-[340px]">
+<label className="min-w-0 text-left">
+                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">CATEGORY</span>
+                    <select value={draft.menu_category_id} onChange={(e) => setDraft({ ...draft, menu_category_id: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-2.5 font-bold text-black">
+                      <option value="">SELECT</option>
+                      {(menuData?.categories ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                    </select>
+                    </label>
+                    </div>
+                    <div className="min-w-0 sm:w-[230px]">
+<label className="min-w-0 text-left">
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">POS NAME</span>
-                    <input disabled value="" placeholder="POS Name" title="POS Name (database field not yet configured)" className="w-full rounded-[8px] border border-[#aaa] bg-gray-50 px-3 py-3 text-left text-black" />
-                  </label>
-
-                  <label className="min-w-0 text-left">
-                    <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">SELLING PRICE USD</span>
-                    <input value={draft.sp_usd} onChange={(e) => setDraft({ ...draft, sp_usd: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-3 font-black text-black" />
-                  </label>
-
-
-                </div>
-              </section>
-
-              <section className="overflow-x-auto">
-                <div className="grid min-w-[1080px] grid-cols-6 gap-2">
-                {[
-                  ["SELLING PRICE", draft.sp_usd !== "" && draft.sp_usd != null ? moneyUsd(Number(draft.sp_usd)) : "—", moneyLbp(salePriceLbp)],
-                  ["TOTAL COST", displayUsd(totalCost), moneyLbp(totalCost)],
-                  ["UTILITY COST", displayUsd(utilityCostLbp), moneyLbp(utilityCostLbp)],
-                  ["FOOD COST %", pct(foodCost), ""],
-                  ["NET PROFIT", displayUsd(profit), moneyLbp(profit)],
-                  ["MARGIN PROFIT %", pct(margin), ""],
-                ].map(([label, value, note]) => (
-                  <div key={label} className="min-w-0 rounded-[12px] border border-[#c9c9c9] bg-white p-3 text-left">
-                    <div className="text-left text-[10px] font-black uppercase text-[#444]">{label}</div>
-                    <div className={`mt-2 break-words text-left text-[18px] font-black ${label === "FOOD COST %" ? foodCostTone(foodCost) : label === "MARGIN PROFIT %" && margin != null ? foodCostTone(1 - margin) : "text-black"}`}>{value}</div>
-                    {note ? <div className="mt-1 text-left text-[10px] font-semibold text-[#666]">{note}</div> : null}
+                    <input disabled value="" placeholder="POS Name" title="POS Name (database field not yet configured)" className="w-full rounded-[8px] border border-[#aaa] bg-gray-50 px-3 py-2.5 text-left text-black" />
+                    </label>
+                    </div>
+                  <section className="col-span-full mt-1 min-w-0 lg:self-end">
+                                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                  {[
+                                    ["SELLING PRICE", draft.sp_usd !== "" && draft.sp_usd != null ? moneyUsd(Number(draft.sp_usd)) : "—", moneyLbp(salePriceLbp)],
+                                    ["TOTAL COST", displayUsd(totalCost), moneyLbp(totalCost)],
+                                    ["UTILITY COST", displayUsd(utilityCostLbp), moneyLbp(utilityCostLbp)],
+                                    ["FOOD COST %", pct(foodCost), ""],
+                                    ["NET PROFIT", displayUsd(profit), moneyLbp(profit)],
+                                    ["MARGIN PROFIT %", pct(margin), ""],
+                                  ].map(([label, value, note]) => (
+                                    <div key={label} className="min-w-0 rounded-[12px] border border-[#c9c9c9] bg-[#f5f5f5] p-3 text-left">
+                                      <div className="text-left text-[10px] font-black uppercase text-[#444]">{label}</div>
+                                      <div className={`mt-2 break-words text-left text-[16px] font-black xl:text-[16px] 2xl:text-[18px] ${label === "FOOD COST %" ? foodCostTone(foodCost) : label === "MARGIN PROFIT %" && margin != null ? foodCostTone(1 - margin) : "text-black"}`}>{value}</div>
+                                      {note ? <div className="mt-1 text-left text-[10px] font-semibold text-[#666]">{note}</div> : null}
+                                    </div>
+                                  ))}
+                                  </div>
+                                </section>
                   </div>
-                ))}
+                  <RecipePhotoEditor menuItemId={Number(editing?.id) || null} />
                 </div>
               </section>
+
 
               {recipeDraft ? (
                 <>

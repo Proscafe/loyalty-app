@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireBoAdminApi } from "@/lib/bo/auth";
 
-const ALLOWED = new Set(["usd_lbp_rate", "food_cost_threshold", "price_adjust_pct", "bar_cost_threshold", "lbp_rounding", "display_currency"]);
+const ALLOWED = new Set(["usd_lbp_rate", "food_cost_threshold", "price_adjust_pct", "bar_cost_threshold", "lbp_rounding", "usd_rounding", "display_currency"]);
 const TABLES = {
   ingredient_categories: "bo_ingredient_categories",
   menu_categories: "bo_menu_categories",
@@ -124,29 +124,6 @@ export async function PATCH(request: Request) {
   const id = Number(body?.id);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!table || !Number.isSafeInteger(id) || id <= 0 || !name || name.length > 160) return NextResponse.json({ error: "Invalid list item or name." }, { status: 400 });
-  // A category can be renamed and moved to an exact position in one save.
-  if (body?.section === "menu_categories" && body?.position !== undefined) {
-    const position = Number(body.position);
-    if (!Number.isSafeInteger(position)) return NextResponse.json({ error: "Position must be a whole number." }, { status: 400 });
-    try {
-      const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort");
-      if (position < 1 || position > categories.length) return NextResponse.json({ error: `Position must be between 1 and ${categories.length}.` }, { status: 400 });
-      const current = categories.findIndex((category: any) => Number(category.id) === id);
-      if (current < 0) return NextResponse.json({ error: "Category not found." }, { status: 404 });
-      const [selected] = categories.splice(current, 1);
-      selected.name = name;
-      categories.splice(position - 1, 0, selected);
-      // Stage at unique temporary positions so old order values cannot collide.
-      // Updates are sequential; errors are reported, not silently ignored.
-      for (let i = 0; i < categories.length; i++) {
-        const { error: moveError } = await supabase.from("bo_menu_categories")
-          .update({ sort: (i + 1) * 10, ...(Number(categories[i].id) === id ? { name } : {}) })
-          .eq("id", categories[i].id);
-        if (moveError) throw moveError;
-      }
-      return NextResponse.json({ ok: true, item: { id, name }, position });
-    } catch (e) { return dbError(e); }
-  }
   const { data, error: writeError } = await supabase.from(table).update({ name }).eq("id", id).select("id,name").maybeSingle();
   if (writeError) return dbError(writeError);
   if (!data) return NextResponse.json({ error: "Entry not found or update not permitted." }, { status: 404 });

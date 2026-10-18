@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { moneyLbp, moneyUsd } from "../format";
 import { downloadIngredientsXlsx } from "./downloadIngredientsXlsx";
+import { downloadBoTablePdf } from "../downloadBoTablePdf";
 
 type Row = Record<string, any>;
 type Currency = "USD" | "LBP";
@@ -21,20 +22,30 @@ async function parseResponse(response: Response) {
 }
 
 function InlinePrice({ value, currency, disabled, onSave }: { value: number | null; currency: Currency; disabled: boolean; onSave: (price: string) => boolean }) {
-  const format = (n: number | null) => n === null || n === undefined ? "" : currency === "LBP" ? String(Math.round(n)) : String(Number(Number(n).toFixed(4)));
-  const [draft, setDraft] = useState(format(value));
+  const format = (n: number | null, roundedDisplay = false) => {
+    if (n === null || n === undefined) return "";
+    if (roundedDisplay && typeof window !== "undefined") {
+      try {
+        const pref = JSON.parse(localStorage.getItem("pros_bo_currency_rounding") || "{}");
+        const step = Number(currency === "LBP" ? pref.lbp || 1 : pref.usd || 0.01);
+        return currency === "LBP" ? String(Math.round(n / step) * step) : (Math.round(n / step) * step).toFixed(2);
+      } catch { /* use exact value */ }
+    }
+    return currency === "LBP" ? String(Math.round(n)) : String(Number(Number(n).toFixed(4)));
+  };
+  const [draft, setDraft] = useState(format(value, true));
   const [focused, setFocused] = useState(false);
-  useEffect(() => { if (!focused) setDraft(format(value)); }, [value, focused]);
+  useEffect(() => { if (!focused) setDraft(format(value, true)); }, [value, focused]);
   function commit() {
     setFocused(false);
-    if (draft.trim() === format(value)) return;
+    if (draft.trim() === format(value) || draft.trim() === format(value, true)) { setDraft(format(value, true)); return; }
     const cleaned = draft.trim().replace(/,/g, "");
     const n = cleaned === "" ? null : Number(cleaned);
     if (n !== null && (!Number.isFinite(n) || n < 0)) { setDraft(format(value)); return; }
     if (!onSave(n === null ? "" : String(n))) setDraft(format(value));
   }
   return <input aria-label={`Price ${currency}`} inputMode="decimal" className={inputClass} value={draft} disabled={disabled}
-    onFocus={() => setFocused(true)} onChange={e => setDraft(e.target.value)} onBlur={commit}
+    onFocus={() => { setDraft(format(value)); setFocused(true); }} onChange={e => setDraft(e.target.value)} onBlur={commit}
     onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setDraft(format(value)); e.currentTarget.blur(); } }} />;
 }
 
@@ -175,6 +186,20 @@ export function FnbClient() {
     downloadIngredientsXlsx(rows, viewCurrency);
   }
 
+  async function exportPdf() {
+    const groups = grouped.map(group => ({
+      title: group.name,
+      rows: group.rows.map((row: Row) => [String(row.name ?? ""), String(row.purchase_unit ?? "—"),
+        row.price_usd == null ? "—" : `$${Number(row.price_usd).toFixed(2)}`,
+        row.price_lbp == null ? "—" : Math.round(Number(row.price_lbp)).toLocaleString("en-US"),
+        String(row.supplier_name ?? "—"), String(row.brand ?? "—"),
+        row.pack_size == null ? "—" : `${row.pack_size} ${row.consumption_unit || ""}`]),
+    }));
+    await downloadBoTablePdf({ title: "INGREDIENTS", subtitle: "Inventory costs and suppliers · USD / LBP",
+      columns: ["INGREDIENT", "UNIT", "PRICE USD", "PRICE LBP", "SUPPLIER", "BRAND", "PACK SIZE"],
+      groups, fileName: "pros-ingredients.pdf" });
+  }
+
   function startAdd() { setEditing(null); setDraft({ ...EMPTY }); setOpen(true); }
   function startEdit(row: Row) { if (pendingRef.current[String(row.id)]) { setError("Save pending price changes before editing this ingredient's other details."); return; } setEditing(row); setDraft({ name: row.name ?? "", category_id: row.category_id ? String(row.category_id) : "", purchase_unit: row.purchase_unit ?? "", purchase_qty: row.purchase_qty ?? "", price: row.price ?? "", price_currency: row.price_currency ?? "USD", supplier_id: row.supplier_id ? String(row.supplier_id) : "", new_supplier: "", brand: row.brand ?? "", pack_size: row.pack_size ?? "", consumption_unit: row.consumption_unit ?? "", notes: row.notes ?? "" }); setOpen(true); }
 
@@ -256,13 +281,14 @@ export function FnbClient() {
   saveRef.current = savePendingPrices;
 
   return <BOFrame active="/bo/fnb" title="INGREDIENTS" subtitle={`${data?.ingredients?.length ?? 0} ingredients · Exchange rate ${rate.toLocaleString()} LBP/USD`} actions={<button onClick={startAdd} className="rounded-[10px] bg-black px-4 py-3 text-[11px] font-black uppercase text-white hover:bg-black/80">ADD INGREDIENT</button>}>
-    <div ref={barSlotRef} className="pros-bo-save-slot relative mb-3 min-h-[60px]">
-      <div style={barDock ? { position: "fixed", top: 82, left: barDock.left, width: barDock.width } : undefined} className={`pros-bo-save-bar flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${barDock ? "z-[70] shadow-lg" : ""}`}>
-        <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold" aria-live="polite">
-          <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
-          <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
-          {lastSavedAt && !pendingCount && <span className="font-normal text-black/50">at {lastSavedAt}</span>}
-          <span className="hidden font-normal text-black/45 sm:inline">· Autosave every 60 seconds · Ctrl+S / Cmd+S</span>
+    <div ref={barSlotRef} className="relative mb-3 min-h-[60px]">
+      <div style={barDock ? { position: "fixed", top: 82, left: barDock.left, width: barDock.width } : undefined} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${barDock ? "z-[70] shadow-lg" : ""}`}>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3 text-[12px] font-semibold" aria-live="polite">
+          <div className="relative min-w-[180px] max-w-[360px] flex-1"><input aria-label="Search ingredients" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search Item" className="w-full rounded-md border border-black/15 px-3 py-2 pr-9 text-[12px] font-semibold" />{search && <button type="button" aria-label="Clear ingredient search" title="Clear search" onClick={() => setSearch("")} className="absolute inset-y-0 right-1 flex w-8 items-center justify-center rounded text-black/60 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-800">✕</button>}</div>
+          <span className={`h-2 w-2 self-center rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
+          <span className="self-center">{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
+
+
         </div>
         <button type="button" onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.setTimeout(() => void saveRef.current(), 0); }} disabled={saveStatus === "saving" || !pendingCount} className="rounded-lg bg-black px-4 py-2 text-[12px] font-bold text-white disabled:opacity-40">{saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Retry Save" : "Save Changes"}</button>
       </div>
@@ -270,12 +296,13 @@ export function FnbClient() {
     {error && <div role="alert" className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-800">{error}</div>}
     <section className="mb-3 rounded-xl border border-black/10 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input aria-label="Search ingredients" value={search} onChange={e => setSearch(e.target.value)} placeholder="SEARCH INGREDIENTS" className="min-w-[175px] flex-1 rounded-md border border-black/15 px-3 py-2 text-[12px] font-semibold" />
+
         <select aria-label="Category" value={category} onChange={e => setCategory(e.target.value)} className="min-w-[150px] flex-1 rounded-md border border-black/15 px-3 py-2 text-[11px] font-bold"><option value="">ALL CATEGORIES</option>{(data?.categories || []).map((r: Row) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
         <select aria-label="Extra filter" value={detailFilter} onChange={e => { setDetailFilter(e.target.value as DetailFilter); setDetailValue(""); }} className="rounded-md border border-black/15 px-3 py-2 text-[11px] font-bold"><option value="all">ALL DETAILS</option><option value="supplier">SUPPLIER</option><option value="brand">BRAND</option><option value="missing">MISSING PRICE</option></select>
         {detailFilter === "supplier" && <select aria-label="Supplier" value={detailValue} onChange={e => setDetailValue(e.target.value)} className="min-w-[145px] rounded-md border border-black/15 px-3 py-2 text-[11px]"><option value="">ALL SUPPLIERS</option>{(data?.suppliers || []).map((r: Row) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>}
         {detailFilter === "brand" && <select aria-label="Brand" value={detailValue} onChange={e => setDetailValue(e.target.value)} className="min-w-[145px] rounded-md border border-black/15 px-3 py-2 text-[11px]"><option value="">ALL BRANDS</option>{brands.map(b => <option key={b} value={b}>{b}</option>)}</select>}
         <div className="inline-flex overflow-hidden rounded-md border border-black/20" role="group" aria-label="Cost display currency">{(["USD", "LBP"] as const).map(c => <button key={c} type="button" aria-pressed={viewCurrency === c} onClick={() => setViewCurrency(c)} className={`px-3 py-2 text-[11px] font-bold ${viewCurrency === c ? "bg-black text-white" : "bg-white text-black"}`}>{c}</button>)}</div>
+        <button type="button" onClick={() => { void exportPdf().catch(e => setError(e instanceof Error ? e.message : "PDF export failed")); }} disabled={!data || grouped.length === 0} title="Download branded Ingredients PDF" aria-label="Download Ingredients PDF" className="rounded-md border border-black/15 bg-white px-3 py-2 text-[11px] font-bold hover:bg-gray-100 disabled:opacity-40">PDF</button>
         <button type="button" onClick={exportExcel} disabled={!data || grouped.length === 0} title="Download filtered ingredients as Excel (.xlsx)" aria-label="Download ingredients as Excel" className="inline-flex items-center gap-1 rounded-md border border-black/15 bg-white px-3 py-2 text-[11px] font-bold hover:bg-gray-100 disabled:opacity-40"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 16v4h16v-4"/></svg> EXCEL</button>
         <button type="button" onClick={resetFilters} className="rounded-md border border-black/15 px-3 py-2 text-[11px] font-bold">RESET FILTERS</button>
         <button type="button" title={allCollapsed ? "Expand all" : "Collapse all"} aria-label={allCollapsed ? "Expand all" : "Collapse all"} onClick={() => setCollapsed(Object.fromEntries(grouped.map(g => [g.name, !allCollapsed])))} className="rounded-md border border-black/15 px-3 py-2 text-[14px] font-bold">{allCollapsed ? "⊞" : "⊟"}</button>
@@ -307,10 +334,10 @@ export function FnbClient() {
         </tr>)}</tbody></table></div>}
     </section>)}{data && grouped.length === 0 && <div className="rounded-xl border border-black/10 bg-white p-5 text-center text-sm">No ingredients match your filters.</div>}</div>
       {open ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm" onClick={() => setOpen(false)}>
-          <form onSubmit={save} onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[20px] border border-black/10 bg-white p-5 shadow-2xl">
-            <h2 className="text-[22px] font-black uppercase">{editing ? "EDIT INGREDIENT" : "ADD INGREDIENT"}</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 p-3 sm:p-5 backdrop-blur-sm" onClick={() => setOpen(false)}>
+          <form onSubmit={save} onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[18px] border border-[#c9c9c9] bg-[#f5f5f5] p-4 text-black shadow-2xl sm:p-6">
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-black/10 pb-4"><div><p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#5d5d5d]">INGREDIENT MANAGEMENT</p><h2 className="mt-1 text-[22px] font-black uppercase tracking-tight text-[#25206f]">{editing ? "EDIT INGREDIENT" : "ADD INGREDIENT"}</h2></div><button type="button" aria-label="Close ingredient editor" onClick={() => setOpen(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/15 bg-white text-lg text-black hover:bg-gray-100">×</button></div>
+            <div className="grid gap-3 rounded-xl border border-black/10 bg-white p-3 sm:grid-cols-2 sm:p-4">
               <input required placeholder="ITEM NAME" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="sm:col-span-2 rounded-[9px] border border-black/15 px-3 py-3" />
               <select value={draft.category_id} onChange={(e) => setDraft({ ...draft, category_id: e.target.value })} className="rounded-[9px] border border-black/15 px-3 py-3"><option value="">CATEGORY</option>{(data?.categories ?? []).map((x: Row) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
               <input placeholder="PURCHASE UNIT" value={draft.purchase_unit} onChange={(e) => setDraft({ ...draft, purchase_unit: e.target.value })} className="rounded-[9px] border border-black/15 px-3 py-3" />
@@ -326,9 +353,9 @@ export function FnbClient() {
               <select value={draft.consumption_unit} onChange={(e) => setDraft({ ...draft, consumption_unit: e.target.value })} className="rounded-[9px] border border-black/15 px-3 py-3"><option value="">MEASURED IN</option><option>KG</option><option>G</option><option>L</option><option>ML</option><option>PCS</option><option>POR</option><option>CUP</option></select>
               <textarea placeholder="NOTES" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} className="sm:col-span-2 rounded-[9px] border border-black/15 px-3 py-3" />
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4">
               <button type="button" onClick={() => setOpen(false)} className="rounded-[9px] border border-black/15 px-4 py-3 text-[11px] font-black uppercase">CANCEL</button>
-              <button disabled={busy} className="rounded-[9px] bg-black px-5 py-3 text-[11px] font-black uppercase text-white">{busy ? "SAVING..." : "SAVE"}</button>
+              <button disabled={busy} className="rounded-[9px] bg-[#25206f] px-5 py-3 text-[11px] font-black uppercase text-white hover:bg-[#1d1957] disabled:opacity-50">{busy ? "SAVING..." : "SAVE"}</button>
             </div>
           </form>
         </div>
