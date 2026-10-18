@@ -137,3 +137,38 @@ textarea,
 select {
   font-family: Raleway, var(--font-raleway), system-ui, sans-serif;
 }
+
+
+/* PRO'S Back Office responsive enhancements (desktop styles remain unchanged). */
+.pros-bo-root { width: 100%; min-width: 0; overflow-x: clip; }
+.pros-bo-root button, .pros-bo-root a { -webkit-tap-highlight-color: transparent; }
+.pros-bo-root :where(input, select, textarea) { max-width: 100%; }
+.pros-bo-root :where(.overflow-x-auto) { overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 1023px) {
+  .pros-bo-root > div > section { min-width: 0; }
+  .pros-bo-root .pros-bo-editor-dialog { max-width: 100%; }
+}
+@media (max-width: 639px) {
+  .pros-bo-root { font-size: 13px; }
+  .pros-bo-root .pros-bo-save-slot { min-height: 84px; }
+  .pros-bo-root .pros-bo-save-bar { width: 100%; gap: 8px; padding: 10px 12px; }
+  .pros-bo-root .pros-bo-save-bar[style*="fixed"] { top: 68px !important; z-index: 75 !important; }
+  .pros-bo-root .pros-bo-save-bar > div { min-width: 0; flex: 1 1 150px; }
+  .pros-bo-root .pros-bo-save-bar > button { flex: 0 0 auto; min-height: 42px; }
+  .pros-bo-root .pros-bo-editor-overlay { padding: 0 !important; }
+  .pros-bo-root .pros-bo-editor-dialog { margin: 0 !important; min-height: 100dvh; max-width: none; border-radius: 0 !important; border-left: 0; border-right: 0; }
+  .pros-bo-root .pros-bo-editor-dialog > div:first-child { padding: 14px 16px; }
+  .pros-bo-root .pros-bo-editor-dialog h2 { font-size: 20px; line-height: 1.25; }
+  .pros-bo-root .pros-bo-editor-dialog > div:last-child { padding-left: 12px; padding-right: 12px; }
+  .pros-bo-root .pros-bo-editor-dialog section { min-width: 0; }
+  .pros-bo-root .pros-bo-editor-dialog :where(input, select, textarea) { font-size: 16px; }
+  .pros-bo-root .pros-bo-editor-dialog :where(table) { font-size: 12px; }
+  .pros-bo-root .pros-bo-editor-dialog .sticky.bottom-0 { padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .pros-bo-root :where(button, select) { touch-action: manipulation; }
+  .pros-bo-root :where(button, a):focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+  .pros-bo-root :where(.fixed[role="presentation"]) > :where(section, div[role="dialog"]) { max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pros-bo-root *, .pros-bo-root *::before, .pros-bo-root *::after { scroll-behavior: auto !important; }
+}

@@ -256,8 +256,8 @@ export function FnbClient() {
   saveRef.current = savePendingPrices;
 
   return <BOFrame active="/bo/fnb" title="INGREDIENTS" subtitle={`${data?.ingredients?.length ?? 0} ingredients · Exchange rate ${rate.toLocaleString()} LBP/USD`} actions={<button onClick={startAdd} className="rounded-[10px] bg-black px-4 py-3 text-[11px] font-black uppercase text-white hover:bg-black/80">ADD INGREDIENT</button>}>
-    <div ref={barSlotRef} className="relative mb-3 min-h-[60px]">
-      <div style={barDock ? { position: "fixed", top: 82, left: barDock.left, width: barDock.width } : undefined} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${barDock ? "z-[70] shadow-lg" : ""}`}>
+    <div ref={barSlotRef} className="pros-bo-save-slot relative mb-3 min-h-[60px]">
+      <div style={barDock ? { position: "fixed", top: 82, left: barDock.left, width: barDock.width } : undefined} className={`pros-bo-save-bar flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${barDock ? "z-[70] shadow-lg" : ""}`}>
         <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold" aria-live="polite">
           <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
           <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>

@@ -430,13 +430,13 @@ export function RecipeManager({
 
       {open && draft ? (
         <div
-          className="fixed inset-0 z-[100] overflow-y-auto bg-black/40 p-4 backdrop-blur-sm"
+          className="pros-bo-editor-overlay fixed inset-0 z-[100] overflow-y-auto bg-black/40 p-4 backdrop-blur-sm"
           onClick={() => setOpen(false)}
         >
           <form
             onSubmit={save}
             onClick={(e) => e.stopPropagation()}
-            className="mx-auto my-3 w-full max-w-[1380px] overflow-hidden rounded-[20px] border border-[#c7c7c7] bg-[#f5f5f5] shadow-2xl"
+            className="pros-bo-editor-dialog mx-auto my-3 w-full max-w-[1380px] overflow-hidden rounded-[20px] border border-[#c7c7c7] bg-[#f5f5f5] shadow-2xl"
           >
             <div className="sticky top-0 z-30 flex items-start justify-between border-b border-[#d0d0d0] bg-white px-6 py-5">
               <div>

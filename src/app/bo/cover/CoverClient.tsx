@@ -420,8 +420,8 @@ export function CoverClient() {
   const visibleIds = sections.map(section => String(section.id));
   const allCollapsed = visibleIds.length > 0 && visibleIds.every(id => collapsed[id]);
   return <BOFrame active="/bo/cover" title="MENU PRICING" subtitle={`Selling prices, food cost and price scenarios · Exchange rate ${moneyLbp(rate)} LBP/USD`}>
-    <div ref={saveBarSlotRef} className="relative mb-3 min-h-[60px]">
-    <div style={saveBarDock ? { position: "fixed", top: 82, left: saveBarDock.left, width: saveBarDock.width } : undefined} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${saveBarDock ? "z-[70] shadow-lg" : ""}`}>
+    <div ref={saveBarSlotRef} className="pros-bo-save-slot relative mb-3 min-h-[60px]">
+    <div style={saveBarDock ? { position: "fixed", top: 82, left: saveBarDock.left, width: saveBarDock.width } : undefined} className={`pros-bo-save-bar flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${saveBarDock ? "z-[70] shadow-lg" : ""}`}>
       <div className="flex items-center gap-2 text-[12px] font-semibold" aria-live="polite">
         <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
         <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
