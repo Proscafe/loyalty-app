@@ -112,6 +112,19 @@ export async function GET(request: Request) {
     }
     snapshot.recipeLines = completeLines;
     const engine = createBoEngine(snapshot);
+    // Menu item names are user-facing; a copied/renamed menu item can have a
+    // legacy bo_recipes.name. Only alias unambiguous one-to-one menu links.
+    const linkedMenuNames = new Map<number, string[]>();
+    for (const item of snapshot.menuItems) {
+      const linkedId = Number(item.recipe_id);
+      if (!linkedId || !String(item.name ?? "").trim()) continue;
+      linkedMenuNames.set(linkedId, [...(linkedMenuNames.get(linkedId) ?? []), String(item.name).trim()]);
+    }
+    const displayName = (recipe: any) => {
+      const names = linkedMenuNames.get(Number(recipe.id)) ?? [];
+      return names.length === 1 ? names[0] : recipe.name;
+    };
+
     const recipes = snapshot.recipes.filter((row: any) => !kind || row.kind === kind).map((row: any) => {
       const costing = engine.recipeCost(Number(row.id));
       const costMap = new Map<number, any>((costing.lines ?? []).map((line: any) => [Number(line.id), line]));
@@ -119,7 +132,7 @@ export async function GET(request: Request) {
         const c = costMap.get(Number(line.id));
         return { ...line, sourceName: c?.sourceName ?? line.label ?? null, sourceUnit: c?.sourceUnit ?? null, sourceKind: c?.sourceKind ?? line.line_type, sourceCost: c?.sourceCost ?? null, lineCost: c?.lineCost ?? null };
       });
-      return { ...row, costing, lines: stored };
+      return { ...row, display_name: displayName(row), costing, lines: stored };
     });
 
     return NextResponse.json({
@@ -127,7 +140,7 @@ export async function GET(request: Request) {
       recipes,
       ingredients: snapshot.ingredients.map((row: any) => ({ id: row.id, name: row.name, purchase_unit: row.purchase_unit, consumption_unit: row.consumption_unit, unit_cost_lbp: engine.ingredientPrice(Number(row.id)) })),
       utilities: snapshot.utilities.map((row: any) => ({ id: row.id, name: row.name, unit_label: row.unit_label, unit_cost_lbp: engine.utilityCost(Number(row.id)) })),
-      all_recipes: snapshot.recipes.map((row: any) => { const c = engine.recipeCost(Number(row.id)); return { id: row.id, name: row.name, kind: row.kind, yield_unit: row.yield_unit, unit_cost_lbp: c.unitCost, batch_cost_lbp: c.batchCost, ingredient_unit_cost_lbp: c.ingredientUnitCost, ingredient_batch_cost_lbp: c.ingredientBatchCost, usable_yield: c.usableYield, costing: { ingredientUnitCost: c.ingredientUnitCost, ingredientBatchCost: c.ingredientBatchCost, partial: c.partial } }; }),
+      all_recipes: snapshot.recipes.map((row: any) => { const c = engine.recipeCost(Number(row.id)); return { id: row.id, name: displayName(row), recipe_name: row.name, kind: row.kind, yield_unit: row.yield_unit, unit_cost_lbp: c.unitCost, batch_cost_lbp: c.batchCost, ingredient_unit_cost_lbp: c.ingredientUnitCost, ingredient_batch_cost_lbp: c.ingredientBatchCost, usable_yield: c.usableYield, saved_yield_qty: row.yield_qty, yield_mode: row.yield_mode, costing: { ingredientUnitCost: c.ingredientUnitCost, ingredientBatchCost: c.ingredientBatchCost, partial: c.partial, issues: c.issues } }; }),
       menu_categories: snapshot.menuCategories,
     });
   } catch (error) { return boError(error, "Unable to load recipes."); }

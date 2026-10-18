@@ -7,6 +7,7 @@ import { downloadMenuPricingXlsx } from "./downloadMenuPricingXlsx";
 
 type Item = {
   id: number;
+  recipe_id?: number | null;
   name: string;
   sp_usd: number | null;
   sp_lbp: number | null;
@@ -16,7 +17,7 @@ type Item = {
   margin_pct: number | null;
   over_threshold?: boolean;
   needs_review?: boolean;
-  recipe?: { name?: string; lines?: Array<{ id?: number; sourceName?: string; sourceUnit?: string; line_type?: string; qty?: number; sourceCost?: number | null; lineCost?: number | null; needs_review?: boolean }> };
+  recipe?: { id?: number; name?: string; lines?: Array<{ id?: number; sourceName?: string; sourceUnit?: string; line_type?: string; qty?: number; sourceCost?: number | null; lineCost?: number | null; needs_review?: boolean }> };
 };
 type Section = { id: number | string; name: string; items: Item[] };
 type Payload = { sections: Section[]; unsectioned: Item[]; rate: number; threshold?: number; comparisons?: Record<string, number> };
@@ -93,18 +94,35 @@ export function CoverClient() {
   const [data, setData] = useState<Payload | null>(null);
   const [search, setSearch] = useState("");
   const [viewItem, setViewItem] = useState<Item | null>(null);
+  const [flagSaving, setFlagSaving] = useState(false);
+  const [flagError, setFlagError] = useState("");
   const [category, setCategory] = useState("all");
   const [filter, setFilter] = useState<Filter>("all");
   const [error, setError] = useState("");
   const [pendingCount, setPendingCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const saveBarSlotRef = useRef<HTMLDivElement>(null);
+  const [saveBarDock, setSaveBarDock] = useState<{ left: number; width: number } | null>(null);
   const pendingRef = useRef<Record<string, { id: number; kind: "price" | "comparison"; usd: number | null; revision: number }>>({});
   const revisionRef = useRef(0);
   const saveRunningRef = useRef(false);
   const loadedRef = useRef(false);
   const saveRef = useRef<() => Promise<void>>(async () => {});
   const draftsStorageKey = "pros-bo-menu-pricing-pending-v1";
+  useEffect(() => {
+    const measure = () => {
+      const slot = saveBarSlotRef.current;
+      if (!slot) return;
+      const rect = slot.getBoundingClientRect();
+      setSaveBarDock(rect.top < 82 ? { left: rect.left, width: rect.width } : null);
+    };
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    measure();
+    return () => { window.removeEventListener("scroll", measure); window.removeEventListener("resize", measure); };
+  }, []);
+
   const [increaseMode, setIncreaseMode] = useState<IncreaseMode>("percent");
   const [increase, setIncrease] = useState("0");
   const [estimates, setEstimates] = useState<Record<number, string>>({});
@@ -335,6 +353,51 @@ export function CoverClient() {
     return foodPercent <= greenLimit ? "text-emerald-700" : foodPercent <= amberLimit ? "text-amber-700" : "text-red-700";
   };
   const asCurrency = (lbp: number | null | undefined) => lbp === null || lbp === undefined || !Number.isFinite(Number(lbp)) ? "—" : viewCurrency === "LBP" ? moneyLbp(lbp) : rate > 0 ? moneyUsd(Number(lbp) / rate) : "—";
+  async function togglePreviewReviewFlag() {
+    if (!viewItem?.recipe?.lines?.length || flagSaving) return;
+    const recipeId = Number(viewItem.recipe_id ?? viewItem.recipe.id);
+    if (!Number.isInteger(recipeId) || recipeId <= 0) {
+      setFlagError("This menu item does not have a valid linked recipe ID.");
+      return;
+    }
+    const lines = viewItem.recipe.lines;
+    const flagged = lines.filter(line => line.needs_review === true);
+    const targets = flagged.length ? flagged : lines.filter(line => Number(line.id) > 0).slice(0, 1);
+    if (!targets.length || targets.some(line => !Number.isInteger(Number(line.id)) || Number(line.id) <= 0)) {
+      setFlagError("This recipe has no saved lines that can be flagged.");
+      return;
+    }
+    const nextFlag = flagged.length === 0;
+    setFlagSaving(true);
+    setFlagError("");
+    try {
+      for (const line of targets) {
+        const response = await fetch("/api/bo/recipe-review", {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ line_id: line.id, recipe_id: recipeId, needs_review: nextFlag }),
+        });
+        const payload = await readApiResponse(response);
+        if (!response.ok || payload?.ok !== true) throw new Error(payload?.error || "Unable to save review flag.");
+      }
+      const updated = {
+        ...viewItem,
+        needs_review: nextFlag,
+        recipe: { ...viewItem.recipe, lines: lines.map(line => ({
+          ...line, needs_review: targets.some(target => String(target.id) === String(line.id)) ? nextFlag : line.needs_review,
+        })) },
+      };
+      setViewItem(updated);
+      setData(previous => previous ? ({
+        ...previous,
+        sections: previous.sections.map(section => ({ ...section, items: section.items.map(item => item.id === viewItem.id ? { ...item, needs_review: nextFlag } : item) })),
+        unsectioned: previous.unsectioned.map(item => item.id === viewItem.id ? { ...item, needs_review: nextFlag } : item),
+      }) : previous);
+    } catch (err) {
+      setFlagError(err instanceof Error ? err.message : "Unable to save review flag.");
+    } finally {
+      setFlagSaving(false);
+    }
+  }
   const exportExcel = () => {
     const rows: (string | number | null)[][] = [];
     for (const section of sortedSections) {
@@ -357,7 +420,8 @@ export function CoverClient() {
   const visibleIds = sections.map(section => String(section.id));
   const allCollapsed = visibleIds.length > 0 && visibleIds.every(id => collapsed[id]);
   return <BOFrame active="/bo/cover" title="MENU PRICING" subtitle={`Selling prices, food cost and price scenarios · Exchange rate ${moneyLbp(rate)} LBP/USD`}>
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3">
+    <div ref={saveBarSlotRef} className="relative mb-3 min-h-[60px]">
+    <div style={saveBarDock ? { position: "fixed", top: 82, left: saveBarDock.left, width: saveBarDock.width } : undefined} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${saveBarDock ? "z-[70] shadow-lg" : ""}`}>
       <div className="flex items-center gap-2 text-[12px] font-semibold" aria-live="polite">
         <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
         <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
@@ -365,6 +429,7 @@ export function CoverClient() {
         <span className="hidden font-normal text-black/45 sm:inline">· Autosave every 60 seconds · Ctrl+S / Cmd+S</span>
       </div>
       <button type="button" onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.setTimeout(() => { void saveRef.current(); }, 0); }} disabled={saveStatus === "saving" || (!pendingCount && saveStatus !== "error")} className="rounded-lg bg-black px-4 py-2 text-[12px] font-bold text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40">{saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Retry Save" : "Save Changes"}</button>
+    </div>
     </div>
     {error && <div role="alert" className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-800">{error}</div>}
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-3 py-2">
@@ -413,18 +478,35 @@ export function CoverClient() {
     </div>
     {viewItem && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-3" onMouseDown={e => { if (e.target === e.currentTarget) setViewItem(null); }}>
       <div role="dialog" aria-modal="true" aria-label={`${viewItem.name} recipe preview`} className="flex max-h-[92vh] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b px-5 py-4"><div><div className="text-[11px] font-bold text-black/50">RECIPE PREVIEW · READ ONLY</div><h2 className="text-xl font-bold">{viewItem.name}</h2></div><button type="button" onClick={() => setViewItem(null)} aria-label="Close preview" className="rounded-lg border px-3 py-2">✕</button></div>
-        <div className="overflow-y-auto p-5 text-[12px]">
+        <div className="sticky top-0 z-30 flex items-center justify-between border-b bg-white px-5 py-4"><div><h2 className="text-xl font-bold">{viewItem.name}</h2></div><button type="button" onClick={() => setViewItem(null)} aria-label="Close preview" className="rounded-lg border px-3 py-2">✕</button></div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 text-[12px]">
+          {flagError && <p role="alert" className="mb-3 rounded-md border border-red-300 bg-red-50 p-3 font-semibold text-red-800">{flagError}</p>}
           {viewItem.needs_review && <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 font-semibold text-amber-800">⚑ This recipe has lines flagged for review.</p>}
           <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-lg border p-3"><div className="text-black/50">Selling Price</div><strong>{moneyUsd(viewItem.sp_usd)}</strong></div>
             <div className="rounded-lg border p-3"><div className="text-black/50">Total Cost</div><strong>{asCurrency(viewItem.cost_lbp)}</strong></div>
-            <div className="rounded-lg border p-3"><div className="text-black/50">Food Cost</div><strong>{displayPct(viewItem.food_cost_pct)}</strong></div>
+            <div className="rounded-lg border p-3"><div className="text-black/50">Food Cost</div><strong className={`text-[16px] ${tone(viewItem.food_cost_pct)}`}>{displayPct(viewItem.food_cost_pct)}</strong></div>
             <div className="rounded-lg border p-3"><div className="text-black/50">Profit</div><strong>{asCurrency(viewItem.gross_profit_lbp)}</strong></div>
           </div>
-          {viewItem.recipe?.lines?.length ? <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[540px] text-left"><thead className="bg-gray-100"><tr><th className="p-2">Item</th><th className="p-2">Type</th><th className="p-2 text-right">QTY</th><th className="p-2">Unit</th><th className="p-2 text-right">Cost</th><th className="p-2">Review</th></tr></thead><tbody>{viewItem.recipe.lines.map((line,i) => <tr key={line.id ?? i} className="border-t"><td className="p-2">{line.sourceName || 'Item'}</td><td className="p-2">{line.line_type}</td><td className="p-2 text-right">{line.qty ?? '—'}</td><td className="p-2">{line.sourceUnit ?? '—'}</td><td className="p-2 text-right">{asCurrency(line.lineCost)}</td><td className="p-2">{line.needs_review ? <span className="font-bold text-amber-700">⚑ Check</span> : '—'}</td></tr>)}</tbody></table></div> : <p className="rounded-lg border p-4 text-black/60">No linked recipe lines are available.</p>}
+          {viewItem.recipe?.lines?.length ? <div className="space-y-4">
+            {([
+              { title: 'INGREDIENTS & PREP / SAUCES', lines: viewItem.recipe.lines.filter(line => line.line_type !== 'utility' && line.line_type !== 'fixed') },
+              { title: 'UTILITY COST', lines: viewItem.recipe.lines.filter(line => line.line_type === 'utility' || line.line_type === 'fixed') },
+            ]).map(group => <section key={group.title} className="overflow-hidden rounded-xl border border-black/15">
+              <h3 className="sticky top-0 z-20 border-b border-black/10 bg-[#e7e7e7] px-4 py-3 text-[12px] font-black text-black">{group.title}</h3>
+              <div className="max-h-[340px] overflow-auto"><table className="w-full min-w-[540px] text-left"><thead className="sticky top-0 z-10 bg-gray-50 text-[11px] text-black/70"><tr><th className="p-2">Item</th><th className="p-2">Type</th><th className="p-2 text-right">QTY</th><th className="p-2">Unit</th><th className="p-2 text-right">Cost</th><th className="p-2">Review</th></tr></thead><tbody>
+                {group.lines.length ? group.lines.map((line,i) => <tr key={line.id ?? i} className="border-t border-black/10"><td className="p-2">{line.sourceName || 'Item'}</td><td className="p-2">{line.line_type === 'recipe' ? 'prep / sauce' : line.line_type}</td><td className="p-2 text-right">{line.qty ?? '—'}</td><td className="p-2">{line.sourceUnit ?? '—'}</td><td className="p-2 text-right">{asCurrency(line.lineCost)}</td><td className="p-2">{line.needs_review ? <span className="font-bold text-amber-700">⚑ Check</span> : '—'}</td></tr>) : <tr><td colSpan={6} className="p-4 text-center text-black/50">No items in this section</td></tr>}
+              </tbody></table></div>
+            </section>)}
+          </div> : <p className="rounded-lg border p-4 text-black/60">No linked recipe lines are available.</p>}
         </div>
-        <div className="flex justify-end gap-2 border-t p-4"><button type="button" onClick={() => setViewItem(null)} className="rounded-lg border px-4 py-2 font-semibold">Close</button><a href={`/bo/menu?edit=${encodeURIComponent(String(viewItem.id))}`} className="rounded-lg bg-black px-4 py-2 font-semibold text-white">Edit Recipe →</a></div>
+        <div className="sticky bottom-0 z-30 flex justify-end gap-2 border-t bg-white p-4">
+          <button type="button" onClick={() => { setViewItem(null); setFlagError(""); }} className="rounded-lg border px-4 py-2 font-semibold">Close</button>
+          <button type="button" onClick={() => void togglePreviewReviewFlag()} disabled={flagSaving || !viewItem.recipe?.lines?.some(line => Number(line.id) > 0)} aria-label={viewItem.needs_review ? "Clear recipe review flag" : "Flag recipe for review"} title={viewItem.needs_review ? "Clear review flags" : "Flag for review"} className={`inline-flex h-[40px] w-[44px] items-center justify-center rounded-lg border disabled:opacity-40 ${viewItem.needs_review ? "border-amber-400 bg-amber-50 text-amber-700" : "border-black/20 bg-white text-black hover:bg-amber-50"}`}>
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill={viewItem.needs_review ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 21V4m0 1c4-3 7 3 12 0v11c-5 3-8-3-12 0" /></svg>
+          </button>
+          <a href={`/bo/menu?edit=${encodeURIComponent(String(viewItem.id))}`} className="rounded-lg bg-black px-4 py-2 font-semibold text-white">Edit Recipe →</a>
+        </div>
       </div>
     </div>}
     <div className="space-y-3">
@@ -469,7 +551,7 @@ export function CoverClient() {
               return <tr key={item.id} className="border-b border-black/[0.08] last:border-b-0">
                 <td className="sticky left-0 bg-white px-3 py-1.5 font-bold text-black">
                   <span className="inline-flex items-center gap-2">
-                    <button type="button" onClick={() => setViewItem(item)} className="text-left font-bold underline-offset-2 hover:underline focus-visible:underline" title={`View ${item.name} recipe`}>{item.name}</button>
+                    <button type="button" onClick={() => { setFlagError(""); setViewItem(item); }} className="text-left font-bold underline-offset-2 hover:underline focus-visible:underline" title={`View ${item.name} recipe`}>{item.name}</button>
                     {(item.needs_review === true || item.recipe?.lines?.some(line => line.needs_review === true)) && <span className="inline-flex shrink-0 items-center text-amber-700" title="Recipe contains items needing review" aria-label="Needs review"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 2a1 1 0 0 1 1 1v1c5-3 8 3 13 0v12c-5 3-8-3-13 0v5a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Z"/></svg></span>}
                   </span>
                 </td>

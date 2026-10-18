@@ -277,12 +277,30 @@ export function createBoEngine(snapshot: BoSnapshot) {
     }
 
     if (recipe.yield_mode === "sum_qty") {
-      const included = (linesByRecipe.get(id) ?? []).filter((line) => line.in_yield === true);
-      // Legacy imports may have a manually saved production yield but no
-      // in_yield flags. Keep that saved yield instead of replacing it with 0.
-      // Do not add mixed ingredient units together to guess a production yield.
-      if (included.length) {
-        yieldQty = included.reduce((sum, line) => sum + (nullable(line.qty) ?? 0), 0);
+      // A valid stored Total Yield is authoritative. Production's Save Yield
+      // persists this field and the costing engine must not overwrite it with
+      // a sum of ingredient quantities (which may mix kg, litres and portions).
+      // Only legacy rows with NO saved positive yield may use the old computed
+      // yield, and only when every participating line uses the same unit.
+      if (yieldQty === null || yieldQty <= 0) {
+        const included = (linesByRecipe.get(id) ?? []).filter((line) => line.in_yield === true);
+        const units = new Set(included.map((line) => {
+          if (line.line_type === "ingredient") {
+            const ingredient = ingredients.get(Number(line.ingredient_id));
+            return String(ingredient?.consumption_unit || ingredient?.purchase_unit || "").trim().toUpperCase();
+          }
+          if (line.line_type === "recipe") {
+            const linked = recipes.get(Number(line.sub_recipe_id));
+            return String(linked?.yield_unit || "").trim().toUpperCase();
+          }
+          return "";
+        }));
+        if (included.length > 0 && units.size === 1 && !units.has("") &&
+            [...units][0] === String(recipe.yield_unit || "").trim().toUpperCase() &&
+            included.every((line) => nullable(line.qty) !== null && Number(line.qty) >= 0)) {
+          const calculated = included.reduce((sum, line) => sum + Number(line.qty), 0);
+          if (calculated > 0) yieldQty = calculated;
+        }
       }
     }
 

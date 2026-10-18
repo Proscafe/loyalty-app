@@ -74,7 +74,7 @@ export function MenuClient() {
     try {
       const [menuRes, recipeRes, unitRes] = await Promise.all([
         fetch("/api/bo/menu", { cache: "no-store" }),
-        fetch("/api/bo/recipes?kind=menu", { cache: "no-store" }),
+        fetch("/api/bo/recipes", { cache: "no-store" }),
         fetch("/api/bo/ingredient-unit-costs", { cache: "no-store" }),
       ]);
 
@@ -573,6 +573,45 @@ export function MenuClient() {
     });
   }
 
+  // Independent read-only fallback for ingredient-only prep/sauce costs.
+  // Use the complete recipe lines when summary ingredientUnitCost is absent.
+  // Never substitute a production's full cost: it could include utilities twice.
+  function linkedIngredientUnitCost(recipeId: string, visited: Set<string> = new Set()): number | null {
+    if (visited.has(recipeId)) return null;
+    const recipe: Row | undefined = (recipeData?.recipes ?? []).find((r: Row) => String(r.id) === recipeId);
+    if (!recipe) return null;
+    const next = new Set(visited);
+    next.add(recipeId);
+    const yieldQty = asNumber(recipe.yield_qty);
+    const portionYield = yieldQty !== null && yieldQty > 0 ? yieldQty : recipe.kind === "menu" ? 1 : null;
+    if (portionYield === null) return null;
+    const waste = Math.max(0, Math.min(.99, Number(recipe.waste_pct) || 0));
+    const usableYield = portionYield * (1 - waste);
+    if (usableYield <= 0) return null;
+    let batch = 0;
+    for (const row of (recipe.lines ?? []) as Row[]) {
+      if (row.line_type === "utility" || row.line_type === "fixed") continue;
+      // Imported unresolved lines are excluded from original workbook totals.
+      if (row.line_type === "unresolved") continue;
+      const qty = asNumber(row.qty);
+      if (qty === null) return null;
+      let sourceCost: number | null = null;
+      if (row.line_type === "ingredient") {
+        const ingredient = (recipeData?.ingredients ?? []).find((r: Row) => String(r.id) === String(row.ingredient_id));
+        sourceCost = asNumber(unitCosts[String(row.ingredient_id)] ?? ingredient?.unit_cost_lbp);
+      } else if (row.line_type === "recipe") {
+        const subId = String(row.sub_recipe_id ?? "");
+        const unitCost = linkedIngredientUnitCost(subId, next);
+        sourceCost = row.sub_basis === "batch"
+          ? (unitCost === null ? null : unitCost * (Number((recipeData?.recipes ?? []).find((r: Row) => String(r.id) === subId)?.yield_qty) || 1))
+          : unitCost;
+      }
+      if (sourceCost === null) return null;
+      batch += qty * sourceCost;
+    }
+    return batch / usableYield;
+  }
+
   function sourceMeta(line: Row) {
     if (line.line_type === "ingredient") {
       const source = ingredients.find(
@@ -608,19 +647,25 @@ export function MenuClient() {
       const cost = line.sub_basis === "batch"
         ? asNumber(source?.ingredient_batch_cost_lbp ?? source?.costing?.ingredientBatchCost ?? fromFullRecipe?.costing?.ingredientBatchCost)
         : asNumber(source?.ingredient_unit_cost_lbp ?? source?.costing?.ingredientUnitCost ?? fromFullRecipe?.costing?.ingredientUnitCost);
+      // If the API summary omits the ingredient-only total, compute it from
+      // saved ingredient rows only (never the full production cost).
+      const fallbackUnit = cost === null ? linkedIngredientUnitCost(String(line.sub_recipe_id)) : null;
+      const resolvedCost = cost ?? (fallbackUnit === null ? null : line.sub_basis === "batch"
+        ? fallbackUnit * (Number(fromFullRecipe?.yield_qty ?? source?.saved_yield_qty) || 1)
+        : fallbackUnit);
       // A total production batch price cannot substitute for ingredients-only
       // unit cost. Show why a missing ingredient cost cannot yet be calculated.
       const issues: string[] = source?.costing?.issues ?? fromFullRecipe?.costing?.issues ?? [];
       const reason = !source && !fromFullRecipe
         ? "Linked recipe not found in Recipes API"
-        : cost === null && line.sub_basis !== "batch" && !(Number(source?.usable_yield) > 0)
-          ? "Missing valid saved production yield"
-          : cost === null ? (issues.join("; ") || "Ingredient-only source cost is unavailable") : "";
+        : resolvedCost === null && line.sub_basis !== "batch" && !(Number(source?.usable_yield) > 0)
+          ? `No usable yield for ${source?.name || "linked recipe"} (recipe ID ${String(line.sub_recipe_id)}; saved yield ${String(source?.saved_yield_qty ?? "empty")}; mode ${String(source?.yield_mode ?? "unknown")}). Set and save Total Yield in Production.`
+          : resolvedCost === null ? (`Linked recipe ID ${String(line.sub_recipe_id)}: ` + (issues.join("; ") || "Ingredient-only source cost is unavailable")) : "";
 
       return {
         name: source?.name ?? "SELECT PREP / SAUCE",
         unit: source?.yield_unit || "—",
-        cost,
+        cost: resolvedCost,
         reason,
       };
     }
@@ -809,23 +854,24 @@ export function MenuClient() {
         throw new Error(`${unresolved.length} imported unresolved item(s) need attention. In UNRESOLVED ITEMS, link each item to a valid source or explicitly remove it before saving. No rows were deleted.`);
       }
       if (!recipeDraft?.lines?.length && !editing?.id) throw new Error("Add at least one ingredient or utility before saving a new recipe.");
+      // Persist the recipe BEFORE creating the menu item. Creating the menu
+      // item first used to leave a blank (Copy) item when line saving failed.
       let menuItemId = Number(editing?.id) || null;
-      if (!menuItemId) {
-        const itemRes = await fetch("/api/bo/menu", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...draft, recipe_id: null, recipe_factor: 1 }),
-        });
-        const itemJson = await itemRes.json();
-        if (!itemRes.ok || !itemJson?.item?.id) throw new Error(itemJson?.error || "Could not create new menu item.");
-        menuItemId = Number(itemJson.item.id);
-        setEditing(itemJson.item);
-      }
-
       let outgoingRecipe = recipeDraft;
-      let outgoingItem = { ...draft, id: menuItemId, recipe_factor: 1 };
+      let outgoingItem: Row = { ...draft, id: menuItemId, recipe_factor: 1 };
       if (recipeDraft && !Number(recipeDraft.id)) {
         if (!recipeDraft.lines.length) {
           throw new Error("Add at least one ingredient, preparation, or utility before saving a new recipe.");
+        }
+        for (const [index, line] of recipeDraft.lines.entries()) {
+          const selected = line.line_type === "ingredient" ? line.ingredient_id
+            : line.line_type === "recipe" ? line.sub_recipe_id
+            : line.line_type === "utility" ? line.utility_id
+            : line.line_type === "fixed" ? line.fixed_price : null;
+          if (selected === null || selected === undefined || selected === "" ||
+              (line.line_type !== "fixed" && !(Number(selected) > 0))) {
+            throw new Error(`Copied recipe row ${index + 1} has no valid source. Repair the row before creating the new menu item.`);
+          }
         }
         const createRes = await fetch("/api/bo/recipes", {
           method: "POST",
@@ -835,20 +881,37 @@ export function MenuClient() {
             name: String(draft.name || recipeDraft.name).trim(),
             menu_category_id: draft.menu_category_id,
             kind: "menu",
-            lines: recipeDraft.lines.map((line: Row) => ({ ...line, factor: 1 })),
+            lines: recipeDraft.lines.map((line: Row) => ({ ...line, factor: 1, sub_cost_basis: "ingredients" })),
           }),
         });
         const created = await createRes.json();
         if (!createRes.ok || !created?.id) {
-          throw new Error(created?.error || "Unable to create the linked recipe.");
+          throw new Error(created?.error || "The copied recipe could not be saved. No new menu item was created.");
         }
-        outgoingRecipe = { ...recipeDraft, id: Number(created.id) };
-        outgoingItem = { ...outgoingItem, recipe_id: Number(created.id) };
-        // Once created, retain the id even if linking the menu item fails,
-        // avoiding duplicate recipe creation on retry.
+        const newRecipeId = Number(created.id);
+        // Retain the new recipe ID immediately; if a later step fails,
+        // retry updates it instead of creating an extra recipe.
+        outgoingRecipe = { ...recipeDraft, id: newRecipeId };
         setRecipeDraft(outgoingRecipe);
-        setDraft((prev: any) => ({ ...prev, recipe_id: Number(created.id) }));
+        setDraft((prev: any) => ({ ...prev, recipe_id: newRecipeId }));
+        outgoingItem = { ...outgoingItem, recipe_id: newRecipeId };
+        const verifyRes = await fetch(`/api/bo/recipes?id=${encodeURIComponent(String(newRecipeId))}`, { cache: "no-store" });
+        const verified = await verifyRes.json();
+        if (!verifyRes.ok || !Array.isArray(verified?.lines) || verified.lines.length !== recipeDraft.lines.length) {
+          throw new Error(`The copied recipe was created but its ingredients were not verified (${verified?.lines?.length ?? 0}/${recipeDraft.lines.length}). The draft stays open for retry; no new menu item was created.`);
+        }
       }
+      if (!menuItemId) {
+        const itemRes = await fetch("/api/bo/menu", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...draft, recipe_id: Number(outgoingRecipe?.id) || null, recipe_factor: 1 }),
+        });
+        const itemJson = await itemRes.json();
+        if (!itemRes.ok || !itemJson?.item?.id) throw new Error(itemJson?.error || "Could not create the new menu item. The saved recipe remains available for retry.");
+        menuItemId = Number(itemJson.item.id);
+        setEditing(itemJson.item);
+      }
+      outgoingItem = { ...outgoingItem, id: menuItemId, recipe_id: Number(outgoingRecipe?.id) || outgoingItem.recipe_id || null };
       const res = await fetch("/api/bo/menu/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { moneyLbp, moneyUsd } from "../format";
 import { downloadIngredientsXlsx } from "./downloadIngredientsXlsx";
@@ -20,21 +20,36 @@ async function parseResponse(response: Response) {
   return body;
 }
 
-function InlinePrice({ value, currency, disabled, onSave }: { value: number | null; currency: Currency; disabled: boolean; onSave: (price: string) => Promise<boolean> }) {
+function InlinePrice({ value, currency, disabled, onSave }: { value: number | null; currency: Currency; disabled: boolean; onSave: (price: string) => boolean }) {
   const format = (n: number | null) => n === null || n === undefined ? "" : currency === "LBP" ? String(Math.round(n)) : String(Number(Number(n).toFixed(4)));
   const [draft, setDraft] = useState(format(value));
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { if (!busy) setDraft(format(value)); }, [value, busy]);
-  async function commit() {
-    if (busy || draft.trim() === format(value)) return;
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setDraft(format(value)); }, [value, focused]);
+  function commit() {
+    setFocused(false);
+    if (draft.trim() === format(value)) return;
     const cleaned = draft.trim().replace(/,/g, "");
     const n = cleaned === "" ? null : Number(cleaned);
     if (n !== null && (!Number.isFinite(n) || n < 0)) { setDraft(format(value)); return; }
-    setBusy(true);
-    try { if (!(await onSave(n === null ? "" : String(n)))) setDraft(format(value)); }
-    finally { setBusy(false); }
+    if (!onSave(n === null ? "" : String(n))) setDraft(format(value));
   }
-  return <input aria-label={`Price ${currency}`} inputMode="decimal" className={inputClass} value={draft} disabled={disabled || busy} onChange={e => setDraft(e.target.value)} onBlur={() => void commit()} onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setDraft(format(value)); e.currentTarget.blur(); } }} />;
+  return <input aria-label={`Price ${currency}`} inputMode="decimal" className={inputClass} value={draft} disabled={disabled}
+    onFocus={() => setFocused(true)} onChange={e => setDraft(e.target.value)} onBlur={commit}
+    onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setDraft(format(value)); e.currentTarget.blur(); } }} />;
+}
+
+type PendingPrice = { id: number; currency: Currency; price: number | null; revision: number };
+const priceQueueStorageKey = "pros-bo-ingredients-price-drafts-v1";
+function applyDrafts(data: any, pending: Record<string, PendingPrice>) {
+  if (!data?.ingredients) return data;
+  const rate = Number(data.usd_lbp_rate) || 0;
+  return { ...data, ingredients: data.ingredients.map((row: Row) => {
+    const draft = pending[String(row.id)];
+    if (!draft) return row;
+    const usd = draft.price === null ? null : draft.currency === "USD" ? draft.price : rate > 0 ? draft.price / rate : null;
+    const lbp = draft.price === null ? null : draft.currency === "LBP" ? draft.price : rate > 0 ? draft.price * rate : null;
+    return { ...row, price: draft.price, price_currency: draft.currency, price_usd: usd, price_lbp: lbp };
+  }) };
 }
 
 export function FnbClient() {
@@ -52,15 +67,69 @@ export function FnbClient() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [savingPrice, setSavingPrice] = useState<number | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const pendingRef = useRef<Record<string, PendingPrice>>({});
+  const baseDataRef = useRef<any>(null);
+  const revisionRef = useRef(0);
+  const savingRef = useRef(false);
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+  const barSlotRef = useRef<HTMLDivElement>(null);
+  const [barDock, setBarDock] = useState<{ left: number; width: number } | null>(null);
   const rate = Number(data?.usd_lbp_rate) || 0;
 
   async function load(clearError = true) {
     if (clearError) setError("");
-    try { const json = await parseResponse(await fetch("/api/bo/fnb", { cache: "no-store" })); setData(json); return json; }
+    try { const json = await parseResponse(await fetch("/api/bo/fnb", { cache: "no-store" })); baseDataRef.current = json; setData(applyDrafts(json, pendingRef.current)); return json; }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to load ingredients."); return null; }
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(priceQueueStorageKey) || "{}");
+      if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+        const clean: Record<string, PendingPrice> = {};
+        for (const [id, value] of Object.entries(stored)) {
+          const entry = value as any;
+          if (!/^\d+$/.test(id) || !entry || !["USD", "LBP"].includes(entry.currency)) continue;
+          if (entry.price !== null && (typeof entry.price !== "number" || !Number.isFinite(entry.price) || entry.price < 0)) continue;
+          clean[id] = { id: Number(id), currency: entry.currency, price: entry.price, revision: ++revisionRef.current };
+        }
+        pendingRef.current = clean;
+        const count = Object.keys(clean).length;
+        setPendingCount(count);
+        if (count) setSaveStatus("pending");
+      }
+    } catch { /* Invalid drafts must not break the page. */ }
+    void load();
+  }, []);
+  useEffect(() => {
+    const measure = () => {
+      const rect = barSlotRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setBarDock(rect.top < 82 ? { left: rect.left, width: rect.width } : null);
+    };
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    measure();
+    return () => { window.removeEventListener("scroll", measure); window.removeEventListener("resize", measure); };
+  }, []);
+  useEffect(() => {
+    const id = window.setInterval(() => { if (Object.keys(pendingRef.current).length) void saveRef.current(); }, 60_000);
+    const keydown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        window.setTimeout(() => void saveRef.current(), 0);
+      }
+    };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (Object.keys(pendingRef.current).length) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("keydown", keydown);
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => { window.clearInterval(id); window.removeEventListener("keydown", keydown); window.removeEventListener("beforeunload", beforeUnload); };
+  }, []);
 
   const brands = useMemo<string[]>(() => Array.from(new Set<string>((data?.ingredients || []).map((r: Row) => String(r.brand || "").trim()).filter(Boolean))).sort(), [data]);
   const filtered = useMemo<Row[]>(() => (data?.ingredients || []).filter((row: Row) => {
@@ -107,7 +176,7 @@ export function FnbClient() {
   }
 
   function startAdd() { setEditing(null); setDraft({ ...EMPTY }); setOpen(true); }
-  function startEdit(row: Row) { setEditing(row); setDraft({ name: row.name ?? "", category_id: row.category_id ? String(row.category_id) : "", purchase_unit: row.purchase_unit ?? "", purchase_qty: row.purchase_qty ?? "", price: row.price ?? "", price_currency: row.price_currency ?? "USD", supplier_id: row.supplier_id ? String(row.supplier_id) : "", new_supplier: "", brand: row.brand ?? "", pack_size: row.pack_size ?? "", consumption_unit: row.consumption_unit ?? "", notes: row.notes ?? "" }); setOpen(true); }
+  function startEdit(row: Row) { if (pendingRef.current[String(row.id)]) { setError("Save pending price changes before editing this ingredient's other details."); return; } setEditing(row); setDraft({ name: row.name ?? "", category_id: row.category_id ? String(row.category_id) : "", purchase_unit: row.purchase_unit ?? "", purchase_qty: row.purchase_qty ?? "", price: row.price ?? "", price_currency: row.price_currency ?? "USD", supplier_id: row.supplier_id ? String(row.supplier_id) : "", new_supplier: "", brand: row.brand ?? "", pack_size: row.pack_size ?? "", consumption_unit: row.consumption_unit ?? "", notes: row.notes ?? "" }); setOpen(true); }
 
   async function save(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError("");
@@ -118,28 +187,86 @@ export function FnbClient() {
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save ingredient."); }
     finally { setBusy(false); }
   }
-  async function remove(row: Row) { if (!confirm(`Delete "${row.name}"?`)) return; try { await parseResponse(await fetch(`/api/bo/fnb/${row.id}`, { method: "DELETE" })); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to delete ingredient."); } }
+  async function remove(row: Row) { if (pendingRef.current[String(row.id)]) { setError("Save pending price changes before deleting this ingredient."); return; } if (!confirm(`Delete "${row.name}"?`)) return; try { await parseResponse(await fetch(`/api/bo/fnb/${row.id}`, { method: "DELETE" })); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to delete ingredient."); } }
 
-  async function saveInlinePrice(row: Row, currency: Currency, value: string): Promise<boolean> {
-    if (savingPrice !== null) return false;
-    const n = value === "" ? null : Number(value);
-    if (n !== null && (!Number.isFinite(n) || n < 0)) { setError("Price must be zero or greater."); return false; }
-    if (currency === "LBP" && rate <= 0) { setError("Set a valid USD/LBP exchange rate in Settings first."); return false; }
-    setSavingPrice(Number(row.id)); setError("");
-    try {
-      // Preserve the other ingredient fields: the existing PUT route expects a full ingredient record.
-      const payload = { name: row.name, category_id: row.category_id, purchase_unit: row.purchase_unit, purchase_qty: row.purchase_qty, price: n, price_currency: currency, supplier_id: row.supplier_id, brand: row.brand, pack_size: row.pack_size, consumption_unit: row.consumption_unit, notes: row.notes };
-      await parseResponse(await fetch(`/api/bo/fnb/${row.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }));
-      const latest = await load(false);
-      if (!latest) return false;
-      const saved = (latest.ingredients || []).find((x: Row) => Number(x.id) === Number(row.id));
-      if (!saved || saved.price_currency !== currency || (n === null ? saved.price !== null : Math.abs(Number(saved.price) - n) > 0.0001)) throw new Error(`Price for ${row.name} could not be verified after saving.`);
-      return true;
-    } catch (e) { setError(e instanceof Error ? e.message : "Unable to save ingredient price."); return false; }
-    finally { setSavingPrice(null); }
+  function updateQueue() {
+    const count = Object.keys(pendingRef.current).length;
+    localStorage.setItem(priceQueueStorageKey, JSON.stringify(pendingRef.current));
+    setPendingCount(count);
+    if (!savingRef.current) setSaveStatus(count ? "pending" : "saved");
+    setData(applyDrafts(baseDataRef.current, pendingRef.current));
   }
+  function queueInlinePrice(row: Row, currency: Currency, value: string): boolean {
+    const price = value === "" ? null : Number(value);
+    if (price !== null && (!Number.isFinite(price) || price < 0)) { setError("Price must be zero or greater."); return false; }
+    if (currency === "LBP" && rate <= 0) { setError("Set a valid USD/LBP exchange rate in Settings first."); return false; }
+    const original = (baseDataRef.current?.ingredients || []).find((r: Row) => Number(r.id) === Number(row.id));
+    if (!original) { setError("This ingredient is not loaded. Refresh and try again."); return false; }
+    const currentPrice = original.price === null || original.price === undefined || original.price === "" ? null : Number(original.price);
+    if (original.price_currency === currency && currentPrice === price) delete pendingRef.current[String(row.id)];
+    else pendingRef.current[String(row.id)] = { id: Number(row.id), currency, price, revision: ++revisionRef.current };
+    setError("");
+    updateQueue();
+    return true;
+  }
+  async function savePendingPrices() {
+    if (savingRef.current || !Object.keys(pendingRef.current).length) return;
+    savingRef.current = true;
+    setSaveStatus("saving");
+    setError("");
+    const snapshot = Object.values(pendingRef.current);
+    const failures: string[] = [];
+    try {
+      for (const entry of snapshot) {
+        const original = (baseDataRef.current?.ingredients || []).find((r: Row) => Number(r.id) === entry.id);
+        if (!original) { failures.push(`Ingredient #${entry.id} no longer exists.`); continue; }
+        try {
+          const payload = { name: original.name, category_id: original.category_id, purchase_unit: original.purchase_unit,
+            purchase_qty: original.purchase_qty, price: entry.price, price_currency: entry.currency,
+            supplier_id: original.supplier_id, brand: original.brand, pack_size: original.pack_size,
+            consumption_unit: original.consumption_unit, notes: original.notes };
+          await parseResponse(await fetch(`/api/bo/fnb/${entry.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }));
+          // Keep any newer edit made while this request was in flight.
+          if (pendingRef.current[String(entry.id)]?.revision === entry.revision) delete pendingRef.current[String(entry.id)];
+        } catch (error) {
+          failures.push(`${original.name}: ${error instanceof Error ? error.message : "Save failed"}`);
+        }
+      }
+      try {
+        const fresh = await parseResponse(await fetch("/api/bo/fnb", { cache: "no-store" }));
+        baseDataRef.current = fresh;
+        // Verify committed changes against the actual API result. Restore unsaved drafts if they did not persist.
+        for (const entry of snapshot) {
+          if (pendingRef.current[String(entry.id)]) continue;
+          const saved = (fresh.ingredients || []).find((r: Row) => Number(r.id) === entry.id);
+          const amount = saved?.price == null ? null : Number(saved.price);
+          if (!saved || saved.price_currency !== entry.currency || (entry.price === null ? amount !== null : amount === null || Math.abs(amount - entry.price) > 0.0001)) {
+            pendingRef.current[String(entry.id)] = { ...entry, revision: ++revisionRef.current };
+            failures.push(`Ingredient #${entry.id} did not verify after saving.`);
+          }
+        }
+      } catch (error) { failures.push(`Could not verify saved prices: ${error instanceof Error ? error.message : "Reload failed"}`); }
+      localStorage.setItem(priceQueueStorageKey, JSON.stringify(pendingRef.current));
+      setData(applyDrafts(baseDataRef.current, pendingRef.current));
+      setPendingCount(Object.keys(pendingRef.current).length);
+      if (failures.length) { setError(failures.slice(0, 3).join(" | ")); setSaveStatus("error"); }
+      else { setLastSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })); setSaveStatus(Object.keys(pendingRef.current).length ? "pending" : "saved"); }
+    } finally { savingRef.current = false; }
+  }
+  saveRef.current = savePendingPrices;
 
   return <BOFrame active="/bo/fnb" title="INGREDIENTS" subtitle={`${data?.ingredients?.length ?? 0} ingredients · Exchange rate ${rate.toLocaleString()} LBP/USD`} actions={<button onClick={startAdd} className="rounded-[10px] bg-black px-4 py-3 text-[11px] font-black uppercase text-white hover:bg-black/80">ADD INGREDIENT</button>}>
+    <div ref={barSlotRef} className="relative mb-3 min-h-[60px]">
+      <div style={barDock ? { position: "fixed", top: 82, left: barDock.left, width: barDock.width } : undefined} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm ${barDock ? "z-[70] shadow-lg" : ""}`}>
+        <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold" aria-live="polite">
+          <span className={`h-2 w-2 rounded-full ${saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-blue-500" : pendingCount ? "bg-amber-500" : "bg-emerald-500"}`} />
+          <span>{saveStatus === "saving" ? "Saving changes…" : saveStatus === "error" ? `Save failed · ${pendingCount} pending` : pendingCount ? `${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}` : "All changes saved"}</span>
+          {lastSavedAt && !pendingCount && <span className="font-normal text-black/50">at {lastSavedAt}</span>}
+          <span className="hidden font-normal text-black/45 sm:inline">· Autosave every 60 seconds · Ctrl+S / Cmd+S</span>
+        </div>
+        <button type="button" onClick={() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.setTimeout(() => void saveRef.current(), 0); }} disabled={saveStatus === "saving" || !pendingCount} className="rounded-lg bg-black px-4 py-2 text-[12px] font-bold text-white disabled:opacity-40">{saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Retry Save" : "Save Changes"}</button>
+      </div>
+    </div>
     {error && <div role="alert" className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-800">{error}</div>}
     <section className="mb-3 rounded-xl border border-black/10 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -170,8 +297,8 @@ export function FnbClient() {
         </tr></thead><tbody>{rows.map((row: Row) => <tr key={row.id} className="border-t border-black/[0.07] hover:bg-black/[0.02]">
           <td className="px-3 py-1.5 font-bold">{row.name}</td>
           <td className="px-2 py-1.5">{row.purchase_unit || "—"}</td>
-          <td className="w-[112px] px-2 py-1"><InlinePrice key={`${row.id}-usd`} currency="USD" value={row.price_usd} disabled={savingPrice !== null} onSave={v => saveInlinePrice(row, "USD", v)} /></td>
-          <td className="w-[135px] px-2 py-1"><InlinePrice key={`${row.id}-lbp`} currency="LBP" value={row.price_lbp} disabled={savingPrice !== null} onSave={v => saveInlinePrice(row, "LBP", v)} /></td>
+          <td className="w-[112px] px-2 py-1"><InlinePrice key={`${row.id}-usd`} currency="USD" value={row.price_usd} disabled={false} onSave={v => queueInlinePrice(row, "USD", v)} /></td>
+          <td className="w-[135px] px-2 py-1"><InlinePrice key={`${row.id}-lbp`} currency="LBP" value={row.price_lbp} disabled={false} onSave={v => queueInlinePrice(row, "LBP", v)} /></td>
           <td className="px-2 py-1.5">{row.supplier_name || "—"}</td>
           <td className="px-2 py-1.5">{row.brand || "—"}</td>
           <td className="px-2 py-1.5 text-right">{row.pack_size ? `${row.pack_size} ${row.consumption_unit || ""}` : "—"}</td>
