@@ -847,40 +847,6 @@ export function MenuClient() {
       label: x.name,
     }));
 
-  async function saveDishName() {
-    const name = String(draft.name ?? "").trim();
-    if (!name) { setError("Enter a dish name before saving."); return; }
-    const menuItemId = Number(editing?.id);
-    if (!menuItemId) {
-      setError("For a new menu item, use Save Changes to create it first.");
-      return;
-    }
-    if (saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      const response = await fetch("/api/bo/menu/rename", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: menuItemId, name }),
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.error || "Unable to rename this dish.");
-      }
-      setEditing((previous: Row | null) => previous ? { ...previous, name } : previous);
-      setDraft((previous: any) => ({ ...previous, name }));
-      // Keep the open recipe draft in sync; no ingredient rows are modified.
-      setRecipeDraft((previous: any) => previous ? { ...previous, name } : previous);
-      await load();
-      setNotice(`Dish renamed to “${name}”.`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to rename dish.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function save(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -962,10 +928,15 @@ export function MenuClient() {
         }),
       });
 
+      const responseType = res.headers.get("content-type") || "";
+      if (!responseType.includes("application/json")) {
+        throw new Error(res.status === 404
+          ? "The recipe Save API is missing (POST /api/bo/menu/save returned 404). Install the included API route and redeploy the website. Your edits have not been saved."
+          : `Recipe Save API returned HTTP ${res.status} instead of JSON. Check the Next.js server logs; your edits have not been confirmed saved.`);
+      }
       const json = await res.json();
-
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Unable to save changes.");
+        throw new Error(json?.error || `Unable to save changes (HTTP ${res.status}).`);
       }
 
       // Verify using the exact persisted recipe lines, not the costing snapshot.
@@ -1468,12 +1439,6 @@ export function MenuClient() {
 <label className="min-w-0 text-left">
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">DISH NAME</span>
                     <input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-2.5 font-bold text-black" />
-                    {Number(editing?.id) > 0 && String(draft.name ?? "").trim() !== String(editing?.name ?? "").trim() ? (
-                      <button type="button" disabled={saving} onClick={saveDishName}
-                        className="mt-2 w-full rounded-[8px] bg-black px-3 py-2 text-[11px] font-black uppercase text-white disabled:opacity-50">
-                        {saving ? "Saving..." : "Save Name Only"}
-                      </button>
-                    ) : null}
                     </label>
                     </div>
                     <div className="min-w-0 sm:max-w-[190px]">
