@@ -144,3 +144,21 @@ select {
 .pros-bo-root button.bg-black:not(:disabled):hover,
 .pros-bo-root a.bg-black:hover { background-color: #36318c !important; }
 .pros-bo-root input[type="checkbox"], .pros-bo-root input[type="radio"] { accent-color: #25206f; }
+
+
+/* BO-wide hover and keyboard-focus treatment for editable tables.
+   It is scoped to the BO only; input backgrounds stay white for legibility. */
+@media (hover: hover) and (pointer: fine) {
+  .pros-bo-root table tbody tr:hover > td,
+  .pros-bo-root table tbody tr:hover > th {
+    background-color: #eeeeF1 !important;
+    transition: background-color 130ms ease-out;
+  }
+}
+.pros-bo-root table tbody tr:focus-within > td,
+.pros-bo-root table tbody tr:focus-within > th {
+  background-color: #eeeeF1 !important;
+}
+.pros-bo-root table tbody tr:hover input,
+.pros-bo-root table tbody tr:hover select,
+.pros-bo-root table tbody tr:hover textarea { background-color: #ffffff; }
