@@ -106,6 +106,17 @@ export function CoverClient() {
   const [data, setData] = useState<Payload | null>(null);
   const [search, setSearch] = useState("");
   const [viewItem, setViewItem] = useState<Item | null>(null);
+  const [viewPhotoUrl, setViewPhotoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!viewItem?.id) { setViewPhotoUrl(null); return; }
+    const controller = new AbortController();
+    setViewPhotoUrl(null);
+    fetch(`/api/bo/recipe-photo?item_id=${encodeURIComponent(String(viewItem.id))}`, { cache: "no-store", signal: controller.signal })
+      .then(async response => response.ok ? response.json() : null)
+      .then(payload => { if (!controller.signal.aborted) setViewPhotoUrl(typeof payload?.url === "string" ? payload.url : null); })
+      .catch(() => { if (!controller.signal.aborted) setViewPhotoUrl(null); });
+    return () => controller.abort();
+  }, [viewItem?.id]);
   const [flagSaving, setFlagSaving] = useState(false);
   const [flagError, setFlagError] = useState("");
   const [category, setCategory] = useState("all");
@@ -510,15 +521,26 @@ export function CoverClient() {
     </div>
     {viewItem && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-3" onMouseDown={e => { if (e.target === e.currentTarget) setViewItem(null); }}>
       <div role="dialog" aria-modal="true" aria-label={`${viewItem.name} recipe preview`} className="flex max-h-[92vh] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="sticky top-0 z-30 flex items-center justify-between border-b bg-white px-5 py-4"><div><h2 className="text-xl font-bold">{viewItem.name}</h2></div><button type="button" onClick={() => setViewItem(null)} aria-label="Close preview" className="rounded-lg border px-3 py-2">✕</button></div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5 text-[12px]">
+        <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b bg-white px-5 py-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-bold">{viewItem.name}</h2>
+            <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-[#25206F]">{allSections.find(section => section.items.some(item => item.id === viewItem.id))?.name || "UNCATEGORIZED"}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="h-[78px] w-[78px] overflow-hidden rounded-lg border border-black/10 bg-[#f5f5f5] sm:h-[88px] sm:w-[88px]">
+              <img src={viewPhotoUrl || "/icon.png"} alt={viewPhotoUrl ? `${viewItem.name} photo` : "PRO'S Cafe logo"} className={`h-full w-full ${viewPhotoUrl ? "object-cover" : "object-contain p-2"}`} onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = "/icon.png"; }} />
+            </div>
+            <button type="button" onClick={() => setViewItem(null)} aria-label="Close preview" className="rounded-lg border px-3 py-2">✕</button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 text-[12px] sm:p-5">
           {flagError && <p role="alert" className="mb-3 rounded-md border border-red-300 bg-red-50 p-3 font-semibold text-red-800">{flagError}</p>}
           {viewItem.needs_review && <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 font-semibold text-amber-800">⚑ This recipe has lines flagged for review.</p>}
           <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-lg border p-3"><div className="text-black/50">Selling Price</div><strong>{moneyUsd(viewItem.sp_usd)}</strong></div>
-            <div className="rounded-lg border p-3"><div className="text-black/50">Total Cost</div><strong>{asCurrency(viewItem.cost_lbp)}</strong></div>
-            <div className="rounded-lg border p-3"><div className="text-black/50">Food Cost</div><strong className={`text-[16px] ${tone(viewItem.food_cost_pct)}`}>{displayPct(viewItem.food_cost_pct)}</strong></div>
-            <div className="rounded-lg border p-3"><div className="text-black/50">Profit</div><strong>{asCurrency(viewItem.gross_profit_lbp)}</strong></div>
+            <div className="rounded-lg border p-2.5"><div className="text-[11px] text-black/50">Selling Price</div><strong>{moneyUsd(viewItem.sp_usd)}</strong></div>
+            <div className="rounded-lg border p-2.5"><div className="text-[11px] text-black/50">Total Cost</div><strong>{asCurrency(viewItem.cost_lbp)}</strong></div>
+            <div className="rounded-lg border p-2.5"><div className="text-[11px] text-black/50">Food Cost</div><strong className={`text-[15px] ${tone(viewItem.food_cost_pct)}`}>{displayPct(viewItem.food_cost_pct)}</strong></div>
+            <div className="rounded-lg border p-2.5"><div className="text-[11px] text-black/50">Profit</div><strong>{asCurrency(viewItem.gross_profit_lbp)}</strong></div>
           </div>
           {viewItem.recipe?.lines?.length ? <div className="space-y-4">
             {([
@@ -526,8 +548,8 @@ export function CoverClient() {
               { title: 'UTILITY COST', lines: viewItem.recipe.lines.filter(line => line.line_type === 'utility' || line.line_type === 'fixed') },
             ]).map(group => <section key={group.title} className="overflow-hidden rounded-xl border border-black/15">
               <h3 className="sticky top-0 z-20 border-b border-black/10 bg-[#e7e7e7] px-4 py-3 text-[12px] font-black text-black">{group.title}</h3>
-              <div className="max-h-[340px] overflow-auto"><table className="w-full min-w-[450px] text-left"><thead className="sticky top-0 z-10 bg-gray-50 text-[11px] text-black/70"><tr><th className="p-2">Item</th><th className="p-2 text-right">QTY</th><th className="p-2">Unit</th><th className="p-2 text-right">Cost</th><th className="p-2">Review</th></tr></thead><tbody>
-                {group.lines.length ? group.lines.map((line,i) => <tr key={line.id ?? i} className="border-t border-black/10"><td className="p-2">{line.sourceName || 'Item'}</td><td className="p-2 text-right">{line.qty ?? '—'}</td><td className="p-2">{line.sourceUnit ?? '—'}</td><td className="p-2 text-right">{asCurrency(line.lineCost)}</td><td className="p-2">{line.needs_review ? <span className="font-bold text-amber-700">⚑ Check</span> : '—'}</td></tr>) : <tr><td colSpan={5} className="p-4 text-center text-black/50">No items in this section</td></tr>}
+              <div className="max-h-[340px] overflow-auto"><table className="w-full min-w-[390px] table-fixed text-left"><colgroup><col style={{ width: "49%" }}/><col style={{ width: "15%" }}/><col style={{ width: "20%" }}/><col style={{ width: "16%" }}/></colgroup><thead className="sticky top-0 z-10 bg-gray-50 text-[11px] text-black/70"><tr><th className="px-3 py-2 align-middle">Item</th><th className="px-2 py-2 text-right align-middle">QTY</th><th className="px-2 py-2 align-middle">Unit</th><th className="px-3 py-2 text-right align-middle">Cost</th></tr></thead><tbody>
+                {group.lines.length ? group.lines.map((line,i) => <tr key={line.id ?? i} className="border-t border-black/10 hover:bg-[#f2f2f2]"><td className="break-words px-3 py-2.5 align-middle">{line.sourceName || 'Item'}</td><td className="px-2 py-2.5 text-right align-middle tabular-nums">{line.qty ?? '—'}</td><td className="px-2 py-2.5 align-middle">{line.sourceUnit ?? '—'}</td><td className="px-3 py-2.5 text-right align-middle tabular-nums">{asCurrency(line.lineCost)}</td></tr>) : <tr><td colSpan={4} className="p-4 text-center text-black/50">No items in this section</td></tr>}
               </tbody></table></div>
             </section>)}
           </div> : <p className="rounded-lg border p-4 text-black/60">No linked recipe lines are available.</p>}
