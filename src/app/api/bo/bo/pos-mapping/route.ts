@@ -72,10 +72,9 @@ export async function POST(request: Request) {
       .select("id").single();
     if (importError) throw importError;
     // Insert missing mappings only. Never overwrite a reviewed decision on re-import.
-    const keys = seed.map(r => posKey(r.division, r.group, r.name));
     const existing = await allRows(db, "bo_pos_mappings", "id,pos_key");
     const known = new Set(existing.map((x: any) => x.pos_key));
-    const newMappings = seed.filter((_r, i) => !known.has(keys[i])).map((r, i) => ({
+    const newMappings = seed.filter(r => !known.has(posKey(r.division, r.group, r.name))).map(r => ({
       pos_key: posKey(r.division, r.group, r.name), pos_name: r.name, pos_division: r.division, pos_group: r.group, status: "pending",
     }));
     for (let i = 0; i < newMappings.length; i += 200) {
