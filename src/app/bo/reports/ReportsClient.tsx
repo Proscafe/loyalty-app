@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { moneyLbp, pct } from "../format";
+import { ConsumptionSalesClient } from "./ConsumptionSalesClient";
 
 type Row = Record<string, any>;
 
@@ -38,7 +39,9 @@ export function ReportsClient() {
     >
       {error ? <div className="mb-4 rounded-[12px] border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-[12px] font-bold">{error}</div> : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <ConsumptionSalesClient />
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ["MENU ITEMS", data?.totals?.menu_items ?? 0],
           ["INGREDIENTS", data?.totals?.ingredients ?? 0],

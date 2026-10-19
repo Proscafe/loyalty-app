@@ -1,11 +1,18 @@
-PRO'S Cafe - POS Mapping editor actions
-Extract this ZIP into C:\loyalty-app preserving folder hierarchy.
-Replacement files:
-src\app\bo\BOSidebar.tsx
-src\app\bo\menu\MenuClient.tsx
-src\app\bo\fnb\FnbClient.tsx
-src\app\bo\pos-mapping\PosMappingClient.tsx
+PRO'S Cafe — Consumption & Sales TEST v1
 
-Use npm run build before committing or pushing.
-Editors reuse the existing Recipes and Ingredients pages within a modal window. Press Done - Refresh Items & Close after saving in the editor. The POS item remains unconfirmed until Confirm Match is clicked, except on suggestion double-click.
-Existing mappings and DB tables are not modified by installation.
+1. Back up your project or commit existing changes.
+2. Extract ZIP to C:\loyalty-app preserving src/ paths.
+3. npm run build. Fix errors before git push.
+4. Visit /bo/reports after development restart.
+
+This update only READS existing Main-branch imports, confirmed mappings, and current recipe cost engine.
+No changes to Supabase database, menu prices, or existing mappings.
+
+IMPORTANT VAT assumption: POS report amount_lbp is PRE-VAT, and saved menu price includes 11% VAT.
+Validate this assumption with the original POS totals before interpreting discrepancies/profit.
+Cost/profit figures cover only rows with confirmed mapping and known recipe costs.
+Detailed ingredient consumption and arbitrary PDF report upload are NOT yet supported.
+Report history shows POS imports already in Supabase.
+
+Needs for next phase: src/lib/bo/costing.ts and schema/actual sample POS import to verify recipe-line yield rules,
+ingredient unit conversions, historical cost, and full PDF parsing.
