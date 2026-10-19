@@ -1,5 +1,7 @@
 "use client";
 
+import { MENU_FAMILIES, menuFamily } from "@/lib/bo/menuFamily";
+
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { SearchablePicker } from "../SearchablePicker";
@@ -112,9 +114,10 @@ export function MenuClient() {
   async function load() {
     setError("");
     try {
-      const [menuRes, recipeRes] = await Promise.all([
+      const [menuRes, recipeRes, unitRes] = await Promise.all([
         fetch("/api/bo/menu", { cache: "no-store" }),
         fetch("/api/bo/recipes", { cache: "no-store" }),
+        fetch("/api/bo/ingredient-unit-costs", { cache: "no-store" }),
       ]);
 
       const readJson = async (res: Response, label: string) => {
@@ -137,13 +140,13 @@ export function MenuClient() {
       setRecipeData(recipeJson);
       void refreshPhotoIds(menuJson?.items ?? menuJson?.menuItems ?? []);
 
-      // Ingredient unit costs are already supplied by /api/bo/recipes.
-      // The old optional /api/bo/ingredient-unit-costs endpoint 404'd,
-      // displaying a permanent warning despite successful main data loading.
-      setUnitCosts(Object.fromEntries((recipeJson?.ingredients ?? [])
-        .filter((ingredient: any) => ingredient?.unit_cost_lbp != null)
-        .map((ingredient: any) => [String(ingredient.id), Number(ingredient.unit_cost_lbp)])));
-
+      try {
+        const unitJson = await readJson(unitRes, "Ingredient unit costs API");
+        setUnitCosts(unitJson?.costs || {});
+      } catch (unitError) {
+        setUnitCosts({});
+        setError(unitError instanceof Error ? unitError.message : "Unable to load ingredient unit costs.");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load Recipes.");
     }
@@ -847,6 +850,40 @@ export function MenuClient() {
       label: x.name,
     }));
 
+  async function saveDishName() {
+    const name = String(draft.name ?? "").trim();
+    if (!name) { setError("Enter a dish name before saving."); return; }
+    const menuItemId = Number(editing?.id);
+    if (!menuItemId) {
+      setError("For a new menu item, use Save Changes to create it first.");
+      return;
+    }
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/bo/menu/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: menuItemId, name }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Unable to rename this dish.");
+      }
+      setEditing((previous: Row | null) => previous ? { ...previous, name } : previous);
+      setDraft((previous: any) => ({ ...previous, name }));
+      // Keep the open recipe draft in sync; no ingredient rows are modified.
+      setRecipeDraft((previous: any) => previous ? { ...previous, name } : previous);
+      await load();
+      setNotice(`Dish renamed to “${name}”.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to rename dish.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -928,15 +965,10 @@ export function MenuClient() {
         }),
       });
 
-      const responseType = res.headers.get("content-type") || "";
-      if (!responseType.includes("application/json")) {
-        throw new Error(res.status === 404
-          ? "The recipe Save API is missing (POST /api/bo/menu/save returned 404). Install the included API route and redeploy the website. Your edits have not been saved."
-          : `Recipe Save API returned HTTP ${res.status} instead of JSON. Check the Next.js server logs; your edits have not been confirmed saved.`);
-      }
       const json = await res.json();
+
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || `Unable to save changes (HTTP ${res.status}).`);
+        throw new Error(json?.error || "Unable to save changes.");
       }
 
       // Verify using the exact persisted recipe lines, not the costing snapshot.
@@ -1226,7 +1258,7 @@ export function MenuClient() {
           className="min-w-[170px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs" />
         <select aria-label="Category filter" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="min-w-[150px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
           <option value="all">All categories</option>
-          {(menuData?.categories ?? []).map((cat: Row) => <option key={cat.id} value={String(cat.id)}>{cat.name}</option>)}
+          {MENU_FAMILIES.map(family => <optgroup key={family} label={family.toUpperCase()}>{(menuData?.categories ?? []).filter((cat: Row) => menuFamily(cat.name) === family).map((cat: Row) => <option key={cat.id} value={String(cat.id)}>{cat.name}</option>)}</optgroup>)}
           <option value="none">Uncategorized</option>
         </select>
         <select aria-label="Visibility filter" value={visibilityFilter} onChange={e => setVisibilityFilter(e.target.value)} className="min-w-[160px] flex-1 rounded-lg border border-black/20 bg-white px-3 py-2 text-xs">
@@ -1255,7 +1287,7 @@ export function MenuClient() {
           <select aria-label="Destination category" value={bulkCategory} disabled={bulkBusy} onChange={e => setBulkCategory(e.target.value)}
             className="max-w-[190px] rounded-md border border-black/20 bg-white px-2 py-2">
             <option value="">Move to category…</option>
-            {(menuData?.categories ?? []).map((category: Row) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}
+            {MENU_FAMILIES.map(family => <optgroup key={family} label={family.toUpperCase()}>{(menuData?.categories ?? []).filter((category: Row) => menuFamily(category.name) === family).map((category: Row) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}</optgroup>)}
             <option value="none">Uncategorized</option>
           </select>
           <button type="button" onClick={() => void runBulk("category")} disabled={!selectedItems.length || !bulkCategory || bulkBusy}
@@ -1439,6 +1471,12 @@ export function MenuClient() {
 <label className="min-w-0 text-left">
                     <span className="mb-1 block text-left text-[10px] font-black uppercase text-[#444]">DISH NAME</span>
                     <input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="w-full rounded-[8px] border border-[#aaa] px-3 py-2.5 font-bold text-black" />
+                    {Number(editing?.id) > 0 && String(draft.name ?? "").trim() !== String(editing?.name ?? "").trim() ? (
+                      <button type="button" disabled={saving} onClick={saveDishName}
+                        className="mt-2 w-full rounded-[8px] bg-black px-3 py-2 text-[11px] font-black uppercase text-white disabled:opacity-50">
+                        {saving ? "Saving..." : "Save Name Only"}
+                      </button>
+                    ) : null}
                     </label>
                     </div>
                     <div className="min-w-0 sm:max-w-[190px]">

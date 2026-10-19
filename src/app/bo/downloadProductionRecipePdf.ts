@@ -31,6 +31,32 @@ async function imageAsJpeg(url: string, maximum = 1100): Promise<PdfImage | null
 
 export async function downloadProductionRecipePdf(recipe: Row, lookup: Lookup): Promise<void> {
   const itemId = Number(lookup.menuItemId);
+  // Resolve linked menu recipe names using the latest menu items rather than
+  // stale imported names on bo_recipes or bo_recipe_lines.
+  const menuNameByRecipe = new Map<string, string[]>();
+  let resolvedCategory = String(lookup.categoryName ?? "").trim();
+  try {
+    const response = await fetch("/api/bo/menu", { cache: "no-store" });
+    if (response.ok) {
+      const data = await response.json();
+      const items: Row[] = Array.isArray(data.items) ? data.items : Array.isArray(data.menuItems) ? data.menuItems : [];
+      const categories: Row[] = Array.isArray(data.categories) ? data.categories : [];
+      const currentItem = items.find((item: Row) => String(item.id) === String(lookup.menuItemId));
+      const matchingCategory = categories.find((category: Row) =>
+        String(category.id) === String(currentItem?.menu_category_id ?? "")
+      );
+      if (matchingCategory?.name) resolvedCategory = String(matchingCategory.name).trim();
+      for (const item of items) {
+        if (item.recipe_id == null || !String(item.name ?? "").trim()) continue;
+        const key = String(item.recipe_id);
+        menuNameByRecipe.set(key, [...(menuNameByRecipe.get(key) ?? []), String(item.name).trim()]);
+      }
+    }
+  } catch { /* Continue with the supplied labels if the menu lookup fails. */ }
+  const currentMenuName = (id: unknown, fallback: string) => {
+    const names = menuNameByRecipe.get(String(id)) ?? [];
+    return names.length === 1 ? names[0] : fallback;
+  };
   const photo = Number.isSafeInteger(itemId) && itemId > 0
     ? await (async () => {
       try {
@@ -60,7 +86,7 @@ export async function downloadProductionRecipePdf(recipe: Row, lookup: Lookup): 
     const source = type === "ingredient" ? lookup.ingredients.find(x => String(x.id) === String(line.ingredient_id))
       : type === "recipe" ? lookup.allRecipes.find(x => String(x.id) === String(line.sub_recipe_id))
       : type === "utility" ? lookup.utilities.find(x => String(x.id) === String(line.utility_id)) : null;
-    const item = String(source?.name || line.sourceName || line.label || (type === "fixed" ? "Fixed cost" : "Unresolved item"));
+    const item = type === "recipe" ? currentMenuName(line.sub_recipe_id, String(source?.name || line.sourceName || line.label || "Unresolved item")) : String(source?.name || line.sourceName || line.label || (type === "fixed" ? "Fixed cost" : "Unresolved item"));
     const unit = type === "ingredient" ? String(source?.consumption_unit || source?.purchase_unit || "")
       : type === "recipe" ? String(source?.yield_unit || "") : type === "utility" ? String(source?.unit_label || "") : "";
     const displayed = displayQuantity(line.qty, unit);
@@ -122,10 +148,10 @@ export async function downloadProductionRecipePdf(recipe: Row, lookup: Lookup): 
     }
     line(53);
     commands.push(`0.43 0.43 0.43 rg BT /FR 8 Tf 1 0 0 1 ${L} 35 Tm (\\251 2026) Tj ET`);
-    text(102, 35, "wissamdesigns.com", 9, "bold", "0.16 0.31 0.49");
+    text(102, 35, "proscafe.net", 9, "bold", "0.16 0.31 0.49");
     const stream = textBytes(commands.join("\n") + "\n");
     const contentId = add(concat([textBytes(`<< /Length ${stream.length} >>\nstream\n`), stream, textBytes("endstream") ]));
-    const linkId = add('<< /Type /Annot /Subtype /Link /Rect [99 28 204 47] /Border [0 0 0] /A << /S /URI /URI (https://wissamdesigns.com) >> >>');
+    const linkId = add('<< /Type /Annot /Subtype /Link /Rect [99 28 204 47] /Border [0 0 0] /A << /S /URI /URI (https://proscafe.net) >> >>');
     const resources = `<< /Font << /FR ${regularId} 0 R /FB ${boldId} 0 R >> /XObject << ${logoId ? `/Logo ${logoId} 0 R` : ""} ${photoId ? `/Photo ${photoId} 0 R` : ""} >> >>`;
     const pageId = add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${W} ${H}] /Resources ${resources} /Annots [${linkId} 0 R] /Contents ${contentId} 0 R >>`);
     pageIds.push(pageId); commands = [];
@@ -152,8 +178,8 @@ export async function downloadProductionRecipePdf(recipe: Row, lookup: Lookup): 
     y -= 17;
   };
   pageStart();
-  const name = lookup.displayName || recipe.name || "Recipe";
-  text(L, y, ascii(lookup.categoryName || "UNCATEGORIZED").toUpperCase().slice(0, 65), 9, "bold", "0.45 0.45 0.45"); y -= 30;
+  const name = currentMenuName(recipe.id, String(lookup.displayName || recipe.name || "Recipe"));
+  text(L, y, ascii(resolvedCategory || "UNCATEGORIZED").toUpperCase().slice(0, 65), 9, "bold", "0.45 0.45 0.45"); y -= 30;
   text(L, y, ascii(name).slice(0, 55), 22, "bold"); y -= 27;
   text(L, y, "RECIPE DETAILS", 9, "bold", "0.48 0.48 0.48"); y -= 22;
   if (photoId) {

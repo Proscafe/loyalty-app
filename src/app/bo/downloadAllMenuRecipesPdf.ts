@@ -35,7 +35,42 @@ const kitchenQty = (raw: unknown, unitRaw: string) => {
 
 export async function downloadAllMenuRecipesPdf(input: MenuRecipeReport, includePrices: boolean, mode: "menu" | "production" = "menu", selectedCategoryIds?: number[]): Promise<void> {
   const recipes = input.recipes ?? [];
-  const items: Row[] = (mode === "production" ? recipes.filter(r => r.kind === "prep" || r.kind === "sauce").map(r => ({ id: null, recipe_id: r.id, name: r.name })) : [...(input.items ?? [])].filter(item => item.active === true && item.recipe_id != null && item.recipe_id !== ""))
+  // Menu item names are authoritative. Linked bo_recipes.name can still be a
+  // historical name after the menu item has been renamed.
+  let liveItems: Row[] = [];
+  if (mode === "menu") {
+    try {
+      const response = await fetch("/api/bo/menu", { cache: "no-store" });
+      if (response.ok) {
+        const data = await response.json();
+        liveItems = Array.isArray(data.items) ? data.items : Array.isArray(data.menuItems) ? data.menuItems : [];
+      }
+    } catch { /* Retain the export snapshot if refreshing names fails. */ }
+  }
+  const latestName = new Map<string, string>();
+  for (const item of liveItems) if (item.id != null && String(item.name ?? "").trim()) latestName.set(String(item.id), String(item.name).trim());
+  // Only use an alias when exactly one menu item references that recipe.
+  const nameCandidates = new Map<string, string[]>();
+  for (const item of (liveItems.length ? liveItems : input.items ?? [])) {
+    if (item.recipe_id == null || !String(item.name ?? "").trim()) continue;
+    const key = String(item.recipe_id);
+    nameCandidates.set(key, [...(nameCandidates.get(key) ?? []), String(item.name).trim()]);
+  }
+  const linkedName = (recipeId: unknown, fallback: unknown): string => {
+    const names = nameCandidates.get(String(recipeId)) ?? [];
+    return names.length === 1 ? names[0] : String(fallback ?? "");
+  };
+  // Explicitly type each branch as Row[]: TypeScript otherwise infers only
+  // { id, recipe_id, name } from the production branch, which has no `active`.
+  const candidates: Row[] = mode === "production"
+    ? recipes.filter(r => r.kind === "prep" || r.kind === "sauce")
+        .map((r): Row => ({ id: null, recipe_id: r.id, name: r.name }))
+    : (input.items ?? []).map((item): Row => ({
+        ...item,
+        name: latestName.get(String(item.id)) ?? item.name,
+      }));
+  const items: Row[] = candidates
+    .filter(item => mode === "production" || (item.active === true && item.recipe_id != null && item.recipe_id !== ""))
     .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, { sensitivity: "base", numeric: true }));
   if (mode === "menu" && selectedCategoryIds) {
     const chosen = new Set(selectedCategoryIds.map(String));
@@ -83,10 +118,10 @@ export async function downloadAllMenuRecipesPdf(input: MenuRecipeReport, include
       commands.push("Q");
     }
     rule(53); commands.push(`0.43 0.43 0.43 rg BT /FR 9 Tf 1 0 0 1 ${L} 35 Tm (\\251 2026) Tj ET`);
-    text(102, 35, "wissamdesigns.com", 9, true, "0.16 0.31 0.49");
+    text(102, 35, "proscafe.net", 9, true, "0.16 0.31 0.49");
     const stream = bytes(commands.join("\n") + "\n");
     const contentId = add(join([bytes(`<< /Length ${stream.length} >>\nstream\n`), stream, bytes("endstream")]));
-    const linkId = add("<< /Type /Annot /Subtype /Link /Rect [99 28 204 47] /Border [0 0 0] /A << /S /URI /URI (https://wissamdesigns.com) >> >>");
+    const linkId = add("<< /Type /Annot /Subtype /Link /Rect [99 28 204 47] /Border [0 0 0] /A << /S /URI /URI (https://proscafe.net) >> >>");
     const resources = `<< /Font << /FR ${fontNormal} 0 R /FB ${fontBold} 0 R >> /XObject << ${logoId ? `/Logo ${logoId} 0 R` : ""} ${currentPhoto ? `/Photo ${currentPhoto} 0 R` : ""} >> >>`;
     pageIds.push(add(`<< /Type /Page /Parent ${pagesRoot} 0 R /MediaBox [0 0 ${W} ${H}] /Resources ${resources} /Annots [${linkId} 0 R] /Contents ${contentId} 0 R >>`));
   };
@@ -165,7 +200,7 @@ export async function downloadAllMenuRecipesPdf(input: MenuRecipeReport, include
       const unitCost = type === "ingredient" ? source?.unit_cost_lbp : type === "recipe" ? (source?.ingredient_unit_cost_lbp ?? source?.unit_cost_lbp) : type === "utility" ? source?.unit_cost_lbp : null;
       const calculated = unitCost == null ? null : Number(unitCost) * Number(line.qty);
       const target = type === "utility" || type === "fixed" ? utilityRows : rows;
-      target.push({ name: String(source?.name ?? line.sourceName ?? line.label ?? (type === "fixed" ? "Fixed cost" : "Unresolved item")), qty: quantity.qty, unit: quantity.unit,
+      target.push({ name: type === "recipe" ? linkedName(line.sub_recipe_id, source?.name ?? line.sourceName ?? line.label ?? "Unresolved item") : String(source?.name ?? line.sourceName ?? line.label ?? (type === "fixed" ? "Fixed cost" : "Unresolved item")), qty: quantity.qty, unit: quantity.unit,
         cost: type === "fixed" && line.fixed_currency === "USD" && line.lineCost == null
           ? (Number.isFinite(Number(line.fixed_price)) ? "$" + Number(line.fixed_price).toFixed(2) : "-")
           : inUsd(line.lineCost ?? calculated ?? (type === "fixed" ? line.fixed_price : null), rate) });

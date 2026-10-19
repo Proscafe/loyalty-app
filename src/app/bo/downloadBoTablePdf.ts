@@ -56,11 +56,11 @@ export async function downloadBoTablePdf({ title, columns, groups, fileName, sub
     rule(H - 108); y = H - 130;
   };
   const finish = () => {
-    rule(42); text(left, 26, "(c) 2026", 9); text(left + 52, 26, "wissamdesigns.com", 9, true, "0.145 0.125 0.435");
+    rule(42); text(left, 26, "(c) 2026", 9); text(left + 52, 26, "proscafe.net", 9, true, "0.145 0.125 0.435");
     text(right - 52, 26, `Page ${pageNumber}`, 8, false, "0.4 0.4 0.4");
     const content = asBytes(commands.join("\n") + "\n");
     const stream = add(concatBytes([asBytes(`<< /Length ${content.length} >>\nstream\n`), content, asBytes("endstream") ]));
-    const link = add(`<< /Type /Annot /Subtype /Link /Rect [84 20 186 39] /Border [0 0 0] /A << /S /URI /URI (https://wissamdesigns.com) >> >>`);
+    const link = add(`<< /Type /Annot /Subtype /Link /Rect [84 20 186 39] /Border [0 0 0] /A << /S /URI /URI (https://proscafe.net) >> >>`);
     pagesMade.push(add(`<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /FR ${regular} 0 R /FB ${bold} 0 R >> /XObject << ${logoId ? `/Logo ${logoId} 0 R` : ""} >> >> /Annots [${link} 0 R] /Contents ${stream} 0 R >>`));
   };
   const headers = () => { box(left, y - 8, right - left, 23, "0.90 0.90 0.90"); line(columns, y, true); y -= 31; };

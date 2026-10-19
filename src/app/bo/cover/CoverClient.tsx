@@ -1,5 +1,7 @@
 "use client";
 
+import { MENU_FAMILIES, menuFamily } from "@/lib/bo/menuFamily";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BOFrame } from "../BOFrame";
 import { moneyLbp, moneyUsd, pct } from "../format";
@@ -485,7 +487,7 @@ export function CoverClient() {
     <div className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-black/10 bg-white p-3">
       <label className="min-w-[170px] flex-1 text-[11px] font-bold text-black/70">Menu Category
         <select className="mt-1 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-[12px] font-normal text-black" value={category} onChange={e => setCategory(e.target.value)}>
-          <option value="all">All categories</option>{[...allSections].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true })).map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+          <option value="all">All categories</option>{MENU_FAMILIES.map(family => <optgroup key={family} label={family.toUpperCase()}>{[...allSections].filter(s => menuFamily(s.name) === family).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true })).map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}</optgroup>)}
         </select>
       </label>
       <label className="min-w-[150px] flex-1 text-[11px] font-bold text-black/70">Price status
@@ -569,7 +571,7 @@ export function CoverClient() {
           <button type="button" aria-expanded={!collapsed[String(section.id)]} aria-controls={`pricing-section-${section.id}`}
             onClick={() => setCollapsed(previous => ({ ...previous, [String(section.id)]: !previous[String(section.id)] }))}
             className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-200">
-            <span>{section.name} <span className="ml-1 text-black/45">({section.items.length})</span></span>
+            <span><span className="mr-2 text-[10px] font-semibold text-[#25206F]">{menuFamily(section.name).toUpperCase()}</span>{section.name} <span className="ml-1 text-black/45">({section.items.length})</span></span>
             <span aria-hidden="true" className="text-base">{collapsed[String(section.id)] ? "+" : "−"}</span>
           </button>
         </h2>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireBoAdminApi } from "@/lib/bo/auth";
 
-const ALLOWED = new Set(["usd_lbp_rate", "food_cost_threshold", "price_adjust_pct", "bar_cost_threshold", "lbp_rounding", "display_currency"]);
+const ALLOWED = new Set(["usd_lbp_rate", "food_cost_threshold", "price_adjust_pct", "bar_cost_threshold", "lbp_rounding", "usd_rounding", "display_currency"]);
 const TABLES = {
   ingredient_categories: "bo_ingredient_categories",
   menu_categories: "bo_menu_categories",
@@ -42,7 +42,7 @@ export async function GET() {
     const [settings, ingredientCategories, menuCategories, suppliers] = await Promise.all([
       readAll(supabase, "bo_settings", "key,value"),
       readAll(supabase, "bo_ingredient_categories", "id,name,sort"),
-      readAll(supabase, "bo_menu_categories", "id,name,sort"),
+      readAll(supabase, "bo_menu_categories", "id,name,sort,family"),
       readAll(supabase, "bo_suppliers", "id,name"),
     ]);
     return NextResponse.json({
@@ -83,73 +83,39 @@ export async function POST(request: Request) {
   const table = getTable(body?.section);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!table || !name || name.length > 160) return NextResponse.json({ error: "Select a valid list and enter a name (1–160 characters)." }, { status: 400 });
-  const { data, error: writeError } = await supabase.from(table).insert({ name }).select("id,name").single();
+  const family = body?.family;
+  if (table === "bo_menu_categories" && !["Food", "Beverage", "Hooka"].includes(family))
+    return NextResponse.json({ error: "Choose Food, Beverage or Hooka before adding a menu category." }, { status: 400 });
+  const values = table === "bo_menu_categories" ? { name, family } : { name };
+  const { data, error: writeError } = await supabase.from(table).insert(values).select(table === "bo_menu_categories" ? "id,name,family" : "id,name").single();
   if (writeError) return dbError(writeError);
   return NextResponse.json({ ok: true, item: data }, { status: 201 });
 }
 
-// Reorder the complete category list, using a temporary disjoint range first.
-// Verify the final database order before reporting a successful save.
-async function applyCategoryOrder(supabase: any, categories: any[]) {
-  const old = categories.map(row => ({ id: Number(row.id), sort: Number(row.sort ?? 0), name: String(row.name ?? "") }));
-  const maxSort = Math.max(0, ...old.map(row => row.sort).filter(Number.isFinite));
-  const stageBase = Math.max(maxSort + 1000, (categories.length + 1) * 1000);
-  let touched = false;
-  try {
-    for (let i = 0; i < categories.length; i++) {
-      const result = await supabase.from("bo_menu_categories")
-        .update({ sort: stageBase + (i + 1) * 10 })
-        .eq("id", Number(categories[i].id)).select("id").maybeSingle();
-      if (result.error) throw result.error;
-      if (!result.data) throw new Error(`Category ${categories[i].id} was not updated.`);
-      touched = true;
-    }
-    for (let i = 0; i < categories.length; i++) {
-      const result = await supabase.from("bo_menu_categories")
-        .update({ sort: (i + 1) * 10, name: String(categories[i].name) })
-        .eq("id", Number(categories[i].id)).select("id").maybeSingle();
-      if (result.error) throw result.error;
-      if (!result.data) throw new Error(`Category ${categories[i].id} could not be saved.`);
-    }
-    const actual = await readAll(supabase, "bo_menu_categories", "id,name,sort");
-    if (actual.length !== categories.length || actual.some((row: any, i: number) =>
-      Number(row.id) !== Number(categories[i].id) || Number(row.sort) !== (i + 1) * 10 || String(row.name) !== String(categories[i].name))) {
-      throw new Error("Saved category positions did not match the requested order.");
-    }
-    return actual;
-  } catch (cause) {
-    // Best-effort recovery from a partial database update; a database RPC
-    // transaction is required if strict concurrency/atomicity is needed.
-    if (touched) {
-      const recoveryBase = stageBase + (categories.length + 1) * 1000;
-      for (let i = 0; i < old.length; i++) {
-        await supabase.from("bo_menu_categories").update({ sort: recoveryBase + i * 10 }).eq("id", old[i].id);
-      }
-      for (const row of old) {
-        await supabase.from("bo_menu_categories").update({ sort: row.sort, name: row.name }).eq("id", row.id);
-      }
-    }
-    throw cause;
-  }
-}
-
+// Settings owns the display order for Menu Pricing and Recipes.
+// Re-numbering is idempotent and also normalizes old duplicate sort values.
 async function reorderMenuCategory(supabase: any, body: any) {
   const id = Number(body?.id);
   const direction = body?.direction;
-  if (!Number.isSafeInteger(id) || id <= 0 || (direction !== "up" && direction !== "down"))
+  if (!Number.isSafeInteger(id) || id <= 0 || (direction !== "up" && direction !== "down")) {
     return NextResponse.json({ error: "Invalid category or move direction." }, { status: 400 });
+  }
   try {
-    const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort");
+    const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort,family");
     const index = categories.findIndex((row: any) => Number(row.id) === id);
     if (index < 0) return NextResponse.json({ error: "Category not found." }, { status: 404 });
-    const destination = index + (direction === "up" ? -1 : 1);
-    if (destination < 0 || destination >= categories.length) return NextResponse.json({ error: "Category is already at the end of the list." }, { status: 400 });
-    const [selected] = categories.splice(index, 1);
-    categories.splice(destination, 0, selected);
-    const saved = await applyCategoryOrder(supabase, categories);
-    return NextResponse.json({ ok: true, menu_categories: saved });
+    const other = index + (direction === "up" ? -1 : 1);
+    if (other < 0 || other >= categories.length) return NextResponse.json({ error: "Category is already at the end of the list." }, { status: 400 });
+    [categories[index], categories[other]] = [categories[other], categories[index]];
+    for (let i = 0; i < categories.length; i++) {
+      if (Number(categories[i].sort) === (i + 1) * 10) continue;
+      const { error } = await supabase.from("bo_menu_categories")
+        .update({ sort: (i + 1) * 10 }).eq("id", categories[i].id);
+      if (error) throw error;
+    }
+    return NextResponse.json({ ok: true, menu_categories: await readAll(supabase, "bo_menu_categories", "id,name,sort,family") });
   } catch (e) {
-    return NextResponse.json({ error: `Could not save category order: ${e instanceof Error ? e.message : String(e)}.` }, { status: 500 });
+    return NextResponse.json({ error: `Could not save category order: ${e instanceof Error ? e.message : String(e)}. Refresh Settings before retrying.` }, { status: 500 });
   }
 }
 
@@ -162,23 +128,7 @@ export async function PATCH(request: Request) {
   const id = Number(body?.id);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!table || !Number.isSafeInteger(id) || id <= 0 || !name || name.length > 160) return NextResponse.json({ error: "Invalid list item or name." }, { status: 400 });
-  // A category can be renamed and moved to an exact position in one save.
-  if (body?.section === "menu_categories" && body?.position !== undefined) {
-    const position = Number(body.position);
-    if (!Number.isSafeInteger(position)) return NextResponse.json({ error: "Position must be a whole number." }, { status: 400 });
-    try {
-      const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort");
-      if (position < 1 || position > categories.length) return NextResponse.json({ error: `Position must be between 1 and ${categories.length}.` }, { status: 400 });
-      const current = categories.findIndex((category: any) => Number(category.id) === id);
-      if (current < 0) return NextResponse.json({ error: "Category not found." }, { status: 404 });
-      const [selected] = categories.splice(current, 1);
-      selected.name = name;
-      categories.splice(position - 1, 0, selected);
-      const saved = await applyCategoryOrder(supabase, categories);
-      return NextResponse.json({ ok: true, item: saved.find((row: any) => Number(row.id) === id), position, menu_categories: saved });
-    } catch (e) { return dbError(e); }
-  }
-  const { data, error: writeError } = await supabase.from(table).update({ name }).eq("id", id).select("id,name").maybeSingle();
+  const { data, error: writeError } = await supabase.from(table).update({ name }).eq("id", id).select(table === "bo_menu_categories" ? "id,name,family" : "id,name").maybeSingle();
   if (writeError) return dbError(writeError);
   if (!data) return NextResponse.json({ error: "Entry not found or update not permitted." }, { status: 404 });
   return NextResponse.json({ ok: true, item: data });

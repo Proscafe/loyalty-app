@@ -2,11 +2,12 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { BOFrame } from "../BOFrame";
+import { MENU_FAMILIES, menuFamily } from "@/lib/bo/menuFamily";
 import { downloadAllProductionPdf } from "../downloadAllProductionPdf";
 import { downloadAllMenuRecipesPdf } from "../downloadAllMenuRecipesPdf";
 
 type ListKey = "ingredient_categories" | "menu_categories" | "suppliers";
-type Item = { id: number; name: string; sort?: number | null };
+type Item = { id: number; name: string; sort?: number | null; family?: string | null };
 type SettingsResponse = {
   settings: Record<string, string>;
   ingredient_categories: Item[];
@@ -38,6 +39,7 @@ export function SettingsClient() {
   const [lbpRounding, setLbpRounding] = useState("1");
   const [usdRounding, setUsdRounding] = useState("0.01");
   const [setupOpen, setSetupOpen] = useState(false);
+  const [newMenuFamily, setNewMenuFamily] = useState<"Food" | "Beverage" | "Hooka">("Food");
   const [recipeDownloadsOpen, setRecipeDownloadsOpen] = useState(false);
   const [productionDownloadsOpen, setProductionDownloadsOpen] = useState(false);
   const [greenThreshold, setGreenThreshold] = useState("30");
@@ -160,7 +162,7 @@ export function SettingsClient() {
       const saved = await apiJson(await fetch("/api/bo/settings", {
         method: action === "create" ? "POST" : action === "rename" ? "PATCH" : "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ section, id: item?.id, name, ...(position !== undefined ? { position } : {}) }),
+        body: JSON.stringify({ section, id: item?.id, name, ...(action === "create" && section === "menu_categories" ? { family: newMenuFamily } : {}), ...(position !== undefined ? { position } : {}) }),
       }));
       await load();
       if (action === "rename" && section === "menu_categories" && position !== undefined) {
@@ -392,6 +394,11 @@ export function SettingsClient() {
               </button>
             </h2>
             {!collapsedSections[key] && <div id={`settings-${key}`}>
+            {key === "menu_categories" && <div className="mb-3" role="group" aria-label="Choose a family for the new menu category">
+              <p className="mb-2 text-[11px] font-semibold text-black/65">Add new category to:</p>
+              <div className="grid grid-cols-3 gap-2">{MENU_FAMILIES.map(family => <button type="button" key={family} aria-pressed={newMenuFamily === family} onClick={() => setNewMenuFamily(family)} className={`rounded-lg border px-2 py-2.5 text-center text-[11px] font-bold transition ${newMenuFamily === family ? "border-[#25206F] bg-[#25206F] text-white shadow-sm" : "border-black/10 bg-[#f3f3fa] text-[#25206F] hover:border-[#25206F]/50"}`}>{family.toUpperCase()} <span className={newMenuFamily === family ? "text-white/70" : "text-black/50"}>({(data?.menu_categories ?? []).filter(c => (c.family ?? menuFamily(c.name)) === family).length})</span></button>)}</div>
+              <p className="mt-1.5 text-[11px] text-black/50">Selected: {newMenuFamily}. The new category will be saved under this family.</p>
+            </div>}
             <form onSubmit={e => { e.preventDefault(); void mutate("create", key); }} className="mb-3 flex items-center gap-2">
               <input aria-label={`New ${title.toLowerCase()} name`} value={newNames[key]} onChange={e => setNewNames(previous => ({ ...previous, [key]: e.target.value }))} placeholder="Add new..." className="min-w-0 flex-1 rounded-lg border border-black/20 bg-white px-3 py-2.5 text-xs text-black outline-none focus:border-black" />
               <button type="submit" disabled={busy || !newNames[key].trim()} className="shrink-0 rounded-lg bg-black px-3 py-2.5 text-xs font-bold text-white disabled:opacity-40">ADD</button>
@@ -401,7 +408,7 @@ export function SettingsClient() {
               {(data?.[key] ?? []).map((item, index) => (
                 <div key={item.id} className="flex items-center gap-2 rounded-lg border border-black/5 bg-gray-50 px-3 py-2">
                   {key === "menu_categories" && <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-black/10 bg-white text-[11px] font-bold tabular-nums text-black/70">{index + 1}</span>}
-                  <span className="min-w-0 flex-1 break-words text-xs font-medium text-black">{item.name}</span>
+                  <span className="min-w-0 flex-1 break-words text-xs font-medium text-black">{item.name}{key === "menu_categories" && <span className="ml-2 rounded-md bg-[#f0f0fa] px-1.5 py-1 text-[10px] font-semibold text-[#25206F]">{item.family ?? menuFamily(item.name)}</span>}</span>
                   {key === "menu_categories" && <div className="flex shrink-0 flex-col gap-0.5">
                     <button type="button" disabled={busy || index === 0} onClick={() => void moveMenuCategory(item, "up")} aria-label={`Move ${item.name} up`} title="Move category up" className="flex h-5 w-7 items-center justify-center rounded border border-black/15 bg-white text-xs font-bold disabled:opacity-25">↑</button>
                     <button type="button" disabled={busy || index === (data?.menu_categories.length ?? 0) - 1} onClick={() => void moveMenuCategory(item, "down")} aria-label={`Move ${item.name} down`} title="Move category down" className="flex h-5 w-7 items-center justify-center rounded border border-black/15 bg-white text-xs font-bold disabled:opacity-25">↓</button>
