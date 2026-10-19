@@ -19,6 +19,7 @@ const sections: NavItem[][] = [
   ],
   [
     { href: "/bo/reports", label: "Reports", icon: "reports" },
+    { href: "/bo/pos-mapping", label: "POS Mapping", icon: "reports" },
     { href: "/bo/utilities", label: "Utility Cost", icon: "utility" },
   ],
   [{ href: "/bo/settings", label: "Settings", icon: "settings" }],

@@ -42,7 +42,7 @@ export async function GET() {
     const [settings, ingredientCategories, menuCategories, suppliers] = await Promise.all([
       readAll(supabase, "bo_settings", "key,value"),
       readAll(supabase, "bo_ingredient_categories", "id,name,sort"),
-      readAll(supabase, "bo_menu_categories", "id,name,sort"),
+      readAll(supabase, "bo_menu_categories", "id,name,sort,family"),
       readAll(supabase, "bo_suppliers", "id,name"),
     ]);
     return NextResponse.json({
@@ -83,7 +83,19 @@ export async function POST(request: Request) {
   const table = getTable(body?.section);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!table || !name || name.length > 160) return NextResponse.json({ error: "Select a valid list and enter a name (1–160 characters)." }, { status: 400 });
-  const { data, error: writeError } = await supabase.from(table).insert({ name }).select("id,name").single();
+  const family = body?.family;
+  if (table === "bo_menu_categories" && !["Food", "Beverage", "Hooka"].includes(family))
+    return NextResponse.json({ error: "Choose Food, Beverage or Hooka before adding a menu category." }, { status: 400 });
+  // Keep both inserts separately typed: Supabase requires `family` on menu categories,
+  // but ingredient categories and suppliers accept only `name`.
+  if (table === "bo_menu_categories") {
+    const { data, error: writeError } = await supabase.from("bo_menu_categories")
+      .insert({ name, family }).select("id,name,family").single();
+    if (writeError) return dbError(writeError);
+    return NextResponse.json({ ok: true, item: data }, { status: 201 });
+  }
+  const { data, error: writeError } = await supabase.from(table)
+    .insert({ name }).select("id,name").single();
   if (writeError) return dbError(writeError);
   return NextResponse.json({ ok: true, item: data }, { status: 201 });
 }
@@ -97,7 +109,7 @@ async function reorderMenuCategory(supabase: any, body: any) {
     return NextResponse.json({ error: "Invalid category or move direction." }, { status: 400 });
   }
   try {
-    const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort");
+    const categories = await readAll(supabase, "bo_menu_categories", "id,name,sort,family");
     const index = categories.findIndex((row: any) => Number(row.id) === id);
     if (index < 0) return NextResponse.json({ error: "Category not found." }, { status: 404 });
     const other = index + (direction === "up" ? -1 : 1);
@@ -109,7 +121,7 @@ async function reorderMenuCategory(supabase: any, body: any) {
         .update({ sort: (i + 1) * 10 }).eq("id", categories[i].id);
       if (error) throw error;
     }
-    return NextResponse.json({ ok: true, menu_categories: await readAll(supabase, "bo_menu_categories", "id,name,sort") });
+    return NextResponse.json({ ok: true, menu_categories: await readAll(supabase, "bo_menu_categories", "id,name,sort,family") });
   } catch (e) {
     return NextResponse.json({ error: `Could not save category order: ${e instanceof Error ? e.message : String(e)}. Refresh Settings before retrying.` }, { status: 500 });
   }
@@ -124,7 +136,7 @@ export async function PATCH(request: Request) {
   const id = Number(body?.id);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (!table || !Number.isSafeInteger(id) || id <= 0 || !name || name.length > 160) return NextResponse.json({ error: "Invalid list item or name." }, { status: 400 });
-  const { data, error: writeError } = await supabase.from(table).update({ name }).eq("id", id).select("id,name").maybeSingle();
+  const { data, error: writeError } = await supabase.from(table).update({ name }).eq("id", id).select(table === "bo_menu_categories" ? "id,name,family" : "id,name").maybeSingle();
   if (writeError) return dbError(writeError);
   if (!data) return NextResponse.json({ error: "Entry not found or update not permitted." }, { status: 404 });
   return NextResponse.json({ ok: true, item: data });

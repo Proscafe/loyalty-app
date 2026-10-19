@@ -86,8 +86,16 @@ export async function POST(request: Request) {
   const family = body?.family;
   if (table === "bo_menu_categories" && !["Food", "Beverage", "Hooka"].includes(family))
     return NextResponse.json({ error: "Choose Food, Beverage or Hooka before adding a menu category." }, { status: 400 });
-  const values = table === "bo_menu_categories" ? { name, family } : { name };
-  const { data, error: writeError } = await supabase.from(table).insert(values).select(table === "bo_menu_categories" ? "id,name,family" : "id,name").single();
+  // Keep both inserts separately typed: Supabase requires `family` on menu categories,
+  // but ingredient categories and suppliers accept only `name`.
+  if (table === "bo_menu_categories") {
+    const { data, error: writeError } = await supabase.from("bo_menu_categories")
+      .insert({ name, family }).select("id,name,family").single();
+    if (writeError) return dbError(writeError);
+    return NextResponse.json({ ok: true, item: data }, { status: 201 });
+  }
+  const { data, error: writeError } = await supabase.from(table)
+    .insert({ name }).select("id,name").single();
   if (writeError) return dbError(writeError);
   return NextResponse.json({ ok: true, item: data }, { status: 201 });
 }
