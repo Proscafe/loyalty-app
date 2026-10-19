@@ -201,6 +201,12 @@ export function FnbClient() {
   }
 
   function startAdd() { setEditing(null); setDraft({ ...EMPTY }); setOpen(true); }
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("posCreate") !== "ingredient") return;
+    startAdd();
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
   function startEdit(row: Row) { if (pendingRef.current[String(row.id)]) { setError("Save pending price changes before editing this ingredient's other details."); return; } setEditing(row); setDraft({ name: row.name ?? "", category_id: row.category_id ? String(row.category_id) : "", purchase_unit: row.purchase_unit ?? "", purchase_qty: row.purchase_qty ?? "", price: row.price ?? "", price_currency: row.price_currency ?? "USD", supplier_id: row.supplier_id ? String(row.supplier_id) : "", new_supplier: "", brand: row.brand ?? "", pack_size: row.pack_size ?? "", consumption_unit: row.consumption_unit ?? "", notes: row.notes ?? "" }); setOpen(true); }
 
   async function save(e: FormEvent) {

@@ -1,0 +1,11 @@
+PRO'S Cafe - POS Mapping editor actions
+Extract this ZIP into C:\loyalty-app preserving folder hierarchy.
+Replacement files:
+src\app\bo\BOSidebar.tsx
+src\app\bo\menu\MenuClient.tsx
+src\app\bo\fnb\FnbClient.tsx
+src\app\bo\pos-mapping\PosMappingClient.tsx
+
+Use npm run build before committing or pushing.
+Editors reuse the existing Recipes and Ingredients pages within a modal window. Press Done - Refresh Items & Close after saving in the editor. The POS item remains unconfirmed until Confirm Match is clicked, except on suggestion double-click.
+Existing mappings and DB tables are not modified by installation.

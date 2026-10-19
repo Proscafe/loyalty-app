@@ -156,6 +156,13 @@ export function MenuClient() {
     void load();
   }, []);
   useEffect(() => { if (!open) void refreshPhotoIds(); }, [open]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("posCreate") !== "recipe") return;
+    setNewRecipeSearch("");
+    setNewRecipePickerOpen(true);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
 
   // Open the editor when arriving from Menu Pricing's read-only preview.
   useEffect(() => {

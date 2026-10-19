@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { BOLogoutButton } from "./BOLogoutButton";
 
-type IconName = "dashboard" | "pricing" | "recipe" | "ingredients" | "reports" | "utility" | "settings" | "logout" | "menu" | "close";
+type IconName = "dashboard" | "pricing" | "recipe" | "ingredients" | "reports" | "ranch" | "utility" | "settings" | "logout" | "menu" | "close";
 type NavItem = { href: string; label: string; icon: IconName };
 const sections: NavItem[][] = [
   [{ href: "/bo/home", label: "Dashboard", icon: "dashboard" }],
@@ -19,10 +19,9 @@ const sections: NavItem[][] = [
   ],
   [
     { href: "/bo/reports", label: "Reports", icon: "reports" },
-    { href: "/bo/pos-mapping", label: "POS Mapping", icon: "reports" },
     { href: "/bo/utilities", label: "Utility Cost", icon: "utility" },
   ],
-  [{ href: "/bo/settings", label: "Settings", icon: "settings" }],
+  [{ href: "/bo/pos-mapping", label: "POS Mapping", icon: "ranch" }, { href: "/bo/settings", label: "Settings", icon: "settings" }],
 ];
 
 function SidebarIcon({ name, size = 21 }: { name: IconName; size?: number }) {
@@ -32,6 +31,7 @@ function SidebarIcon({ name, size = 21 }: { name: IconName; size?: number }) {
     pricing: <><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/></>,
     recipe: <><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v4h6V3M9 12h6M9 16h5"/></>,
     ingredients: <><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></>,
+    ranch: <><path d="M3 20V9l9-6 9 6v11M3 11l9-6 9 6M7 20v-7h10v7M9 16h6M12 13v7"/><path d="M2 20h20"/></>,
     reports: <><path d="M4 20V4M4 20h17"/><rect x="7" y="12" width="3" height="6" rx=".5"/><rect x="12" y="8" width="3" height="10" rx=".5"/><rect x="17" y="5" width="3" height="13" rx=".5"/></>,
     utility: <><path d="M12 2 6 13h5l-1 9 8-12h-5l2-8Z"/></>,
     settings: <><circle cx="12" cy="12" r="3"/><path d="M10 2h4l.5 2.1 1.8.8 1.9-1.1 2.8 2.8-1.1 1.9.8 1.8L22 10v4l-2.1.5-.8 1.8 1.1 1.9-2.8 2.8-1.9-1.1-1.8.8L14 22h-4l-.5-2.1-1.8-.8-1.9 1.1L3 17.4l1.1-1.9-.8-1.8L2 14v-4l2.1-.5.8-1.8L3.8 5.8 6.6 3l1.9 1.1 1.8-.8L10 2Z"/></>,
