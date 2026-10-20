@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+import { createClient as createSessionClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,30 @@ function getServiceClient() {
   return createSupabaseAdminClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+async function requireMasterAdmin() {
+  const session = await createSessionClient();
+  const { data: { user }, error: authError } = await session.auth.getUser();
+  if (authError || !user) {
+    return { admin: null, error: NextResponse.json({ error: "not_authenticated" }, { status: 401 }) };
+  }
+
+  // Authorization must precede all service-role reads and writes.
+  const admin = getServiceClient();
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("role,is_active")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return { admin: null, error: NextResponse.json({ error: "authorization_check_failed" }, { status: 500 }) };
+  }
+  if (!profile || profile.role !== "master_admin" || profile.is_active !== true) {
+    return { admin: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+  }
+  return { admin, error: null };
 }
 
 function normalizeAudience(value: unknown): Audience | null {
@@ -58,7 +83,9 @@ function invalidSubscription(row: PushSubscriptionRow) {
 
 export async function GET() {
   try {
-    const admin = getServiceClient();
+    const access = await requireMasterAdmin();
+    if (access.error) return access.error;
+    const admin = access.admin!;
     const { data, error } = await admin
       .from("admin_notifications")
       .select("*")
@@ -79,6 +106,16 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Verify authorization before parsing or acting on user-controlled data.
+  let access: Awaited<ReturnType<typeof requireMasterAdmin>>;
+  try {
+    access = await requireMasterAdmin();
+  } catch {
+    return NextResponse.json({ error: "authorization_check_failed" }, { status: 500 });
+  }
+  if (access.error) return access.error;
+  const authorizedAdmin = access.admin!;
+
   let body: {
     title?: string;
     message?: string;
@@ -117,7 +154,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const admin = getServiceClient();
+    const admin = authorizedAdmin;
     const now = new Date().toISOString();
 
     const { data: notification, error: insertError } = await admin
