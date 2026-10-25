@@ -1975,13 +1975,13 @@ export function ClientDashboard({
         >
           <div className="grid grid-cols-[1fr_154px] items-start gap-2">
             <div className="relative z-20">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
+              <div className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.18em] text-white/75">
                 Weekly Challenge
               </div>
 
-              <p className="mt-2 max-w-[220px] text-left text-[12px] font-semibold leading-5 text-white/80">
-                Visit 4 times this week to<br />
-                <span className="whitespace-nowrap">unlock a free spin!</span>
+              <p className="mt-2 text-left text-[11px] font-semibold leading-5 text-white/80">
+                <span className="block whitespace-nowrap">Visit 4 times this week</span>
+                <span className="block whitespace-nowrap">to unlock a free spin!</span>
               </p>
 
               <div className="relative z-[100] mt-4 flex items-center gap-2 pointer-events-auto">
