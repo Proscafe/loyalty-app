@@ -90,6 +90,14 @@ const DEFAULT_CATEGORY_ORDER = [
   "Hooka",
 ];
 
+const SPIN_TAGLINES = [
+  "You did it! 🎉 Four visits, one lucky spin. Your surprise reward is waiting!",
+  "4 visits completed! Now it's time to test your luck and claim a surprise!",
+  "Your loyalty deserves a reward. Give the wheel a spin and discover yours!",
+  "Challenge complete! Your reward is just one spin away.",
+  "You've unlocked your lucky spin! What will you win today?",
+] as const;
+
 const DASHBOARD_GREETINGS = [
   "WELCOME BACK",
   "GOOD TO SEE YOU",
@@ -619,6 +627,45 @@ function GiftCarouselCard({
 
 
 
+// Clockwise segment order, starting at the top pointer of /01_wheel_circle.png.
+// Keep this order aligned with the artwork so the pointer names the actual prize.
+const WHEEL_PRIZES = [
+  { key: "voucher", label: "$50 Voucher", weight: 0, angle: 0 },
+  { key: "main", label: "Main Course", weight: 5, angle: 45 },
+  { key: "hooka", label: "Hooka", weight: 28, angle: 90 },
+  { key: "dessert", label: "Dessert", weight: 14, angle: 135 },
+  { key: "coffee", label: "Coffee", weight: 42, angle: 180 },
+  { key: "discount15", label: "15% Discount", weight: 3, angle: 270 },
+  { key: "sandwich", label: "Sandwich", weight: 5, angle: 225 },
+  { key: "discount10", label: "10% Discount", weight: 3, angle: 315 },
+] as const;
+
+type WheelPrize = (typeof WHEEL_PRIZES)[number];
+
+// Weighted draw independently of the physical sector size.
+// $50 Voucher (0%) is never drawn.
+function chooseWheelPrize(): WheelPrize {
+  const totalWeight = WHEEL_PRIZES.reduce((sum, prize) => sum + prize.weight, 0);
+  const pick = Math.random() * totalWeight;
+  let cumulative = 0;
+  for (const prize of WHEEL_PRIZES) {
+    cumulative += prize.weight;
+    if (pick < cumulative) return prize;
+  }
+  return WHEEL_PRIZES[WHEEL_PRIZES.length - 1];
+}
+
+function wheelPrizeCategory(prize: WheelPrize): string | null {
+  switch (prize.key) {
+    case "main": return "Main Course";
+    case "sandwich": return "Sandwiches";
+    case "hooka": return "Hooka";
+    case "coffee": return "Coffee";
+    case "dessert": return "Desserts";
+    default: return null;
+  }
+}
+
 function ImageSpinWheel({
   compact = false,
   rotation = 0,
@@ -628,28 +675,15 @@ function ImageSpinWheel({
   rotation?: number;
   spinning?: boolean;
 }) {
-  const size = compact ? 154 : 350;
-
+  const size = compact ? 156 : 306;
   return (
     <div
-      className="relative mx-auto"
-      style={{ width: size, height: size }}
+      className="relative mx-auto aspect-square max-w-full shrink-0 select-none"
+      style={{ width: size }}
       aria-hidden="true"
     >
       <img
-        src="/02_base.png"
-        alt=""
-        draggable={false}
-        className="pointer-events-none absolute inset-0 h-full w-full object-contain"
-        style={{
-          filter: compact
-            ? "drop-shadow(0 8px 12px rgba(0,0,0,.18))"
-            : "drop-shadow(0 18px 26px rgba(0,0,0,.24))",
-        }}
-      />
-
-      <img
-        src="/01_wheel_circle.png"
+        src="/pros-wheel-disc-classic-clean.webp"
         alt=""
         draggable={false}
         className="pointer-events-none absolute inset-0 h-full w-full object-contain"
@@ -658,16 +692,15 @@ function ImageSpinWheel({
           transition: spinning
             ? "transform 2.4s cubic-bezier(.12,.72,.2,1)"
             : "none",
-          transformOrigin: "50% 50%",
+          transformOrigin: "center",
           willChange: spinning ? "transform" : "auto",
         }}
       />
-
       <img
-        src="/03_pointer.png"
+        src="/pros-wheel-pointer.png"
         alt=""
         draggable={false}
-        className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+        className="pointer-events-none absolute left-1/2 top-[-2%] z-10 w-[13%] -translate-x-1/2 object-contain"
       />
     </div>
   );
@@ -764,6 +797,7 @@ function RewardCelebrationModal({
   const isBirthday = isBirthdayReward(reward);
   const birthdayGiftName = reward.reward_type || "birthday gift";
   const modalIcon = getRewardIcon(reward);
+  const isDiscountPrize = /^(10|15)% Discount$/i.test(cleanText(reward.reward_type));
 
   const confettiPieces = [
     ["8%", "-120px", "0s", "#f0cf61"],
@@ -882,7 +916,7 @@ function RewardCelebrationModal({
             </div>
           ) : (
             <h2 className="mt-5 text-[28px] font-black leading-tight text-white">
-              You earned a free {giftName}
+              {isDiscountPrize ? `You won ${reward.reward_type}!` : `You earned a free ${giftName}`}
             </h2>
           )}
 
@@ -936,6 +970,7 @@ export function ClientDashboard({
   const [showGameScanCard, setShowGameScanCard] = useState(false);
   const [bannerIndex, setBannerIndex] = useState(0);
   const [isSpinOpen, setIsSpinOpen] = useState(false);
+  const [spinTaglineIndex, setSpinTaglineIndex] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const spinAudioRef = useRef<HTMLAudioElement | null>(null);
   const winAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -956,6 +991,12 @@ export function ClientDashboard({
       spinAudioRef.current.currentTime = 0;
     }
 
+    const storageKey = `pros-preview-last-spin-tagline-${profile.id}`;
+    const previous = Number(window.sessionStorage.getItem(storageKey) ?? -1);
+    const candidates = SPIN_TAGLINES.map((_, i) => i).filter((i) => i !== previous);
+    const next = candidates[Math.floor(Math.random() * candidates.length)] ?? 0;
+    setSpinTaglineIndex(next);
+    window.sessionStorage.setItem(storageKey, String(next));
     setIsSpinOpen(true);
   };
 
@@ -1612,51 +1653,38 @@ export function ClientDashboard({
       }
     }
 
-    const activeCategories = ((categories ?? []) as LoyaltyCategory[]).filter(
-      (category) => category.is_active !== false && category.id && category.name,
-    );
+    const chosenPrize = chooseWheelPrize();
+    const normalizedCategory = wheelPrizeCategory(chosenPrize);
+    const matchingCategory = normalizedCategory
+      ? ((categories ?? []) as LoyaltyCategory[]).find(
+          (category) =>
+            category.is_active !== false &&
+            normalizeCategoryName(category.name).toLowerCase() === normalizedCategory.toLowerCase(),
+        )
+      : undefined;
 
-    const eligibleCategories = activeCategories.filter((category) => {
-      const name = normalizeCategoryName(category.name).toLowerCase();
-      return (
-        name.includes("sandwich") ||
-        name.includes("main course") ||
-        name.includes("dessert") ||
-        name.includes("coffee") ||
-        name.includes("hooka") ||
-        name.includes("hookah")
-      );
-    });
-
-    if (!eligibleCategories.length) {
-      if (spinAudioRef.current) {
-        spinAudioRef.current.pause();
-        spinAudioRef.current.currentTime = 0;
-      }
-
-      setSpinError("No active loyalty categories are available for the preview.");
-      setIsSpinning(false);
-      return;
-    }
-
-    const selected = eligibleCategories[Math.floor(Math.random() * eligibleCategories.length)];
-    const categoryName = normalizeCategoryName(selected.name);
     const now = new Date().toISOString();
-
+    // This is a PREVIEW-only gift; no database claim is created here.
     const reward: ClientReward = {
       id: `preview-spin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       client_id: profile.id,
-      category_id: selected.id ?? null,
-      reward_type: `Free ${getSingularCategory(categoryName)}`,
+      category_id: matchingCategory?.id ?? null,
+      reward_type: normalizedCategory
+        ? `Free ${getSingularCategory(normalizedCategory)}`
+        : chosenPrize.label,
       status: "available",
       created_at: now,
       earned_at: now,
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       source: "dashboard-preview",
+      description: `Spin & Win: ${chosenPrize.label}`,
     };
 
-    const extraRotation = 1800 + Math.floor(Math.random() * 720);
-    setSpinRotation((current) => current + extraRotation);
+    // Each drawn sector has the same size visually; probabilities come from weights.
+    // Align the center of the selected artwork sector with the fixed top pointer.
+    const fullTurns = 6 * 360;
+    const alignment = (360 - chosenPrize.angle) % 360;
+    setSpinRotation(fullTurns + alignment);
 
     await new Promise((resolve) => window.setTimeout(resolve, 2450));
 
@@ -1677,13 +1705,14 @@ export function ClientDashboard({
     }
 
     setSpinResult(reward);
+    // Keep the stopped wheel visible for three seconds, then reveal the win.
+    await new Promise((resolve) => window.setTimeout(resolve, 3000));
+    seenRewardIdsRef.current.add(reward.id);
     setLocalRewards((current) => [reward, ...current.filter((item) => item.id !== reward.id)]);
-
-    window.setTimeout(() => {
-      setIsSpinOpen(false);
-      setCelebrationReward(reward);
-      setIsSpinning(false);
-    }, 180);
+    setTestCompletedVisits(0);
+    setIsSpinOpen(false);
+    setCelebrationReward(reward);
+    setIsSpinning(false);
   }
 
   function previewRewardTitle(reward: ClientReward, index: number) {
@@ -1921,13 +1950,13 @@ export function ClientDashboard({
             >
               <div className="flex w-full flex-col items-center text-center">
                 <div className="flex items-center justify-center gap-2.5">
-                  <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center leading-none">
+                  <div className="flex h-[21px] w-[21px] shrink-0 items-center justify-center leading-none">
                     <Image
                       src={item.icon === "star" ? "/favorite.png" : item.icon === "gift" ? "/gift-outline.png" : "/trending-topic.png"}
                       alt=""
-                      width={30}
-                      height={30}
-                      className="h-[30px] w-[30px] object-contain"
+                      width={21}
+                      height={21}
+                      className="h-[21px] w-[21px] object-contain"
                     />
                   </div>
                   <div className="text-[19px] font-black leading-none text-white">{item.value}</div>
@@ -1971,7 +2000,7 @@ export function ClientDashboard({
                           current >= visitTarget ? 0 : Math.min(visitTarget, current + 1),
                         );
                       }}
-                      className={`relative z-[100] flex h-8 w-8 cursor-pointer touch-manipulation select-none items-center justify-center rounded-full border text-[14px] font-black transition pointer-events-auto ${
+                      className={`relative z-[100] flex h-[27px] w-[27px] cursor-pointer touch-manipulation select-none items-center justify-center rounded-full border text-[12px] font-black transition pointer-events-auto ${
                         completed
                           ? "border-[#ffd66b] bg-[#ffd66b] text-[#324438]"
                           : "border-white/45 bg-transparent text-transparent"
@@ -1999,7 +2028,7 @@ export function ClientDashboard({
               </div>
             </div>
 
-            <div className={`relative z-0 flex min-h-[165px] items-start justify-center ${isSpinUnlocked ? "pointer-events-auto" : "pointer-events-none"}`}>
+            <div className={`relative z-0 flex min-h-[156px] items-center justify-center ${isSpinUnlocked ? "pointer-events-auto" : "pointer-events-none"}`}>
               <button
                 type="button"
                 disabled={!isSpinUnlocked}
@@ -2007,7 +2036,7 @@ export function ClientDashboard({
                   event.stopPropagation();
                   if (isSpinUnlocked) openSpinModal();
                 }}
-                className={`group mt-0 h-[168px] w-[154px] touch-manipulation ${isSpinUnlocked ? "cursor-pointer" : "cursor-not-allowed opacity-65"}`}
+                className={`group flex h-[156px] w-[156px] items-center justify-center touch-manipulation ${isSpinUnlocked ? "cursor-pointer" : "cursor-not-allowed opacity-65"}`}
                 aria-label="Open Spin & Win"
               >
                 <ImageSpinWheel compact />
@@ -2141,7 +2170,7 @@ export function ClientDashboard({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex min-w-0 items-center justify-center gap-1 sm:gap-1.5">
                       {isGiftLocked ? (
                         <div className="flex w-full items-center justify-center gap-1.5 text-center text-[12px] font-black uppercase tracking-[0.08em] text-[#ffd66b]">
                           <Image
@@ -2154,34 +2183,23 @@ export function ClientDashboard({
                           <span>Redeem Gift</span>
                         </div>
                       ) : (
-                        Array.from({ length: 5 }).map((_, starIndex) =>
-                          starIndex < count ? (
-                            <img
-                              key={starIndex}
-                              src={stampTheme.asset}
-                              alt=""
-                              className="h-[24px] w-[24px] object-contain"
-                              draggable={false}
+                        Array.from({ length: 5 }).map((_, starIndex) => (
+                          <svg
+                            key={starIndex}
+                            viewBox="0 0 100 100"
+                            className="block h-[22px] w-[22px] min-w-[22px] shrink-0"
+                            aria-hidden="true"
+                          >
+                            <polygon
+                              points="50,5 61,36 94,36 67,56 78,89 50,69 22,89 33,56 6,36 39,36"
+                              fill={starIndex < count ? "#ffd66b" : "transparent"}
+                              stroke="#ffd66b"
+                              strokeWidth={starIndex < count ? "3" : "3.2"}
+                              strokeLinejoin="round"
+                              opacity={starIndex < count ? "1" : "0.3"}
                             />
-                          ) : (
-                            <svg
-                              key={starIndex}
-                              viewBox="0 0 100 100"
-                              className="h-[24px] w-[24px]"
-                              aria-hidden="true"
-                            >
-                              <polygon
-                                points="50,5 61,36 94,36 67,56 78,89 50,69 22,89 33,56 6,36 39,36"
-                                fill="rgba(255,255,255,0.06)"
-                                stroke={stampTheme.stroke}
-                                opacity="0.78"
-                                strokeWidth="3.2"
-                                strokeDasharray="4 4"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          ),
-                        )
+                          </svg>
+                        ))
                       )}
                     </div>
 
@@ -2337,19 +2355,23 @@ export function ClientDashboard({
 
               <div className="text-left pr-10">
                 <h2 className="text-[30px] font-black text-white">Spin the Wheel!</h2>
-                <p className="mt-2 text-[13px] font-semibold leading-5 text-white/68">
-                  You&apos;ve completed {displayStreakCount} days in a row.
-                  <br />
-                  Spin now and win a surprise gift!
+                <p className="mt-2 text-[13px] font-semibold leading-5 text-white">
+                  {SPIN_TAGLINES[spinTaglineIndex]}
                 </p>
               </div>
 
-              <div className="relative mx-auto mt-3 flex min-h-[350px] items-center justify-center">
+              <button
+                type="button"
+                onClick={() => void handleSpin()}
+                disabled={isSpinning}
+                aria-label="Spin the prize wheel"
+                className="relative mx-auto mt-4 flex w-full cursor-pointer touch-manipulation items-center justify-center py-2 disabled:cursor-default"
+              >
                 <ImageSpinWheel
                   rotation={spinRotation}
                   spinning={isSpinning}
                 />
-              </div>
+              </button>
 
               {spinError ? (
                 <div className="mt-4 rounded-[14px] bg-white/10 px-4 py-3 text-center text-[12px] font-bold text-white">
