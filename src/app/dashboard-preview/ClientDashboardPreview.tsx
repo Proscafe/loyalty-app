@@ -220,52 +220,10 @@ function getStampIcon(categoryName: string) {
   return "/gift.png";
 }
 
-function getStampTheme(categoryName: string) {
-  const lower = normalizeCategoryName(categoryName).toLowerCase();
-
-  if (lower.includes("sandwich")) {
-    return {
-      fill: "rgba(240, 207, 97, 0.22)",
-      stroke: "#f0cf61",
-      asset: "/star.png",
-    };
-  }
-
-  if (lower.includes("main course")) {
-    return {
-      fill: "rgba(146, 83, 76, 0.22)",
-      stroke: "#92534C",
-      asset: "/star (3).png",
-    };
-  }
-
-  if (lower.includes("dessert")) {
-    return {
-      fill: "rgba(121, 134, 115, 0.24)",
-      stroke: "#798673",
-      asset: "/star-blue.png",
-    };
-  }
-
-  if (lower.includes("coffee")) {
-    return {
-      fill: "rgba(95, 135, 156, 0.24)",
-      stroke: "#5f879c",
-      asset: "/star-green.png",
-    };
-  }
-
-  if (lower.includes("hooka") || lower.includes("hookah")) {
-    return {
-      fill: "rgba(126, 91, 169, 0.24)",
-      stroke: "#7e5ba9",
-      asset: "/star-purple.png",
-    };
-  }
-
+function getStampTheme(_categoryName: string) {
   return {
-    fill: "rgba(255, 255, 255, 0.16)",
-    stroke: "#ffffff",
+    fill: "rgba(240, 207, 97, 0.22)",
+    stroke: "#f0cf61",
     asset: "/star.png",
   };
 }
@@ -985,8 +943,9 @@ export function ClientDashboard({
   const [spinResult, setSpinResult] = useState<ClientReward | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
   const [dashboardGreeting, setDashboardGreeting] = useState<string>(DASHBOARD_GREETINGS[0]);
-  const [testCompletedVisits, setTestCompletedVisits] = useState<number>(4);
+  const [testCompletedVisits, setTestCompletedVisits] = useState<number>(0);
   const openSpinModal = () => {
+    if (testCompletedVisits < 4) return;
     setSpinError(null);
     setSpinResult(null);
     setIsSpinning(false);
@@ -1634,7 +1593,7 @@ export function ClientDashboard({
 
 
   async function handleSpin() {
-    if (isSpinning) return;
+    if (isSpinning || !isSpinUnlocked) return;
 
     setIsSpinning(true);
     setSpinError(null);
@@ -1963,25 +1922,13 @@ export function ClientDashboard({
               <div className="flex w-full flex-col items-center text-center">
                 <div className="flex items-center justify-center gap-2.5">
                   <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center leading-none">
-                    {item.icon === "star" ? (
-                      <Image
-                        src="/star.png"
-                        alt=""
-                        width={30}
-                        height={30}
-                        className="h-[30px] w-[30px] object-contain"
-                      />
-                    ) : item.icon === "gift" ? (
-                      <Image
-                        src="/gift.png"
-                        alt=""
-                        width={30}
-                        height={30}
-                        className="h-[30px] w-[30px] object-contain"
-                      />
-                    ) : (
-                      <span className="text-[27px]" aria-hidden="true">🔥</span>
-                    )}
+                    <Image
+                      src={item.icon === "star" ? "/favorite.png" : item.icon === "gift" ? "/gift-outline.png" : "/trending-topic.png"}
+                      alt=""
+                      width={30}
+                      height={30}
+                      className="h-[30px] w-[30px] object-contain"
+                    />
                   </div>
                   <div className="text-[19px] font-black leading-none text-white">{item.value}</div>
                 </div>
@@ -2040,13 +1987,14 @@ export function ClientDashboard({
               <div className="relative z-[120] mt-4 pointer-events-auto">
                 <button
                   type="button"
+                  disabled={!isSpinUnlocked}
                   onClick={(event) => {
                     event.stopPropagation();
-                    openSpinModal();
+                    if (isSpinUnlocked) openSpinModal();
                   }}
-                  className="preview-cta-blink relative z-[120] w-[132px] cursor-pointer touch-manipulation rounded-[16px] bg-[#ffd66b] px-3 py-2.5 text-[13px] font-black uppercase text-[#2f4435] shadow-[0_6px_18px_rgba(0,0,0,0.24)] pointer-events-auto"
+                  className={`relative z-[120] w-[132px] touch-manipulation rounded-[16px] px-3 py-2.5 text-[13px] font-black uppercase transition ${isSpinUnlocked ? "preview-cta-blink cursor-pointer bg-[#ffd66b] text-[#2f4435] shadow-[0_6px_18px_rgba(0,0,0,0.24)]" : "cursor-not-allowed bg-white/15 text-white/45 shadow-none"}`}
                 >
-                  SPIN &amp; WIN
+                  {isSpinUnlocked ? "SPIN & WIN" : `${testCompletedVisits}/${visitTarget} Visits`}
                 </button>
               </div>
             </div>
@@ -2054,11 +2002,12 @@ export function ClientDashboard({
             <div className={`relative z-0 flex min-h-[165px] items-start justify-center ${isSpinUnlocked ? "pointer-events-auto" : "pointer-events-none"}`}>
               <button
                 type="button"
+                disabled={!isSpinUnlocked}
                 onClick={(event) => {
                   event.stopPropagation();
-                  openSpinModal();
+                  if (isSpinUnlocked) openSpinModal();
                 }}
-                className="group mt-0 h-[168px] w-[154px] cursor-pointer touch-manipulation"
+                className={`group mt-0 h-[168px] w-[154px] touch-manipulation ${isSpinUnlocked ? "cursor-pointer" : "cursor-not-allowed opacity-65"}`}
                 aria-label="Open Spin & Win"
               >
                 <ImageSpinWheel compact />
