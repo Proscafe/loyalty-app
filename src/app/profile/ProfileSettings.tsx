@@ -215,6 +215,7 @@ export default function ProfileSettings({
   const [passwordStatus, setPasswordStatus] = useState("");
   const [isSavingBirthday, setIsSavingBirthday] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isPasswordCardOpen, setIsPasswordCardOpen] = useState(false);
 
   const years = useMemo(() => getYears(), []);
   const days = useMemo(() => {
@@ -602,8 +603,30 @@ export default function ProfileSettings({
           className="border border-white/15 p-5 backdrop-blur-xl"
           style={{ borderRadius: 18, background: GLASS_CARD }}
         >
-          <h2 className="text-[22px] font-black text-white">Change Password</h2>
+          <button
+            type="button"
+            onClick={() => setIsPasswordCardOpen((open) => !open)}
+            aria-expanded={isPasswordCardOpen}
+            aria-controls="profile-change-password-content"
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <h2 className="text-[22px] font-black text-white">Change Password</h2>
+            <svg
+              className={`h-5 w-5 shrink-0 text-white/80 transition-transform duration-200 ${isPasswordCardOpen ? "rotate-180" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
 
+          {isPasswordCardOpen && (
+          <div id="profile-change-password-content">
           <form onSubmit={handleChangePassword} className="mt-4 space-y-4">
             <label className="block">
               <span className="text-[12px] font-bold tracking-[0.18em] text-white/70">
@@ -653,6 +676,8 @@ export default function ProfileSettings({
               </p>
             ) : null}
           </form>
+          </div>
+          )}
         </section>
 
         <button
