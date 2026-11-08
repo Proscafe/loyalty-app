@@ -1834,7 +1834,7 @@ export function ChristmasDashboard({
         }
         .christmas-cta-pulse { animation: christmasCtaPulse 1.6s ease-in-out infinite, christmasCtaGlow 1.6s ease-in-out infinite; }
         .christmas-cta-pulse { min-height: 0; border-radius: 9px; }
-        .christmas-cta-pulse::before { top: -5px; left: -2px; height: 16px; background-size: 34px 16px, 61px 16px, 26px 16px; }
+        .christmas-cta-pulse::before { top: -6px; left: -2px; height: 19px; background-size: 41px 19px, 73px 19px, 31px 19px; }
         .christmas-cta-pulse:hover { animation-play-state: paused; }
         .christmas-snowflake { animation: christmasSnowfall var(--snow-duration) linear infinite; animation-delay: var(--snow-delay); }
         .christmas-gift { opacity: 1; animation: christmasShimmer 3.2s ease-in-out infinite; }
@@ -1951,7 +1951,7 @@ export function ChristmasDashboard({
         <section
           aria-label="Santa's Helper Christmas challenge"
           className="relative mt-4 overflow-hidden rounded-[24px] border-[2px] border-[#f5cb50]/45 bg-[#00483d] shadow-[0_18px_48px_rgba(0,0,0,.25)]"
-          style={{ aspectRatio: "400 / 390", containerType: "inline-size", position: "relative", display: "block", flexShrink: 0 }}
+          style={{ aspectRatio: "400 / 430", containerType: "inline-size", position: "relative", display: "block", flexShrink: 0 }}
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_68%_60%,rgba(28,120,139,.44),transparent_60%),linear-gradient(145deg,#003d31,#03545b_72%,#073b49)]" />
 
@@ -1961,12 +1961,12 @@ export function ChristmasDashboard({
             alt=""
             aria-hidden="true"
             draggable={false}
-            className="pointer-events-none absolute bottom-[-6.5cqw] left-1/2 z-[5] block h-auto w-[114%] max-w-none -translate-x-1/2"
+            className="pointer-events-none absolute bottom-[-12cqw] left-1/2 z-[5] block h-auto w-[114%] max-w-none -translate-x-1/2"
           />
 
           {/* Hanging sign: sized by its own image so the text always sits on the wooden board. */}
           <div
-            className="pointer-events-none absolute right-[-4.5cqw] top-[-3.5cqw] z-10 w-[48cqw]"
+            className="pointer-events-none absolute right-[-3.5cqw] top-[-3.5cqw] z-10 w-[41cqw]"
             style={{ containerType: "inline-size" }}
           >
             <img src="/christmas/sign.png" alt="" aria-hidden="true" draggable={false} className="block h-auto w-full" />
@@ -1986,13 +1986,15 @@ export function ChristmasDashboard({
 
           {/* All sizes below are in cqw (1% of the card width), so the card scales as one piece on every screen. */}
           <div className="absolute z-20" style={{ left: "3.5cqw", top: "4.75cqw", width: "58cqw" }}>
-            <p className="font-black uppercase leading-[1.3] tracking-[.08em] text-[#ffdf81]" style={{ fontSize: "max(9px, 2.75cqw)" }}>{santaRankLabel}</p>
-            <p className="font-bold leading-[1.2] text-[#ffe8a1]" style={{ marginTop: "2cqw", fontSize: "max(10px, 3cqw)" }}>{santaRankMessage}</p>
+            <div className="flex items-baseline whitespace-nowrap" style={{ columnGap: "2cqw" }}>
+              <p className="font-black uppercase leading-[1.3] tracking-[.08em] text-[#ffdf81]" style={{ fontSize: "max(9px, 2.75cqw)" }}>{santaRankLabel}</p>
+              <p className="font-bold leading-[1.2] text-[#ffe8a1]" style={{ fontSize: "max(10px, 3cqw)" }}>{santaRankMessage}</p>
+            </div>
             <h2
               className="whitespace-nowrap font-black leading-[1.06] tracking-[-.035em] text-white drop-shadow-[0_3px_3px_rgba(0,0,0,.4)]"
               style={{ marginTop: "4cqw", fontSize: "8cqw" }}
             >
-              <span className="block leading-[1.02] text-[#ffd66b]" style={{ fontSize: "1.22em", marginBottom: "1.5cqw" }}>Help Santa</span>
+              <span className="block leading-[1.02] text-[#ffd66b]" style={{ fontSize: "1.4em", marginBottom: "1.5cqw" }}>Help Santa</span>
               This Christmas!
             </h2>
             <p className="font-semibold leading-[1.35] text-white/95" style={{ marginTop: "4cqw", fontSize: "max(10px, 3cqw)" }}>
@@ -2001,7 +2003,7 @@ export function ChristmasDashboard({
             <a
               href="/dashboard-preview/christmas/game"
               className="christmas-frost-button christmas-feedback-button christmas-cta-pulse inline-flex items-center justify-center font-black uppercase shadow-lg"
-              style={{ marginTop: "6cqw", width: "32cqw", minWidth: 112, height: "9cqw", minHeight: 34, fontSize: "max(11px, 3cqw)" }}
+              style={{ marginTop: "6cqw", width: "38.4cqw", minWidth: 134, height: "10.8cqw", minHeight: 41, fontSize: "max(13px, 3.6cqw)" }}
             >
               PLAY NOW <span aria-hidden="true" className="ml-1">▶</span>
             </a>
