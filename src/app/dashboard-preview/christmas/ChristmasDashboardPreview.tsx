@@ -1986,10 +1986,8 @@ export function ChristmasDashboard({
 
           {/* All sizes below are in cqw (1% of the card width), so the card scales as one piece on every screen. */}
           <div className="absolute z-20" style={{ left: "3.5cqw", top: "4.75cqw", width: "58cqw" }}>
-            <div className="flex items-baseline whitespace-nowrap" style={{ columnGap: "2cqw" }}>
-              <p className="font-black uppercase leading-[1.3] tracking-[.08em] text-[#ffdf81]" style={{ fontSize: "max(9px, 2.75cqw)" }}>{santaRankLabel}</p>
-              <p className="font-bold leading-[1.2] text-[#ffe8a1]" style={{ fontSize: "max(10px, 3cqw)" }}>{santaRankMessage}</p>
-            </div>
+            <p className="font-black uppercase leading-[1.3] tracking-[.08em] text-[#ffdf81]" style={{ fontSize: "max(9px, 2.75cqw)" }}>{santaRankLabel}</p>
+            <p className="font-bold leading-[1.2] text-[#ffe8a1]" style={{ marginTop: "2cqw", fontSize: "max(10px, 3cqw)" }}>{santaRankMessage}</p>
             <h2
               className="whitespace-nowrap font-black leading-[1.06] tracking-[-.035em] text-white drop-shadow-[0_3px_3px_rgba(0,0,0,.4)]"
               style={{ marginTop: "4cqw", fontSize: "8cqw" }}
