@@ -59,11 +59,27 @@ const hills = [
 
 // Festive HUD is live DOM: the score updates on every successful landing.
 const scoreElement = createElementStyle("div");
-scoreElement.className = "christmas-scoreboard";
+scoreElement.className = "christmas-scoreboard christmas-scoreboard-with-logo";
+
+// Keep the white PRO'S mark, one gold star and live score aligned.
+const scoreBrandLogo = document.createElement("img");
+scoreBrandLogo.className = "christmas-score-logo";
+scoreBrandLogo.src = "/pros-logo-basic.png";
+scoreBrandLogo.alt = "PRO'S";
+scoreBrandLogo.draggable = false;
+scoreElement.appendChild(scoreBrandLogo);
+
+const scoreLeftStar = document.createElement("span");
+scoreLeftStar.className = "christmas-score-star";
+scoreLeftStar.textContent = "★";
+scoreLeftStar.setAttribute("aria-hidden", "true");
+scoreElement.appendChild(scoreLeftStar);
+
 const scoreValueElement = document.createElement("span");
 scoreValueElement.className = "christmas-score-number";
-scoreElement.appendChild(scoreValueElement);
 scoreValueElement.textContent = "0";
+scoreElement.appendChild(scoreValueElement);
+
 scoreElement.setAttribute("aria-label", "Current game score");
 scoreElement.setAttribute("aria-live", "polite");
 

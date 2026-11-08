@@ -497,3 +497,74 @@ button.christmas-game-restart { position:fixed !important; top:34% !important; }
 .santa-leaderboard-kicker { color: #f3d17a; font-weight: 900; font-size: 11px; line-height: 1.2; letter-spacing: .17em; margin-bottom: 4px; }
 .santa-leaderboard-head h2 { font-size: clamp(20px, 5.8vw, 25px); line-height: 1.05; letter-spacing: -.03em; }
 .santa-leaderboard-head { align-items: center; }
+
+/* Clean white PRO'S logo, one gold star and live score on a centered line. */
+.christmas-scoreboard.christmas-scoreboard-with-logo {
+  width: min(296px, calc(100vw - 30px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 19px 5px;
+  line-height: normal;
+}
+.christmas-scoreboard-with-logo .christmas-score-logo {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 62px;
+  height: 52px;
+  flex: 0 0 62px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+.christmas-scoreboard-with-logo .christmas-score-star {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  font-family: Arial, sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  color: #ffd45f;
+  line-height: 1;
+  text-shadow: 0 2px 0 #86501c;
+}
+.christmas-scoreboard-with-logo .christmas-score-number {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 58px;
+  min-width: 0;
+  height: 58px;
+  font-size: 48px;
+  line-height: 1;
+}
+.christmas-scoreboard-with-logo .christmas-score-number::before,
+.christmas-scoreboard-with-logo .christmas-score-number::after {
+  content: none;
+  display: none;
+}
+@media (max-width: 340px) {
+  .christmas-scoreboard.christmas-scoreboard-with-logo { gap: 6px; padding-inline: 12px; }
+  .christmas-scoreboard-with-logo .christmas-score-logo { width: 53px; flex-basis: 53px; }
+  .christmas-scoreboard-with-logo .christmas-score-number { font-size: 42px; flex-basis: 48px; }
+}
+@media (max-height: 540px) {
+  .christmas-scoreboard-with-logo .christmas-score-number { height: 48px; font-size: 41px; }
+  .christmas-scoreboard-with-logo .christmas-score-logo { height: 44px; }
+}
+
+/* Three-element scoreboard: balanced inset spacing, no logo halo. */
+.christmas-scoreboard.christmas-scoreboard-with-logo {
+  justify-content: space-evenly;
+  padding-left: 22px;
+  padding-right: 22px;
+}
+.christmas-scoreboard-with-logo .christmas-score-logo {
+  filter: brightness(0) invert(1);
+}
