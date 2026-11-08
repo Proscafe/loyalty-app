@@ -1,0 +1,499 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: Arial, Verdana, sans-serif;
+  cursor: grab;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  background-color: #1e1a33;
+}
+
+div,
+i {
+  user-select: none;
+  pointer-events: none;
+}
+
+i {
+  position: fixed;
+  color: white;
+  top: -10%;
+  z-index: 9999;
+  animation-name: snowflakes-fall, snowflakes-shake;
+  animation-duration: 10s, 3s;
+  animation-timing-function: linear, ease-in-out;
+  animation-iteration-count: infinite, infinite;
+  animation-play-state: running, running;
+}
+
+@keyframes snowflakes-fall {
+  0% {
+    top: -10%;
+  }
+  100% {
+    top: 100%;
+  }
+}
+
+@keyframes snowflakes-shake {
+  0% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(80px);
+  }
+  100% {
+    transform: translateX(0px);
+  }
+}
+
+/* Same CodePen-inspired snow-capped red button used for YOUR FEEDBACK. */
+button.christmas-game-restart {
+  box-sizing: border-box;
+  z-index: 15;
+  width: 155px;
+  height: 48px;
+  padding: 8px 12px;
+  border: 1px solid #4c0300;
+  border-radius: 13px;
+  background: #5e0d0c;
+  color: white;
+  font-family: Arial, Verdana, sans-serif;
+  font-size: 15px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: .01em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0,0,0,.75);
+  box-shadow: inset 1px 1px 0 rgba(255,255,255,.25), inset 0 0 6px #a23227, inset 0 80px 80px -40px #ac3223, 1px 2px 3px rgba(0,0,0,.75);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background .2s ease, box-shadow .2s ease, transform .15s ease;
+  animation: christmas-play-again-pulse 2.1s ease-in-out infinite;
+  transform-origin: center;
+}
+button.christmas-game-restart::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  top: -6px;
+  left: -3px;
+  right: 0;
+  height: 20px;
+  background-image: url('/christmas/christmas-button-snow-left.png'), url('/christmas/christmas-button-snow-middle.png'), url('/christmas/christmas-button-snow-right.png');
+  background-repeat: no-repeat;
+  background-position: left top, center top, right top;
+  background-size: 42px 20px, 76px 20px, 32px 20px;
+}
+button.christmas-game-restart:hover {
+  background: #a61715;
+  text-shadow: 0 1px 2px rgba(0,0,0,.75), 0 0 25px #fff;
+}
+button.christmas-game-restart:active {
+  animation-play-state: paused;
+  transform: translateY(1px);
+  box-shadow: inset 1px 1px 0 rgba(255,255,255,.25), inset 0 0 6px #da3b2c, inset 0 80px 80px -40px #dd4330, 0 1px 0 rgba(255,255,255,.25);
+}
+button.christmas-game-restart:focus-visible { outline: 3px solid #ffd66b; outline-offset: 4px; }
+
+/* Subtle invitation to play again. The button is only displayed at game over. */
+@keyframes christmas-play-again-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.045);
+    filter: brightness(1.16) drop-shadow(0 0 10px rgba(255,214,107,.35));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.christmas-game-restart { animation: none; }
+}
+
+/* Full-screen game HUD, independent of the canvas scene */
+html,body { width:100%; min-height:100%; overflow:hidden; touch-action:none; }
+canvas { display:block; width:100vw; height:100dvh; }
+#santa-high-score-trigger { position:fixed; right:12px; top:63px; z-index:25; max-width:135px; padding:9px 12px; border:1px solid rgba(255,214,107,.55); border-radius:25px; background:rgba(11,58,56,.85); color:#ffe18c; font-size:12px; font-weight:800; box-shadow:0 4px 12px #0003; cursor:pointer; touch-action:manipulation; }
+#santa-view-leaderboard { position:fixed; top:calc(34% + 67px); left:50%; transform:translateX(-50%); z-index:18; border:1px solid #f0d27b; border-radius:13px; background:rgba(9,56,55,.91); padding:10px 14px; color:#fff5d1; font-size:12px; font-weight:800; white-space:nowrap; cursor:pointer; touch-action:manipulation; display:none; }
+body:has(.christmas-game-restart[style*="block"]) #santa-view-leaderboard { display:block; }
+#santa-leaderboard-overlay[hidden] { display:none !important; }
+#santa-leaderboard-overlay { position:fixed; inset:0; z-index:100; background:rgba(5,20,26,.72); display:flex; justify-content:center; align-items:center; padding:16px; box-sizing:border-box; pointer-events:auto; touch-action:pan-y; }
+.santa-leaderboard-panel { width:min(100%,360px); max-height:85dvh; overflow-y:auto; box-sizing:border-box; background:linear-gradient(155deg,#143e36,#0e2928); border:1px solid #e8c76d; border-radius:22px; color:white; padding:18px; box-shadow:0 18px 55px #0008; pointer-events:auto; }
+.santa-leaderboard-head {display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.santa-leaderboard-head h2 {font-size:18px;line-height:1.2;margin:0;color:#ffde83;}
+#santa-leaderboard-close { border:0;border-radius:50%;background:#ffffff24;color:#fff;font-size:26px;width:36px;height:36px;cursor:pointer;touch-action:manipulation;}
+.santa-leaderboard-subtitle {font-size:12px;opacity:.75;margin:8px 0 12px;}
+#santa-leaderboard-list {list-style:none; padding:0; margin:0; min-height:20px;font-size:13px;}
+#santa-leaderboard-list li {display:grid;grid-template-columns:42px 1fr auto;gap:6px;align-items:center;padding:10px 8px;border-bottom:1px solid #ffffff22;}
+#santa-leaderboard-list li.santa-leaderboard-me {background:#e8c76d23;border-radius:9px;color:#ffe29a;}
+#santa-my-rank {text-align:center;margin-top:14px;font-size:13px;font-weight:800;color:#ffdc80;}
+button.christmas-game-restart { position:fixed !important; top:34% !important; }
+@media(max-height:540px) { button.christmas-game-restart {top:28% !important;} #santa-view-leaderboard {top:calc(28% + 65px);} }
+
+/* Christmas game HUD — all drawn with live CSS, no flattened images. */
+/* Wide Christmas score plaque centered below the back arrow and personal best. */
+.christmas-scoreboard {
+  position: fixed;
+  top: 116px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  box-sizing: border-box;
+  width: min(235px, calc(100vw - 52px));
+  height: 78px;
+  padding: 8px 24px 5px;
+  border: 3px solid #f1cf65;
+  border-radius: 18px 18px 25px 25px;
+  background: radial-gradient(ellipse at 40% 12%, #197a57 0%, #086341 50%, #063b31 100%);
+  box-shadow: inset 0 3px 0 #fff7be70, inset 0 -7px 6px #052e2755, 0 5px 0 #8c5328, 0 8px 16px #082b3d77;
+  color: #fffef5;
+  font-family: Arial, Verdana, sans-serif;
+  font-size: 48px;
+  font-weight: 900;
+  line-height: 58px;
+  text-align: center;
+  text-shadow: 2px 3px 0 #184a3b, 0 0 7px #fff4c3a0;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* Reuse the same snow cap assets as YOUR FEEDBACK and PLAY AGAIN. */
+.christmas-scoreboard::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: -4px;
+  right: -4px;
+  height: 22px;
+  background-image: url('/christmas/christmas-button-snow-left.png'), url('/christmas/christmas-button-snow-middle.png'), url('/christmas/christmas-button-snow-right.png');
+  background-repeat: no-repeat;
+  background-position: left top, center top, right top;
+  background-size: 52px 22px, 112px 22px, 44px 22px;
+  pointer-events: none;
+}
+.christmas-score-number { position: relative; display: inline-block; min-width: 70px; }
+.christmas-score-number::before, .christmas-score-number::after {
+  position: absolute;
+  top: 1px;
+  color: #ffd45f;
+  font-size: 21px;
+  text-shadow: 0 2px 0 #86501c;
+}
+.christmas-score-number::before { content: "★"; right: calc(100% + 13px); }
+.christmas-score-number::after { content: "★"; left: calc(100% + 13px); }
+.christmas-instructions {
+  position: fixed;
+  top: 213px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 14;
+  box-sizing: border-box;
+  width: min(322px, calc(100vw - 28px));
+  padding: 18px 13px 14px;
+  border: 4px solid #ffe9b9;
+  border-radius: 23px;
+  background:
+    repeating-linear-gradient(135deg, #d7282f 0 8px, #fffaf3 8px 17px, #d7282f 17px 25px, #fffaf3 25px 34px) border-box;
+  box-shadow: 0 6px 0 #8d2326, 0 10px 17px #0004;
+  color: #75212a;
+  font-family: Arial, Verdana, sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.48;
+  text-align: center;
+  transition: opacity .35s ease !important;
+  pointer-events: none;
+}
+.christmas-instructions::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  z-index: 0;
+  border-radius: 13px;
+  border: 2px solid #f8c25a;
+  background: linear-gradient(180deg, #fff9e8 0%, #ffedcf 100%);
+  box-shadow: inset 0 1px 5px #b8762240;
+}
+.christmas-instructions::after {
+  content: '🎀';
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 31px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 1px #0004);
+}
+.candy-instructions-text { position:relative; display:block; z-index:1; }
+@media(max-width:340px) {
+  .christmas-scoreboard { width: min(215px, calc(100vw - 45px)); font-size: 42px; }
+  .christmas-score-number::before { right: calc(100% + 7px); }
+  .christmas-score-number::after { left: calc(100% + 7px); }
+  .christmas-instructions { font-size: 12px; }
+}
+@media(max-height:540px) {
+  .christmas-scoreboard { top: 110px; height: 64px; line-height: 49px; font-size: 41px; }
+  .christmas-instructions { top: 190px; padding-block: 12px; font-size: 11px; }
+}
+@media(prefers-reduced-motion:reduce) { .christmas-instructions {transition:none !important;} }
+
+/* Restore compact original green snow-capped scoreboard; no red/logo tier. */
+.christmas-scoreboard { top: 116px; width: min(235px, calc(100vw - 52px)); height: 78px; }
+.christmas-score-number { position: relative; display: inline-block; min-width: 70px; font-size: 48px; line-height: 58px; }
+.christmas-score-number::before, .christmas-score-number::after { top: 1px; }
+.christmas-instructions { top: 213px; }
+@media (max-width: 340px) {
+ .christmas-scoreboard { width: min(215px, calc(100vw - 45px)); }
+ .christmas-score-number { font-size: 42px; }
+}
+@media (max-height: 540px) {
+ .christmas-scoreboard { top: 110px; height: 64px; }
+ .christmas-score-number { font-size: 41px; line-height: 49px; }
+ .christmas-instructions { top: 190px; }
+}
+
+/* Match the top controls to the original compact green Christmas score sign. */
+#santa-high-score-trigger {
+  top: 12px;
+  right: 12px;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 2px solid #f1cf65;
+  border-radius: 21px;
+  background: radial-gradient(ellipse at 40% 12%, #197a57 0%, #086341 50%, #063b31 100%);
+  color: #fffef5;
+  font-size: 13px;
+  font-weight: 900;
+  text-shadow: 1px 2px 0 #184a3b;
+  box-shadow: inset 0 2px 0 #fff7be70, inset 0 -4px 5px #052e2755, 0 3px 0 #8c5328, 0 6px 12px #082b3d77;
+}
+#santa-high-score-trigger::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -7px;
+  height: 12px;
+  background: url('/christmas/christmas-button-snow-middle.png') center top / 100% 12px no-repeat;
+  pointer-events: none;
+}
+.christmas-scoreboard { top: 79px; }
+.christmas-instructions { top: 178px; }
+@media (max-height: 540px) {
+ .christmas-scoreboard { top: 74px; }
+ .christmas-instructions { top: 164px; }
+}
+
+/* Nov 8: unified top controls and clean instructional card. */
+#santa-high-score-trigger {
+  top: 12px;
+  right: 12px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 22px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* The best-score badge no longer has a snow cap. */
+#santa-high-score-trigger::before,
+#santa-high-score-trigger::after { content: none !important; display: none !important; }
+.christmas-instructions {
+  top: 178px;
+  width: min(322px, calc(100vw - 28px));
+  padding: 24px 15px 21px;
+  font-size: 15px;
+  line-height: 1.52;
+  box-shadow: 0 3px 0 #8d2326, 0 6px 12px #0003;
+}
+.christmas-instructions::after {
+  top: -29px;
+  font-size: 40px;
+  filter: drop-shadow(0 2px 1px #0003);
+}
+@media (max-width: 340px) {
+  .christmas-instructions { padding: 23px 11px 19px; font-size: 14px; }
+}
+@media (max-height: 540px) {
+  .christmas-instructions { top: 164px; padding: 17px 12px 14px; font-size: 14px; }
+}
+
+
+/* Christmas leaderboard: score-plaque branding and working dialog controls. */
+.christmas-instructions::after { content: none !important; display: none !important; }
+#santa-leaderboard-overlay { pointer-events: auto !important; }
+.santa-leaderboard-panel {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 360px);
+  border: 3px solid #f1cf65;
+  border-radius: 24px;
+  padding: 23px 17px 20px;
+  color: #fffdf0;
+  background: radial-gradient(ellipse at 42% 10%, #1d825d 0%, #096443 48%, #073d32 100%);
+  box-shadow: inset 0 3px 0 #fff4b96b, inset 0 -7px 9px #052d276b,
+              0 5px 0 #9c602a, 0 15px 32px #031d23aa;
+  pointer-events: auto !important;
+}
+.santa-leaderboard-panel::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  top: -9px;
+  left: 12px;
+  right: 12px;
+  height: 18px;
+  background: url('/christmas/christmas-button-snow-left.png') left top / 66px 17px no-repeat,
+              url('/christmas/christmas-button-snow-middle.png') center top / 115px 18px no-repeat,
+              url('/christmas/christmas-button-snow-right.png') right top / 62px 17px no-repeat;
+}
+.santa-leaderboard-panel *, .santa-leaderboard-head {
+  pointer-events: auto !important;
+}
+.santa-leaderboard-head h2 { color: #ffe18a; font-size: 18px; text-shadow: 0 1px 1px #08402e; }
+#santa-leaderboard-close {
+  display: flex;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 2px solid #f1cf65;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #1c8b63, #064c3b);
+  color: #ffffff;
+  font-family: Arial, sans-serif;
+  font-size: 27px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto !important;
+  box-shadow: inset 0 2px 0 #fff8b96b, 0 3px 0 #8c5328, 0 5px 8px #0005;
+}
+#santa-leaderboard-close:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+#santa-leaderboard-close:active { transform: translateY(2px); box-shadow: inset 0 1px 0 #fff8b96b, 0 1px 0 #8c5328; }
+.santa-leaderboard-subtitle { color: #ebf4e9; opacity: .9; }
+#santa-leaderboard-list li { border-bottom: 1px solid #f1cf6540; }
+#santa-leaderboard-list li.santa-leaderboard-me { background: #f1cf6526; color: #ffe7a7; }
+#santa-my-rank { color: #ffe18a; }
+
+/* Santa's Helpers: continuous soft snow cap, wider premium gold-trimmed plaque */
+.santa-leaderboard-panel {
+  width: min(100%, 370px);
+  border-radius: 25px;
+  padding: 30px 17px 19px;
+  overflow: visible;
+}
+.santa-leaderboard-panel::before {
+  content: "";
+  display: block;
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  top: -13px;
+  left: 8px;
+  right: 8px;
+  height: 26px;
+  border-radius: 56% 53% 38% 40% / 68% 62% 36% 34%;
+  background:
+    radial-gradient(ellipse 22px 11px at 7% 66%, #ffffff 97%, transparent 100%),
+    radial-gradient(ellipse 42px 16px at 25% 47%, #ffffff 98%, transparent 100%),
+    radial-gradient(ellipse 44px 17px at 52% 36%, #ffffff 98%, transparent 100%),
+    radial-gradient(ellipse 34px 13px at 77% 51%, #ffffff 98%, transparent 100%),
+    radial-gradient(ellipse 22px 11px at 96% 72%, #ffffff 98%, transparent 100%),
+    linear-gradient(180deg, #fff 6%, #f4f8ff 56%, #ccdeec 100%);
+  filter: drop-shadow(0 3px 2px rgba(16,44,37,.35));
+}
+.santa-leaderboard-panel::after {
+  content: "";
+  display: block;
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  top: 8px;
+  left: 15px;
+  right: 15px;
+  height: 5px;
+  border-radius: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.5) 25%, rgba(244,249,255,.9) 55%, transparent);
+}
+.santa-leaderboard-head { position: relative; z-index: 5; }
+.santa-leaderboard-head h2 {
+  font-family: inherit;
+  font-size: clamp(16px, 4.5vw, 20px);
+  line-height: 1.23;
+  font-weight: 900;
+  color: #ffe29b;
+  letter-spacing: -0.025em;
+}
+.santa-leaderboard-subtitle {
+  margin: 9px 0 15px;
+  color: #e7f8ee;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: .92;
+}
+#santa-leaderboard-list li {
+  margin: 5px 0;
+  border: 1px solid rgba(241,207,101,.14);
+  border-radius: 11px;
+  background: rgba(255,255,255,.085);
+  padding: 10px 11px;
+  font-weight: 700;
+}
+#santa-leaderboard-list li span:first-child {
+  font-size: 15px;
+  font-weight: 900;
+  min-width: 25px;
+}
+#santa-leaderboard-list li strong { color: #ffe49a; font-size: 15px; }
+#santa-leaderboard-list li.santa-leaderboard-top-1 {
+  background: linear-gradient(95deg,rgba(255,210,77,.32),rgba(255,210,77,.09));
+  border-color: rgba(255,216,116,.48);
+}
+#santa-leaderboard-list li.santa-leaderboard-top-2 {
+  background: linear-gradient(95deg,rgba(224,235,238,.20),rgba(224,235,238,.06));
+  border-color: rgba(232,240,245,.31);
+}
+#santa-leaderboard-list li.santa-leaderboard-top-3 {
+  background: linear-gradient(95deg,rgba(210,144,89,.22),rgba(210,144,89,.05));
+  border-color: rgba(226,157,94,.35);
+}
+#santa-leaderboard-list li.santa-leaderboard-me {
+  outline: 1px solid #f0d27b;
+  color: #fff4d0;
+}
+#santa-my-rank {
+  margin-top: 15px;
+  border-top: 1px solid rgba(255,224,143,.25);
+  padding-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+}
+#santa-leaderboard-close {
+  position: relative;
+  z-index: 9;
+}
+
+/* Refined organic snowy roof — transparent edges and drips, no solid stripe. */
+.santa-leaderboard-panel { padding-top: 33px; }
+.santa-leaderboard-panel::before {
+  content: ""; top: -17px; left: -2px; right: -2px; height: 44px;
+  border-radius: 0; filter: none;
+  background: url('/christmas/santa-game/leaderboard-snow.svg') center top / 100% 100% no-repeat;
+}
+.santa-leaderboard-panel::after { content: none; display: none; }
+.santa-leaderboard-titles { min-width: 0; }
+.santa-leaderboard-kicker { color: #f3d17a; font-weight: 900; font-size: 11px; line-height: 1.2; letter-spacing: .17em; margin-bottom: 4px; }
+.santa-leaderboard-head h2 { font-size: clamp(20px, 5.8vw, 25px); line-height: 1.05; letter-spacing: -.03em; }
+.santa-leaderboard-head { align-items: center; }

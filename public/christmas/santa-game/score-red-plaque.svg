@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 265" role="img" aria-label="Snowy red and gold Christmas plaque">
+<defs>
+  <linearGradient id="gold" x1="0" y1="0" x2=".24" y2="1"><stop stop-color="#fff5ae"/><stop offset=".24" stop-color="#f9b93c"/><stop offset=".55" stop-color="#ffde69"/><stop offset=".8" stop-color="#ab5a12"/><stop offset="1" stop-color="#fff3a0"/></linearGradient>
+  <radialGradient id="red" cx=".5" cy=".17" r=".95"><stop stop-color="#ef2935"/><stop offset=".50" stop-color="#bf081b"/><stop offset="1" stop-color="#690c1c"/></radialGradient>
+  <linearGradient id="snow" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".55" stop-color="#f7f9ff"/><stop offset="1" stop-color="#b7c9dd"/></linearGradient>
+  <filter id="shadow"><feGaussianBlur stdDeviation="6"/></filter>
+</defs>
+<path d="M46 95 Q83 52 157 55 Q222 55 258 37 Q325 4 387 31 Q464 46 523 57 Q608 51 650 99 Q677 125 651 188 Q635 213 571 216 L98 216 Q28 209 22 165 Q12 115 46 95Z" transform="translate(1 10)" fill="#2d0809" opacity=".45" filter="url(#shadow)"/>
+<path d="M46 91 Q83 46 157 50 Q222 50 258 31 Q325 -2 387 25 Q464 40 523 52 Q608 46 650 94 Q677 120 651 183 Q635 208 571 211 L98 211 Q28 204 22 160 Q12 110 46 91Z" fill="url(#gold)" stroke="#fff4a8" stroke-width="6"/>
+<path d="M57 103 Q96 64 156 66 Q230 68 268 47 Q324 15 378 43 Q452 57 518 68 Q604 65 637 106 Q652 130 634 177 Q617 192 567 194 L105 194 Q45 190 40 156 Q33 122 57 103Z" fill="url(#red)" stroke="#7d260e" stroke-width="6"/>
+<path d="M55 102 Q86 78 156 82 Q221 84 263 64 Q322 29 386 58 Q457 72 525 83 Q599 80 629 105" fill="none" stroke="#fff8cb" stroke-opacity=".35" stroke-width="6" stroke-linecap="round"/>
+<!-- thick snow cap resting across top edge with round drips -->
+<path d="M112 69 Q126 58 149 62 Q165 51 187 57 Q207 51 223 57 Q241 43 263 45 Q286 27 306 22 Q337 9 365 21 Q387 26 405 40 Q427 35 448 50 Q472 45 496 58 Q513 53 531 63 Q558 61 575 75 Q588 87 579 99 Q571 107 560 101 Q544 95 531 104 Q521 117 507 108 Q486 93 469 99 Q449 111 433 99 Q409 84 383 89 Q365 102 344 91 Q321 82 302 97 Q288 109 272 99 Q250 86 228 100 Q211 110 201 97 Q184 88 167 99 Q149 112 136 104 Q120 98 111 106 Q93 112 85 98 Q81 84 94 78Z" fill="url(#snow)" stroke="#e2ebf8" stroke-width="3"/>
+<path d="M133 80 Q209 61 284 61 Q361 35 434 66 Q492 70 552 84" stroke="#fff" stroke-opacity=".85" stroke-width="9" stroke-linecap="round" fill="none"/>
+<!-- gold studs -->
+<circle cx="81" cy="143" r="10" fill="#ffc943" stroke="#fff4a2" stroke-width="3"/><circle cx="601" cy="143" r="10" fill="#ffc943" stroke="#fff4a2" stroke-width="3"/>
+<!-- decorative white snowflakes -->
+<g stroke="#fff4e9" stroke-linecap="round" stroke-width="5">
+<path d="M154 126v44 M132 148h44 M138 132l32 32 M170 132l-32 32 M154 126l-7 7m7-7 7 7m-7 37-7-7m7 7 7-7"/>
+<path d="M527 126v44 M505 148h44 M511 132l32 32 M543 132l-32 32 M527 126l-7 7m7-7 7 7m-7 37-7-7m7 7 7-7"/>
+</g>
+</svg>

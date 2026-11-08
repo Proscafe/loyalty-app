@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 375" fill="none">
+<defs>
+ <linearGradient id="gold" x1="0" y1="0" x2=".18" y2="1"><stop stop-color="#fff7b6"/><stop offset=".18" stop-color="#ffe27a"/><stop offset=".43" stop-color="#f9b839"/><stop offset=".72" stop-color="#ad631b"/><stop offset="1" stop-color="#ffdc68"/></linearGradient>
+ <radialGradient id="green" cx=".46" cy=".29" r=".85"><stop stop-color="#0d9761"/><stop offset=".57" stop-color="#036a46"/><stop offset="1" stop-color="#034532"/></radialGradient>
+ <linearGradient id="snow" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".65" stop-color="#f8fbff"/><stop offset="1" stop-color="#c5d7e8"/></linearGradient>
+ <radialGradient id="berry" cx=".3" cy=".23" r=".85"><stop stop-color="#ff9d83"/><stop offset=".33" stop-color="#f82634"/><stop offset="1" stop-color="#8c0a1b"/></radialGradient>
+ <filter id="shadow" x="-.25" y="-.3" width="1.5" height="1.8"><feGaussianBlur stdDeviation="7"/></filter>
+</defs>
+<!-- wide lower panel with subtly curved shoulders and base -->
+<path d="M81 145 Q116 121 177 122 H424 Q489 121 520 146 Q559 165 559 210 V300 Q559 352 509 358 H93 Q41 352 41 299 V213 Q41 170 81 145Z" transform="translate(0 9)" fill="#001810" opacity=".46" filter="url(#shadow)"/>
+<path d="M81 144 Q116 120 177 122 H424 Q489 120 520 145 Q559 164 559 209 V299 Q559 350 509 352 H93 Q41 349 41 297 V212 Q41 169 81 144Z" fill="url(#gold)" stroke="#ffed96" stroke-width="6"/>
+<path d="M90 161 Q120 140 180 141 H423 Q478 139 508 163 Q537 179 537 210 V294 Q536 330 504 330 H98 Q63 329 63 292 V212 Q63 183 90 161Z" fill="url(#green)" stroke="#905615" stroke-width="4"/>
+<path d="M78 215 Q74 176 106 164 Q137 148 191 150 H416 Q474 150 499 169" stroke="#fff3b2" stroke-width="5" opacity=".17" stroke-linecap="round"/>
+<!-- restrained snow draping shoulders; middle left completely clear for crest -->
+<path d="M57 173 Q60 156 83 153 Q98 144 117 148 Q130 134 151 144 Q163 137 176 149 Q188 156 181 169 Q175 179 163 172 Q151 164 143 174 Q135 187 122 177 Q109 168 99 180 Q88 191 79 179 Q66 187 56 181 Q49 178 57 173Z" fill="url(#snow)" stroke="#dbe8f4" stroke-width="2.2"/>
+<path d="M421 152 Q439 138 453 146 Q473 135 490 147 Q512 146 521 160 Q542 157 544 176 Q548 185 536 185 Q522 190 517 179 Q504 169 495 180 Q486 190 475 178 Q459 163 450 175 Q437 183 429 170 Q418 171 415 162 Q413 156 421 152Z" fill="url(#snow)" stroke="#dbe8f4" stroke-width="2.2"/>
+<!-- raised crest, with a distinct bottom point -->
+<path d="M167 129 Q157 103 179 82 Q211 55 269 38 Q289 23 300 21 Q315 21 334 35 Q393 52 424 83 Q447 105 433 133 Q423 155 386 165 Q343 177 301 205 Q257 178 211 166 Q177 158 167 129Z" transform="translate(0 5)" fill="#00170f" opacity=".28" filter="url(#shadow)"/>
+<path d="M167 128 Q157 101 179 80 Q211 53 269 36 Q289 21 300 19 Q315 19 334 33 Q393 50 424 81 Q447 103 433 131 Q423 153 386 163 Q343 175 301 203 Q257 176 211 164 Q177 156 167 128Z" fill="url(#gold)" stroke="#ffef96" stroke-width="5"/>
+<path d="M184 122 Q179 106 196 91 Q230 65 278 52 Q296 43 303 43 Q320 47 326 51 Q377 66 411 91 Q426 109 415 127 Q409 142 378 150 Q333 167 301 185 Q266 163 222 150 Q191 142 184 122Z" fill="url(#green)" stroke="#95591b" stroke-width="4"/>
+<!-- focused snow roof of the crest, NOT over the logo -->
+<path d="M178 85 Q190 71 204 73 Q220 58 240 64 Q256 53 269 53 Q284 37 299 33 Q318 33 333 48 Q347 44 364 57 Q384 55 397 72 Q415 73 420 89 Q424 100 412 105 Q401 112 390 100 Q379 91 368 101 Q358 109 347 99 Q331 88 317 99 Q306 106 294 96 Q279 86 266 101 Q251 110 240 96 Q229 89 215 103 Q203 115 191 103 Q175 109 171 99 Q168 93 178 85Z" fill="url(#snow)" stroke="#e7effa" stroke-width="2.5"/>
+<path d="M200 85 Q220 71 241 75 Q267 62 278 64 Q293 51 307 51 Q327 51 340 65 Q368 65 391 83" stroke="white" stroke-width="5" stroke-linecap="round" opacity=".88"/>
+<!-- side holly decorations do not cover badge center -->
+<g transform="translate(166 176)"><path d="M0 0 Q-34 -18 -54 -1 L-34 3 L-43 19 L-23 14 L-9 30Z" fill="#5c9a18" stroke="#285915" stroke-width="3"/><path d="M0 0 Q-16 -37 0 -43 L6 -29 L23 -34 L13 -17 L30 -8Z" fill="#76b822" stroke="#285915" stroke-width="3"/><circle cx="-6" cy="10" r="9" fill="url(#berry)"/><circle cx="9" cy="13" r="10" fill="url(#berry)"/><circle cx="8" cy="-1" r="8" fill="url(#berry)"/></g>
+<g transform="translate(434 176) scale(-1 1)"><path d="M0 0 Q-34 -18 -54 -1 L-34 3 L-43 19 L-23 14 L-9 30Z" fill="#5c9a18" stroke="#285915" stroke-width="3"/><path d="M0 0 Q-16 -37 0 -43 L6 -29 L23 -34 L13 -17 L30 -8Z" fill="#76b822" stroke="#285915" stroke-width="3"/><circle cx="-6" cy="10" r="9" fill="url(#berry)"/><circle cx="9" cy="13" r="10" fill="url(#berry)"/><circle cx="8" cy="-1" r="8" fill="url(#berry)"/></g>
+<!-- balanced gold stars, with large clear area for LIVE DOM score -->
+<path d="M153 246 L164 267 L188 270 L171 288 L175 311 L153 300 L131 311 L135 287 L118 270 L142 267Z" fill="#ffd348" stroke="#fff1a2" stroke-width="3"/>
+<path d="M447 246 L458 267 L482 270 L465 288 L469 311 L447 300 L425 311 L429 287 L412 270 L436 267Z" fill="#ffd348" stroke="#fff1a2" stroke-width="3"/>
+</svg>

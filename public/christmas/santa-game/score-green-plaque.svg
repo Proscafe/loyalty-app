@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 270" role="img" aria-label="Snowy evergreen and golden score plaque with holly and bow">
+<defs>
+<linearGradient id="gold" x1="0" y1="0" x2=".2" y2="1"><stop stop-color="#fff4a7"/><stop offset=".28" stop-color="#ffcb52"/><stop offset=".66" stop-color="#bb741c"/><stop offset="1" stop-color="#ffe48a"/></linearGradient>
+<radialGradient id="green" cx=".4" cy=".23" r=".8"><stop stop-color="#078957"/><stop offset=".62" stop-color="#00603b"/><stop offset="1" stop-color="#063d2d"/></radialGradient>
+<linearGradient id="snow" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".55" stop-color="#f5f9ff"/><stop offset="1" stop-color="#b6cbe5"/></linearGradient>
+<linearGradient id="bow" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#ff5a39"/><stop offset=".6" stop-color="#d4071b"/><stop offset="1" stop-color="#870916"/></linearGradient>
+</defs>
+<path d="M55 38 Q73 12 140 12 H540 Q607 12 627 38 Q669 66 663 130 Q655 209 588 216 H94 Q20 210 17 130 Q12 76 55 38Z" transform="translate(0 9)" fill="#17301e" opacity=".45"/>
+<path d="M55 34 Q73 10 140 10 H540 Q607 10 627 34 Q669 62 663 126 Q655 205 588 212 H94 Q20 206 17 126 Q12 72 55 34Z" fill="url(#gold)" stroke="#ffef95" stroke-width="5"/>
+<path d="M62 49 Q80 28 146 28 H532 Q595 28 615 50 Q644 77 640 123 Q632 183 583 191 H98 Q48 184 41 123 Q36 82 62 49Z" fill="url(#green)" stroke="#946019" stroke-width="5"/>
+<!-- thick snow along top of green plaque -->
+<path d="M29 35 Q57 20 88 27 Q106 6 137 15 Q161 21 190 17 Q212 7 237 20 Q276 28 306 18 Q333 8 358 17 Q392 23 420 18 Q459 10 493 18 Q536 12 555 28 Q584 15 616 26 Q646 20 667 39 Q676 53 661 65 Q646 72 630 64 Q609 53 593 65 Q583 84 568 72 Q556 59 535 67 Q515 78 496 64 Q470 55 452 71 Q435 85 414 69 Q392 60 372 73 Q350 85 332 69 Q310 59 291 74 Q275 84 259 70 Q237 57 218 71 Q197 81 180 66 Q162 55 147 71 Q130 85 110 64 Q94 57 75 70 Q58 79 44 66 Q19 76 12 57 Q4 42 29 35Z" fill="url(#snow)" stroke="#d6e4f0" stroke-width="2"/>
+<!-- green holly with red berries -->
+<g transform="translate(70 178)">
+<path d="M0 0 Q-34 -28 -59 -25 L-48 -9 L-63 5 L-34 7 L-25 34 Q-10 15 0 0Z" fill="#438a16" stroke="#245e10" stroke-width="3"/>
+<path d="M0 0 Q18 -48 43 -55 L43 -34 L59 -23 L31 -16 L28 13Z" fill="#66ae1a" stroke="#245e10" stroke-width="3"/>
+<circle cx="0" cy="14" r="14" fill="#db121f" stroke="#960d17" stroke-width="3"/><circle cx="-17" cy="3" r="12" fill="#ef2530" stroke="#960d17" stroke-width="3"/><circle cx="16" cy="-4" r="12" fill="#d80e1d" stroke="#960d17" stroke-width="3"/>
+<circle cx="-20" cy="-1" r="3" fill="#fff" opacity=".7"/>
+</g>
+<g transform="translate(610 178) scale(-1 1)">
+<path d="M0 0 Q-34 -28 -59 -25 L-48 -9 L-63 5 L-34 7 L-25 34 Q-10 15 0 0Z" fill="#438a16" stroke="#245e10" stroke-width="3"/>
+<path d="M0 0 Q18 -48 43 -55 L43 -34 L59 -23 L31 -16 L28 13Z" fill="#66ae1a" stroke="#245e10" stroke-width="3"/>
+<circle cx="0" cy="14" r="14" fill="#db121f" stroke="#960d17" stroke-width="3"/><circle cx="-17" cy="3" r="12" fill="#ef2530" stroke="#960d17" stroke-width="3"/><circle cx="16" cy="-4" r="12" fill="#d80e1d" stroke="#960d17" stroke-width="3"/>
+</g>
+<!-- big shiny ribbon bow at center bottom -->
+<g transform="translate(340 202)">
+<path d="M-13 9 Q-51 34 -49 67 L-22 51 L-5 66 L3 13Z" fill="url(#bow)" stroke="#f2b544" stroke-width="3"/>
+<path d="M13 9 Q51 34 49 67 L22 51 L5 66 L-3 13Z" fill="url(#bow)" stroke="#f2b544" stroke-width="3"/>
+<path d="M-7 0 Q-42 -42 -76 -13 Q-89 5 -60 15 Q-27 22 -7 6Z" fill="url(#bow)" stroke="#faad37" stroke-width="4"/>
+<path d="M7 0 Q42 -42 76 -13 Q89 5 60 15 Q27 22 7 6Z" fill="url(#bow)" stroke="#faad37" stroke-width="4"/>
+<path d="M-55 -15 Q-30 -22 -11 1 M55 -15 Q30 -22 11 1" fill="none" stroke="#ff9d7b" stroke-width="5" opacity=".65"/>
+<rect x="-16" y="-14" width="32" height="31" rx="8" fill="url(#bow)" stroke="#f6aa31" stroke-width="3"/>
+</g>
+</svg>
